@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ room.name }}{% endblock %}
+
+{% block head %}
+    {{ super() }}
+    <style>
+        /* Custom styles for chat background */
+        body.chat-background {
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed; /* Ensures background stays fixed during scroll */
+        }
+        /* Dark overlay for readability on light backgrounds */
+        body.chat-background::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.3); /* Adjust opacity as needed */
+            z-index: -1;
+        }
+        .message-bubble {
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        .message-bubble img, .message-bubble video {
+            max-width: 100%;
+            height: auto;
+            border-radius: 0.5rem; /* rounded-lg */
+            margin-top: 0.5rem;
+        }
+    </style>
+{% endblock %}
+
+{% block body_attrs %}
+    {% if current_user.chat_background_image_path %}
+        style="background-image: url('{{ url_for('chat_background', filename=current_user.chat_background_image_path.split('/')[-1]) }}');" class="chat-background"
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto p-4 flex flex-col h-[calc(100vh-6rem)]">
+    <div class="flex items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md mb-4">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ room.name }}</h1>
+        <a href="{{ url_for('chat_rooms') }}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        </a>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-white dark:bg-gray-800 rounded-lg shadow-md mb-4" id="chat-messages">
+        {% for message in messages %}
+            {% if message.sender_id == current_user.id %}
+                <div class="flex justify-end">
+                    <div class="bg-blue-500 text-white p-3 rounded-lg message-bubble">
+                        <p class="font-semibold">You</p>
+                        {% if message.content %}<p>{{ message.content }}</p>{% endif %}
+                        {% if message.media_path %}
+                            {% if message.media_type == 'image' %}
+                                <img src="{{ url_for('chat_photo', filename=message.media_path.split('/')[-1]) }}" alt="Chat Image" class="mt-2 rounded-lg">
+                            {% elif message.media_type == 'video' %}
+                                <video controls src="{{ url_for('chat_video', filename=message.media_path.split('/')[-1]) }}" class="mt-2 rounded-lg"></video>
+                            {% endif %}
+                            <a href="{{ url_for('download_chat_media', filename=message.media_path) }}" class="text-xs text-blue-100 hover:underline mt-1 block">Download</a>
+                        {% endif %}
+                        <p class="text-xs text-blue-100 text-right mt-1">{{ moment(message.timestamp).fromNow() }}</p>
+                        <form action="{{ url_for('delete_chat_message', message_id=message.id) }}" method="POST" class="inline-block mt-1">
+                            <button type="submit" class="text-red-200 hover:text-red-400 text-xs">Delete</button>
+                        </form>
+                    </div>
+                </div>
+            {% else %}
+                <div class="flex justify-start">
+                    <div class="bg-gray-200 text-gray-800 p-3 rounded-lg message-bubble dark:bg-gray-700 dark:text-gray-200">
+                        <p class="font-semibold">{{ users_dict[message.sender_id].originalName if message.sender_id in users_dict else 'Unknown User' }}</p>
+                        {% if message.content %}<p>{{ message.content }}</p>{% endif %}
+                        {% if message.media_path %}
+                            {% if message.media_type == 'image' %}
+                                <img src="{{ url_for('chat_photo', filename=message.media_path.split('/')[-1]) }}" alt="Chat Image" class="mt-2 rounded-lg">
+                            {% elif message.media_type == 'video' %}
+                                <video controls src="{{ url_for('chat_video', filename=message.media_path.split('/')[-1]) }}" class="mt-2 rounded-lg"></video>
+                            {% endif %}
+                            <a href="{{ url_for('download_chat_media', filename=message.media_path) }}" class="text-xs text-blue-600 hover:underline mt-1 block dark:text-blue-400">Download</a>
+                        {% endif %}
+                        <p class="text-xs text-gray-600 text-right mt-1 dark:text-gray-400">{{ moment(message.timestamp).fromNow() }}</p>
+                    </div>
+                </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+
+    <div class="flex items-center justify-between mt-4">
+        <a href="{{ url_for('add_chat_room_member', room_id=room.id) }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+            Add Members
+        </a>
+        <form id="chatForm" method="POST" action="{{ url_for('chat_room', room_id=room.id) }}" enctype="multipart/form-data" class="flex-1 flex space-x-2 ml-4">
+            <input type="text" name="message_content" placeholder="Type your message..."
+                   class="flex-1 shadow appearance-none border rounded-lg py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+            <label for="media_file" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-3 rounded-lg cursor-pointer shadow-md dark:bg-gray-600 dark:hover:bg-gray-500 dark:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                <input type="file" id="media_file" name="media_file" accept="image/*,video/*" class="hidden">
+            </label>
+            <button type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                Send
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Scroll to the bottom of the chat messages div on load
+    document.addEventListener('DOMContentLoaded', function() {
+        var chatMessages = document.getElementById('chat-messages');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Register{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow-lg rounded-3">
+                <div class="card-header bg-primary text-white text-center py-3">
+                    <h2 class="mb-0">Register New Account</h2>
+                </div>
+                <div class="card-body p-4">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            <div class="alert-container mb-3">
+                                {% for category, message in messages %}
+                                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                        {{ message | safe }}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    {% endwith %}
+                    <form action="{{ url_for('register') }}" method="POST">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Choose a Username</label>
+                            <input type="text" class="form-control" id="username" name="username" value="{{ form_data.username or '' }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="originalName" class="form-label">Your Original Name (as in family records)</label>
+                            <input type="text" class="form-control" id="originalName" name="originalName" value="{{ form_data.originalName or '' }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="gender" class="form-label">Gender</label>
+                            <select class="form-select" id="gender" name="gender" required>
+                                <option value="">Select Gender</option>
+                                <option value="Male" {% if form_data.gender == 'Male' %}selected{% endif %}>Male</option>
+                                <option value="Female" {% if form_data.gender == 'Female' %}selected{% endif %}>Female</option>
+                                <option value="Other" {% if form_data.gender == 'Other' %}selected{% endif %}>Other</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="relationshipToRaphael" class="form-label">Your Relationship to Raphael Nyanga</label>
+                            <select class="form-select" id="relationshipToRaphael" name="relationshipToRaphael" required>
+                                <option value="">Select Relationship</option>
+                                <option value="Son of Raphael Nyanga" {% if form_data.relationshipToRaphael == 'Son of Raphael Nyanga' %}selected{% endif %}>Son of Raphael Nyanga</option>
+                                <option value="Daughter of Raphael Nyanga" {% if form_data.relationshipToRaphael == 'Daughter of Raphael Nyanga' %}selected{% endif %}>Daughter of Raphael Nyanga</option>
+                                <option value="Grandchild of Raphael Nyanga" {% if form_data.relationshipToRaphael == 'Grandchild of Raphael Nyanga' %}selected{% endif %}>Grandchild of Raphael Nyanga</option>
+                                <option value="Great-grandchild of Raphael Nyanga" {% if form_data.relationshipToRaphael == 'Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Great-grandchild of Raphael Nyanga</option>
+                                <option value="Spouse of Son of Raphael Nyanga" {% if form_data.relationshipToRaphael == 'Spouse of Son of Raphael Nyanga' %}selected{% endif %}>Spouse of Son of Raphael Nyanga</option>
+                                <option value="Spouse of Daughter of Raphael Nyanga" {% if form_data.relationshipToRaphael == 'Spouse of Daughter of Raphael Nyanga' %}selected{% endif %}>Spouse of Daughter of Raphael Nyanga</option>
+                                <option value="Spouse of Grandchild of Raphael Nyanga" {% if form_data.relationshipToRaphael == 'Spouse of Grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Grandchild of Raphael Nyanga</option>
+                                <option value="Spouse of Great-grandchild of Raphael Nyanga" {% if form_data.relationshipToRaphael == 'Spouse of Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Great-grandchild of Raphael Nyanga</option>
+                                <option value="Other Relative" {% if form_data.relationshipToRaphael == 'Other Relative' %}selected{% endif %}>Other Relative</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required minlength="6">
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirm Password</label>
+                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required minlength="6">
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">Register</button>
+                        </div>
+                    </form>
+                    <div class="text-center mt-3">
+                        Already have an account? <a href="{{ url_for('login') }}">Login here</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

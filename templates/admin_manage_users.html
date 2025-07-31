@@ -1,0 +1,607 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin - Manage Users{% endblock %}
+
+{% block content %}
+<style>
+    /* Ensure HTML and Body take full height and manage overflow */
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden; /* Crucial: Prevents main body scroll */
+    }
+
+    body {
+        display: flex; /* Use flexbox for main body layout */
+        flex-direction: column; /* Stack children vertically */
+        min-height: 100vh; /* Ensure body takes full viewport height */
+        background-color: var(--background-color); /* Match background */
+        color: var(--text-color); /* Match text color */
+    }
+
+    /* Common styles for fixed containers (each half of the screen) */
+    .fixed-panel-container {
+        position: fixed;
+        left: 0;
+        width: 100%;
+        background-color: var(--background-color);
+        box-shadow: none;
+        border: none;
+        box-sizing: border-box; /* Include padding in width/height calculations */
+        display: flex; /* Make it a flex container for its header and scrollable content */
+        flex-direction: column; /* Stack children vertically */
+    }
+
+    /* Specific styles for the top container (Users) */
+    .users-container {
+        top: 0; /* Will be adjusted by JS */
+        border-bottom: 1px solid var(--card-border); /* Separator */
+        z-index: 999; /* Below global modals, above other content */
+    }
+
+    /* Specific styles for the bottom container (Members) */
+    .members-container {
+        bottom: 0; /* Will be adjusted by JS */
+        border-top: 1px solid var(--card-border); /* Separator */
+        z-index: 998; /* Below users-container, above footer */
+        position: relative; /* Crucial: Establishes a new stacking context and positioning context for its children */
+    }
+
+    /* New: Header section WITHIN each fixed panel */
+    .panel-header {
+        flex-shrink: 0; /* Prevents header from shrinking */
+        padding: 15px 20px 10px; /* Top/bottom padding, matches horizontal */
+        background-color: var(--background-color); /* Ensure consistent background */
+        border-bottom: 1px solid var(--card-border); /* Separator from content */
+        box-sizing: border-box;
+    }
+
+    /* New: Scrollable content section WITHIN each fixed panel */
+    .panel-content-scrollable {
+        flex-grow: 1; /* Takes remaining vertical space */
+        overflow-y: auto; /* Enables scrolling within this area */
+        padding: 0 20px 20px; /* Horizontal padding, plus bottom padding */
+        box-sizing: border-box;
+        position: relative; /* Crucial for absolute positioning of the in-page overlay */
+    }
+
+    /* Reduce font sizes for titles */
+    .fixed-panel-container h1 {
+        font-size: 1.6em; /* Smaller global title */
+        margin-bottom: 8px; /* Reduced margin */
+    }
+    .fixed-panel-container h3 {
+        font-size: 1.1em; /* Smaller panel titles */
+        margin-bottom: 0; /* No margin below panel title as it's in panel-header */
+    }
+
+    /* Table styling for better appearance */
+    .table {
+        color: var(--text-color); /* Table text color */
+        margin-bottom: 0; /* Remove default table margin */
+    }
+    .table th {
+        background-color: var(--header-bg); /* Table header background */
+        color: var(--header-text); /* Table header text */
+        position: sticky; /* Make headers sticky for scrolling tables */
+        top: 0;
+        z-index: 10;
+        font-size: 0.75em; /* Smaller table header font */
+        padding: 8px; /* Reduced padding */
+    }
+    .table td {
+        vertical-align: middle;
+        font-size: 0.7em; /* Even smaller table cell font */
+        padding: 8px; /* Reduced padding */
+    }
+    .table-hover tbody tr:hover {
+        background-color: var(--hover-bg); /* Hover effect */
+    }
+
+    /* Card styling (inner cards within fixed containers) */
+    .card {
+        background-color: transparent; /* Transparent background */
+        border: none; /* No border */
+        box-shadow: none; /* No shadow */
+        margin-bottom: 0; /* Remove default card margin */
+    }
+
+    /* Alert container positioning */
+    .alert-container {
+        position: fixed; /* Fixed position for alerts */
+        top: 70px; /* Below navbar */
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 600px;
+        z-index: 1050; /* Above all other content */
+        text-align: center;
+    }
+
+    /* Global Bootstrap Modals (Reset Password, Admin Show Status) */
+    /* Ensure these are always on top */
+    .modal.fade.show {
+        z-index: 99999 !important; /* Extremely high to override anything */
+        display: block !important; /* Ensure it's displayed */
+        visibility: visible !important; /* Ensure it's visible */
+        opacity: 1 !important; /* Ensure it's not transparent */
+        position: fixed !important; /* Ensure it's fixed to viewport */
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        transform: none !important; /* Crucial: Prevents new stacking context */
+        overflow-x: hidden; /* Prevent horizontal scroll for modal */
+        overflow-y: auto; /* Allow vertical scroll for modal content if needed */
+    }
+
+    .modal-backdrop.fade.show {
+        z-index: 99998 !important; /* Just below the modal */
+        opacity: 0.5 !important;
+        position: fixed !important;
+    }
+
+    /* Ensure modal dialog and content are also correctly positioned and visible */
+    .modal-dialog {
+        z-index: 99999 !important; /* Ensure dialog is also on top */
+        position: relative !important; /* Ensure z-index applies correctly */
+        transform: none !important; /* Prevent new stacking context on dialog */
+    }
+
+    .modal-content {
+        z-index: 99999 !important; /* Ensure content is also on top */
+        position: relative !important; /* Ensure z-index applies correctly */
+    }
+
+    /* Custom In-Page Overlay for Link User */
+    .in-page-overlay {
+        position: absolute; /* Positioned relative to its parent .panel-content-scrollable */
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex; /* Use flexbox to center content */
+        align-items: center; /* Center vertically */
+        justify-content: center; /* Center horizontally */
+        background-color: rgba(0, 0, 0, 0.6); /* Semi-transparent background */
+        z-index: 100; /* Higher than table, lower than global modals */
+        visibility: hidden; /* Hidden by default */
+        opacity: 0; /* Start transparent */
+        transition: opacity 0.3s ease, visibility 0.3s ease; /* Smooth transition */
+    }
+
+    .in-page-overlay.show {
+        visibility: visible;
+        opacity: 1;
+    }
+
+    .in-page-overlay .modal-content { /* Re-using Bootstrap's modal-content styling */
+        position: relative; /* Override fixed from global modal styles */
+        z-index: 101; /* Above the in-page overlay backdrop */
+        background-color: var(--card-bg); /* Use theme variable */
+        color: var(--text-color);
+        border: 1px solid var(--card-border);
+        border-radius: 0.5rem;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        max-width: 500px; /* Limit width */
+        width: 90%; /* Responsive width */
+        margin: auto; /* Center horizontally */
+    }
+
+    /* Buttons in tables */
+    .table .btn {
+        font-size: 0.7em; /* Smaller buttons in tables */
+        padding: 4px 8px; /* Reduced padding */
+    }
+
+    /* Responsive adjustments */
+    @media (min-width: 768px) {
+        .panel-header {
+            padding: 20px 30px 10px; /* More padding on desktop */
+        }
+        .panel-content-scrollable {
+            padding: 0 30px 30px; /* More padding on desktop */
+        }
+        .fixed-panel-container h1 {
+            font-size: 2em; /* Larger global title on desktop */
+        }
+        .fixed-panel-container h3 {
+            font-size: 1.4em; /* Larger panel titles on desktop */
+        }
+        .table th {
+            font-size: 0.85em;
+        }
+        .table td {
+            font-size: 0.8em;
+        }
+        .table .btn {
+            font-size: 0.75em;
+            padding: 5px 10px;
+        }
+    }
+</style>
+
+{# Users Container (Top Half) #}
+<div class="fixed-panel-container users-container" id="usersContainer">
+    <div class="panel-header">
+        <h1 class="text-center">Admin Panel - Manage Users</h1>
+        <h3 class="card-title">Registered Users</h3>
+    </div>
+    <div class="panel-content-scrollable">
+        <div class="card">
+            {% if users %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Original Name</th>
+                                <th>Relationship</th>
+                                <th>Unique Key</th>
+                                <th>Admin</th>
+                                <th>P/W Reset</th> {# Abbreviated header #}
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td>{{ user.id }}</td>
+                                <td>{{ user.username }}</td>
+                                <td>{{ user.originalName }}</td>
+                                <td>{{ user.relationshipToRaphael }}</td>
+                                <td>{{ user.unique_key }}</td>
+                                <td>
+                                    {% if user.username == config.ADMIN_USERNAME %}
+                                        <span class="badge bg-success">Super Admin</span>
+                                    {% else %}
+                                        <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
+                                            <input type="hidden" name="action" value="toggle_admin">
+                                            <input type="hidden" name="user_id" value="{{ user.id }}">
+                                            <button type="submit" class="btn btn-sm {% if user.is_admin %}btn-success{% else %}btn-secondary{% endif %}"
+                                                    {% if user.id == current_user.id %}disabled title="Cannot change your own admin status"{% endif %}>
+                                                {% if user.is_admin %}Yes{% else %}No{% endif %}
+                                            </button>
+                                        </form>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if user.password_reset_pending == 1 %}
+                                        <span class="badge bg-warning text-dark">Yes</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">No</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column flex-md-row gap-1"> {# Smaller gap #}
+                                        <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#resetPasswordModal{{ user.id }}">Reset P/W</button> {# Abbreviated button text #}
+                                        <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
+                                            <input type="hidden" name="action" value="delete_user">
+                                            <input type="hidden" name="user_id" value="{{ user.id }}">
+                                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete user {{ user.username }} and all associated member profiles? This cannot be undone.');"
+                                                    {% if user.id == current_user.id %}disabled title="Cannot delete your own account"{% endif %}>Delete</button>
+                                        </form>
+                                        {% if user.password_reset_pending == 0 %}
+                                            <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
+                                                <input type="hidden" name="action" value="initiate_password_reset">
+                                                <input type="hidden" name="user_id" value="{{ user.id }}">
+                                                <button type="submit" class="btn btn-sm btn-warning">Initiate Reset</button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+
+                            {# Reset Password Modal for each user #}
+                            <div class="modal fade" id="resetPasswordModal{{ user.id }}" tabindex="-1" aria-labelledby="resetPasswordModalLabel{{ user.id }}" aria-hidden="true">
+                                <div class="modal-dialog modal-dialog-centered">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title" id="resetPasswordModalLabel{{ user.id }}">Reset Password for {{ user.username }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+                                        <form action="{{ url_for('admin_manage_users') }}" method="POST">
+                                            <input type="hidden" name="action" value="reset_password">
+                                            <input type="hidden" name="user_id" value="{{ user.id }}">
+                                            <div class="modal-body">
+                                                <div class="mb-3">
+                                                    <label for="new_password_{{ user.id }}" class="form-label">New Password</label>
+                                                    <input type="password" class="form-control" id="new_password_{{ user.id }}" name="new_password_{{ user.id }}" required>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="confirm_password_{{ user.id }}" class="form-label">Confirm New Password</label>
+                                                    <input type="password" class="form-control" id="confirm_password_{{ user.id }}" name="confirm_new_password_{{ user.id }}" required>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="submit" class="btn btn-primary">Reset Password</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-center text-muted mt-3">No registered users found.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{# Alerts will be positioned fixed, so they don't need to be in a container #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="alert-container">
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message | safe }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+{# Members Container (Bottom Half) #}
+<div class="fixed-panel-container members-container" id="membersContainer">
+    <div class="panel-header">
+        <h3 class="card-title">Member Profiles (Linked & Unlinked)</h3>
+    </div>
+    <div class="panel-content-scrollable">
+        <div class="card">
+            {% if members_with_status %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Full Name</th>
+                                <th>Linked User</th>
+                                <th>Login Access</th>
+                                <th>Messaging</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for member in members_with_status %}
+                            <tr>
+                                <td>{{ member.id }}</td>
+                                <td>{{ member.fullName }}</td>
+                                <td>
+                                    {% if member.user_id %}
+                                        <span class="badge bg-success">{{ member.linked_username }}</span>
+                                    {% else %}
+                                        <span class="badge bg-warning text-dark">Unlinked</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if member.user_id %}
+                                        <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
+                                            <input type="hidden" name="action" value="toggle_login_access">
+                                            <input type="hidden" name="member_id" value="{{ member.id }}">
+                                            <button type="submit" class="btn btn-sm {% if member.can_message %}btn-success{% else %}btn-secondary{% endif %}"> {# can_message is used for login access #}
+                                                {% if member.can_message %}Enabled{% else %}Disabled{% endif %}
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if member.user_id %}
+                                        <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
+                                            <input type="hidden" name="action" value="toggle_messaging_capability">
+                                            <input type="hidden" name="member_id" value="{{ member.id }}">
+                                            <button type="submit" class="btn btn-sm {% if member.can_message %}btn-success{% else %}btn-secondary{% endif %}">
+                                                {% if member.can_message %}Enabled{% else %}Disabled{% endif %}
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column flex-md-row gap-1"> {# Smaller gap #}
+                                        <a href="{{ url_for('member_detail', member_id=member.id) }}" class="btn btn-sm btn-info">View</a>
+                                        <a href="{{ url_for('edit_member', member_id=member.id) }}" class="btn btn-sm btn-warning">Edit</a>
+                                        {% if not member.user_id %}
+                                            {# Changed to call custom JS function #}
+                                            <button type="button" class="btn btn-sm btn-primary" onclick="showLinkUserOverlay({{ member.id }}, '{{ member.fullName }}')">Link User</button>
+                                        {% endif %}
+                                        <form action="{{ url_for('delete_member', member_id=member.id) }}" method="POST" style="display:inline;">
+                                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete member {{ member.fullName }}? This cannot be undone.');">Delete</button>
+                                        </form>
+                                        {# Removed the "View Status" button from here #}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-center text-muted mt-3">No member profiles found.</p>
+            {% endif %}
+        </div>
+
+        {# Custom In-Page Overlay for Link User (moved inside panel-content-scrollable) #}
+        <div id="linkUserOverlay" class="in-page-overlay">
+            <div class="modal-content"> {# Re-using Bootstrap's modal-content class for styling #}
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Link <span id="linkMemberNameSpan"></span> to a New User Account</h5>
+                    <button type="button" class="btn-close btn-close-white" onclick="hideLinkUserOverlay()" aria-label="Close"></button>
+                </div>
+                <form action="{{ url_for('admin_manage_users') }}" method="POST">
+                    <input type="hidden" name="action" value="link_member_to_user">
+                    <input type="hidden" name="member_id" id="linkMemberId">
+                    <div class="modal-body">
+                        <p class="text-muted">This will create a new user account and link it to the selected family member profile.</p>
+                        <div class="mb-3">
+                            <label for="newUsername" class="form-label">New Username</label>
+                            <input type="text" class="form-control" id="newUsername" name="new_username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="linkNewPassword" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="linkNewPassword" name="new_password" required minlength="6">
+                        </div>
+                        <div class="mb-3">
+                            <label for="linkConfirmNewPassword" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="linkConfirmNewPassword" name="confirm_new_password" required minlength="6">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="hideLinkUserOverlay()">Close</button>
+                        <button type="submit" class="btn btn-primary">Create User & Link</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Admin Show Status Modal (from previous version, kept as single modal) -->
+<div class="modal fade" id="adminShowStatusModal" tabindex="-1" aria-labelledby="adminShowStatusModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title" id="adminShowStatusModalLabel">Status for <span id="statusMemberNameSpan"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="statusVideoContainer" class="text-center">
+                    <p id="statusLoadingMessage">Loading status...</p>
+                    <video id="statusVideoPlayer" controls class="img-fluid rounded shadow-sm" style="max-height: 500px; display: none;"></video>
+                    <p id="statusVideoMessage" class="mt-2"></p>
+                    <p id="statusVideoExpires" class="text-muted small"></p>
+                </div>
+                <form id="deleteStatusForm" action="" method="POST" class="mt-3 text-center" style="display: none;">
+                    <input type="hidden" name="action" value="admin_delete_user_status">
+                    <input type="hidden" name="member_id" id="deleteStatusMemberId">
+                    <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this video status?');">Delete Status</button>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const usersContainer = document.getElementById('usersContainer');
+        const membersContainer = document.getElementById('membersContainer');
+        const footerHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--footer-height')) || 60; // From base.html CSS var
+        const navbarHeight = 70; // Assuming your navbar is 70px tall
+
+        function adjustPanelHeights() {
+            const viewportHeight = window.innerHeight;
+            const availableHeight = viewportHeight - navbarHeight - footerHeight; // Total height available for both panels
+
+            const panelHeight = availableHeight / 2; // Each panel gets exactly half
+
+            // Users Container (Top Half)
+            usersContainer.style.top = `${navbarHeight}px`;
+            usersContainer.style.height = `${panelHeight}px`;
+
+            // Members Container (Bottom Half)
+            membersContainer.style.top = `${navbarHeight + panelHeight}px`;
+            membersContainer.style.height = `${panelHeight}px`;
+        }
+
+        // Adjust on load and on window resize
+        adjustPanelHeights();
+        window.addEventListener('resize', adjustPanelHeights);
+
+        // Auto-hide flash messages
+        const flashMessages = document.querySelectorAll('.alert-container .alert');
+        flashMessages.forEach(function(flash) {
+            setTimeout(function() {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s ease-out';
+                setTimeout(function() {
+                    flash.remove();
+                }, 500);
+            }, 5000);
+        });
+
+        // Admin Show Status Modal Logic (kept as a single modal, dynamically populated)
+        var adminShowStatusModal = document.getElementById('adminShowStatusModal');
+        adminShowStatusModal.addEventListener('show.bs.modal', function (event) {
+            var button = event.relatedTarget;
+            var memberId = button.getAttribute('data-member-id');
+            var memberName = button.getAttribute('data-member-name');
+
+            var statusMemberNameSpan = adminShowStatusModal.querySelector('#statusMemberNameSpan');
+            var statusVideoPlayer = adminShowStatusModal.querySelector('#statusVideoPlayer');
+            var statusLoadingMessage = adminShowStatusModal.querySelector('#statusLoadingMessage');
+            var statusVideoMessage = adminShowStatusModal.querySelector('#statusVideoMessage');
+            var statusVideoExpires = adminShowStatusModal.querySelector('#statusVideoExpires');
+            var deleteStatusForm = adminShowStatusModal.querySelector('#deleteStatusForm');
+            var deleteStatusMemberIdInput = adminShowStatusModal.querySelector('#deleteStatusMemberId');
+
+            statusMemberNameSpan.textContent = memberName;
+            statusVideoPlayer.style.display = 'none';
+            statusLoadingMessage.style.display = 'block';
+            statusVideoMessage.textContent = '';
+            statusVideoExpires.textContent = '';
+            deleteStatusForm.style.display = 'none';
+            deleteStatusMemberIdInput.value = memberId; // Set member ID for delete form
+
+            // Fetch status video data
+            fetch(`/get-member-status-video/${memberId}`)
+                .then(response => response.json())
+                .then(data => {
+                    statusLoadingMessage.style.display = 'none';
+                    if (data.video_url) {
+                        statusVideoPlayer.src = data.video_url;
+                        statusVideoPlayer.style.display = 'block';
+                        statusVideoMessage.textContent = 'Active status video.';
+
+                        // Format expiration time
+                        const expiresAt = new Date(data.expires_at);
+                        statusVideoExpires.textContent = `Expires: ${expiresAt.toLocaleString()}`;
+                        deleteStatusForm.style.display = 'block'; // Show delete button if video exists
+                    } else {
+                        statusVideoMessage.textContent = data.message || 'No active status video found for this user.';
+                        statusVideoPlayer.src = ''; // Clear video source
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching status video:', error);
+                    statusLoadingMessage.style.display = 'none';
+                    statusVideoMessage.textContent = 'Error loading status video.';
+                    statusVideoPlayer.src = '';
+                });
+        });
+
+        // Custom In-Page Overlay Logic for Link User
+        const linkUserOverlay = document.getElementById('linkUserOverlay');
+        const linkMemberNameSpan = linkUserOverlay.querySelector('#linkMemberNameSpan');
+        const linkMemberIdInput = linkUserOverlay.querySelector('#linkMemberId');
+        const newUsernameInput = linkUserOverlay.querySelector('#newUsername');
+        const linkNewPasswordInput = linkUserOverlay.querySelector('#linkNewPassword');
+        const linkConfirmNewPasswordInput = linkUserOverlay.querySelector('#linkConfirmNewPassword');
+
+        window.showLinkUserOverlay = function(memberId, memberName) {
+            linkMemberNameSpan.textContent = memberName;
+            linkMemberIdInput.value = memberId;
+            newUsernameInput.value = ''; // Clear fields
+            linkNewPasswordInput.value = ''; // Clear fields
+            linkConfirmNewPasswordInput.value = ''; // Clear fields
+            linkUserOverlay.classList.add('show'); // Add 'show' class to make it visible
+        };
+
+        window.hideLinkUserOverlay = function() {
+            linkUserOverlay.classList.remove('show'); // Remove 'show' class to hide it
+        };
+    });
+</script>
+{% endblock %}
+
+{% block footer %}{% endblock %}

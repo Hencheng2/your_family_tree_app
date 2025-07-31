@@ -1,0 +1,378 @@
+{% extends 'base.html' %}
+
+{% block title %}Chat with {{ other_user.username }}{% endblock %}
+
+{% block content %}
+<style>
+    /* Main chat container: Fixed position to fit screen */
+    .chat-container {
+        display: flex;
+        flex-direction: column; /* Stack header, messages, input vertically */
+
+        /* Position fixed to fill the screen below the navbar */
+        position: fixed; /* REVERTED TO FIXED */
+        top: 60px; /* Adjust this value if your navbar height is different */
+        left: 0;
+        right: 0;
+        bottom: 0; /* Extend to the very bottom of the viewport */
+
+        max-width: 800px; /* Max width for desktop */
+        width: 100%; /* Ensure it takes full width on smaller screens */
+        margin: 0 auto; /* Center the container horizontally on wider screens */
+
+        border-radius: 0; /* Remove border-radius for full screen fit */
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        background-color: var(--card-bg);
+        overflow: hidden; /* Hide scrollbars for the container itself */
+        z-index: 1020; /* Ensure it's above other page content, but below navbar (1030) */
+
+        /* Background image styling */
+        background-size: cover;
+        background-position: center;
+        background-attachment: scroll; /* Kept as scroll for WhatsApp-like behavior */
+        {% if g.user_chat_background %}
+            background-image: url('/{{ g.user_chat_background }}');
+        {% else %}
+            background-image: url('{{ url_for('static', filename='img/default_chat_bg.jpg') }}');
+        {% endif %}
+    }
+
+    /* Chat Header: Fixed at top of chat container, doesn't scroll */
+    .chat-header {
+        background-color: var(--header-bg);
+        color: var(--header-text);
+        padding: 15px;
+        text-align: center;
+        font-size: 1.2em;
+        font-weight: bold;
+        border-bottom: 1px solid var(--card-border);
+        flex-shrink: 0; /* Prevents header from shrinking */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative; /* For back arrow positioning */
+        z-index: 2; /* Ensure header is above chat messages */
+    }
+    .chat-header a {
+        position: absolute;
+        left: 15px;
+        color: white;
+        text-decoration: none;
+    }
+
+    /* Chat Messages: Takes up remaining space and is scrollable */
+    .chat-messages {
+        flex-grow: 1; /* Messages take all available space */
+        padding: 15px;
+        overflow-y: auto; /* THIS IS THE KEY: Makes only messages scrollable */
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 1; /* Ensure messages are above background image, below header */
+    }
+    .message-bubble {
+        max-width: 80%;
+        word-wrap: break-word;
+        border-radius: 15px;
+        padding: 10px 15px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .message-bubble.sent {
+        align-self: flex-end;
+        background-color: #28a745; /* Green for sent */
+        color: white;
+        border-bottom-right-radius: 5px;
+    }
+    .message-bubble.received {
+        align-self: flex-start;
+        background-color: #e9ecef; /* Light gray for received */
+        color: #343a40;
+        border-bottom-left-radius: 5px;
+    }
+    .message-time {
+        font-size: 0.75em;
+        margin-top: 5px;
+        opacity: 0.8;
+    }
+    .media-bubble img, .media-bubble video {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        margin-bottom: 5px;
+        border-radius: 8px;
+    }
+    .media-download-link {
+        display: block;
+        margin-top: 5px;
+        font-size: 0.9em;
+        color: var(--link-color);
+        text-decoration: none;
+    }
+    .media-download-link:hover {
+        text-decoration: underline;
+    }
+
+    /* Chat Input Area: Fixed at bottom of chat container, doesn't scroll */
+    .chat-input-area {
+        flex-shrink: 0; /* Prevents input area from shrinking */
+        padding: 10px;
+        background-color: var(--card-bg);
+        border-top: 1px solid var(--card-border);
+        z-index: 2; /* Ensure input area is above chat messages */
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .chat-input-area .input-group {
+        flex-grow: 1; /* Text input and send button take up available space */
+        display: flex;
+        align-items: center;
+    }
+    .chat-input-area .form-control {
+        flex-grow: 1; /* Text input expands */
+        padding: 10px 15px;
+        border: 1px solid var(--input-border);
+        border-radius: 25px; /* More rounded input */
+        box-sizing: border-box;
+        background-color: var(--background-color);
+        color: var(--text-color);
+    }
+    .chat-input-area .btn {
+        background-color: var(--button-bg);
+        color: var(--button-text);
+        border: none;
+        border-radius: 50%; /* Circular buttons */
+        width: 45px; /* Fixed width for icon buttons */
+        height: 45px; /* Fixed height for icon buttons */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0; /* Prevent buttons from shrinking */
+        padding: 0; /* Remove default padding from buttons */
+    }
+    .chat-input-area .btn:hover {
+        opacity: 0.9;
+    }
+    .loading-spinner {
+        display: none; /* Hidden by default */
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+        margin-left: 10px;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Responsive adjustments for smaller screens */
+    @media (max-width: 600px) {
+        .chat-container {
+            border-radius: 0; /* No border-radius on small screens */
+            /* Fixed position already handles full width/height */
+        }
+        .chat-messages {
+            padding: 10px;
+        }
+        .message-bubble {
+            max-width: 90%;
+        }
+        .chat-input-area {
+            padding: 10px;
+        }
+    }
+</style>
+
+<div class="chat-container">
+    <div class="chat-header">
+        <a href="{{ url_for('inbox') }}" class="text-white"><i class="fas fa-arrow-left fa-lg"></i></a>
+        <h4 class="mb-0 flex-grow-1">{{ other_user.username }}</h4>
+    </div>
+
+    <div class="chat-messages" id="chatMessages">
+        {% for item in combined_feed %}
+            {% if item.type == 'message' %}
+                {% if item.is_admin_message == 1 %}
+                    {# Admin message as system notification #}
+                    <div class="text-center text-muted small my-2">
+                        <span class="badge bg-info text-dark">System Notification: {{ item.content }}</span>
+                        <br><small>{{ moment(item.timestamp).calendar() }}</small>
+                    </div>
+                {% elif item.sender_id == current_user.id %}
+                    {# Current user's message #}
+                    <div class="message-bubble sent bg-success text-white p-2 rounded-lg mb-2 shadow-sm ms-auto">
+                        {{ item.content }}
+                        <div class="message-time text-end text-white-50 small mt-1">{{ moment(item.timestamp).fromNow() }}</div>
+                    </div>
+                {% else %}
+                    {# Other user's message #}
+                    <div class="message-bubble received bg-light text-dark p-2 rounded-lg mb-2 shadow-sm me-auto">
+                        {{ item.content }}
+                        <div class="message-time text-end text-muted small mt-1">{{ moment(item.timestamp).fromNow() }}</div>
+                    </div>
+                {% endif %}
+            {% elif item.type == 'media' %}
+                {% if item.sender_id == current_user.id %}
+                    {# Current user's media #}
+                    <div class="message-bubble sent media-bubble bg-success text-white p-2 rounded-lg mb-2 shadow-sm ms-auto">
+                        {% if item.media_type == 'image' %}
+                            <img src="/{{ item.file_path }}" class="img-fluid rounded" alt="Sent Image" style="max-width: 250px; max-height: 250px;">
+                        {% elif item.media_type == 'video' %}
+                            <video controls class="img-fluid rounded" style="max-width: 250px; max-height: 250px;">
+                                <source src="/{{ item.file_path }}" type="video/mp4">
+                                Your browser does not support the video tag.
+                            </video>
+                        {% endif %}
+                        <a href="{{ url_for('download_chat_media', filename=item.file_path) }}" class="btn btn-sm btn-outline-light mt-2 d-block">
+                            <i class="fas fa-download"></i> Download
+                        </a>
+                        <div class="message-time text-end text-white-50 small mt-1">{{ moment(item.timestamp).fromNow() }}</div>
+                    </div>
+                {% else %}
+                    {# Other user's media #}
+                    <div class="message-bubble received media-bubble bg-light text-dark p-2 rounded-lg mb-2 shadow-sm me-auto">
+                        {% if item.media_type == 'image' %}
+                            <img src="/{{ item.file_path }}" class="img-fluid rounded" alt="Received Image" style="max-width: 250px; max-height: 250px;">
+                        {% elif item.media_type == 'video' %}
+                            <video controls class="img-fluid rounded" style="max-width: 250px; max-height: 250px;">
+                                <source src="/{{ item.file_path }}" type="video/mp4">
+                                Your browser does not support the video tag.
+                            </video>
+                        {% endif %}
+                        <a href="{{ url_for('download_chat_media', filename=item.file_path) }}" class="btn btn-sm btn-outline-dark mt-2 d-block">
+                            <i class="fas fa-download"></i> Download
+                        </a>
+                        <div class="message-time text-end text-muted small mt-1">{{ moment(item.timestamp).fromNow() }}</div>
+                    </div>
+                {% endif %}
+            {% endif %}
+        {% endfor %}
+    </div>
+
+    <div class="chat-input-area">
+        <form id="messageForm" action="{{ url_for('messages_with', other_user_id=other_user.id) }}" method="POST" class="input-group">
+            <input type="text" class="form-control" placeholder="Type a message..." name="message_body" id="message_body" autocomplete="off">
+            <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i></button>
+        </form>
+        <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#mediaUploadModal" title="Attach Media">
+            <i class="fas fa-paperclip"></i>
+        </button>
+    </div>
+</div>
+
+{# Media Upload Modal #}
+<div class="modal fade" id="mediaUploadModal" tabindex="-1" aria-labelledby="mediaUploadModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="mediaUploadModalLabel">Upload Media</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="mediaUploadForm" action="{{ url_for('upload_chat_media', recipient_user_id=other_user.id) }}" method="POST" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="media_file" class="form-label">Select Photo or Video</label>
+                        <input class="form-control" type="file" id="media_file" name="media_file" accept="image/*,video/*" required>
+                        <small class="form-text text-muted">Max file size 5MB. Supported: Images (PNG, JPG, GIF), Videos (MP4, MOV, AVI, WEBM).</small>
+                    </div>
+                    <div id="mediaUploadMessage" class="mt-3" style="display: none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="uploadMediaBtn">Upload</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Scroll to the bottom of the chat messages on load
+        const chatMessages = document.getElementById('chatMessages');
+        if (chatMessages) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Auto-hide flash messages (from base.html, but re-applying for robustness)
+        const flashMessages = document.querySelectorAll('.alert-container .alert'); // Corrected selector
+        flashMessages.forEach(function(flash) {
+            setTimeout(function() {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s ease-out';
+                setTimeout(function() {
+                    flash.remove();
+                }, 500);
+            }, 5000);
+        });
+
+        // Handle media upload form submission via AJAX
+        const mediaUploadForm = document.getElementById('mediaUploadForm');
+        // Ensure this modal instance is correctly created and managed
+        const mediaUploadModalElement = document.getElementById('mediaUploadModal');
+        const mediaUploadModal = new bootstrap.Modal(mediaUploadModalElement); // Correct way to initialize modal
+
+        const mediaUploadMessage = document.getElementById('mediaUploadMessage');
+        const uploadMediaBtn = document.getElementById('uploadMediaBtn');
+
+        // Add event listener for modal shown event to ensure focus
+        mediaUploadModalElement.addEventListener('shown.bs.modal', function () {
+            // Optional: You can focus on an input field here if needed
+            // document.getElementById('media_file').focus();
+        });
+
+        if (mediaUploadForm) {
+            mediaUploadForm.addEventListener('submit', function(event) {
+                event.preventDefault(); // Prevent default form submission
+
+                const formData = new FormData(mediaUploadForm);
+
+                // Show loading state
+                uploadMediaBtn.disabled = true;
+                uploadMediaBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Uploading...';
+                mediaUploadMessage.style.display = 'none';
+
+                fetch(this.action, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    mediaUploadMessage.style.display = 'block';
+                    if (data.success) {
+                        mediaUploadMessage.className = 'alert alert-success';
+                        mediaUploadMessage.innerHTML = data.message;
+                        // Clear file input
+                        document.getElementById('media_file').value = '';
+                        // Optionally, auto-close modal and reload/update chat
+                        setTimeout(() => {
+                            mediaUploadModal.hide();
+                            window.location.reload(); // Simple reload to show new media
+                        }, 1500);
+                    } else {
+                        mediaUploadMessage.className = 'alert alert-danger';
+                        mediaUploadMessage.innerHTML = data.message;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    mediaUploadMessage.style.display = 'block';
+                    mediaUploadMessage.className = 'alert alert-danger';
+                    mediaUploadMessage.innerHTML = 'An error occurred during upload. Please try again.';
+                    console.error('Error:', error);
+                })
+                .finally(() => {
+                    uploadMediaBtn.disabled = false;
+                    uploadMediaBtn.innerHTML = 'Upload';
+                });
+            });
+        }
+    });
+</script>
+{% endblock %}
+
+{% block footer %}{% endblock %}

@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+
+{% block title %}Add Family Member{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card p-4 shadow">
+                <h2 class="card-title text-center mb-4">Add New Family Member</h2>
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="fullName" class="form-label">Full Name</label>
+                        <input type="text" class="form-control" id="fullName" name="fullName" required value="{{ form_data.fullName if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="dateOfBirth" class="form-label">Date of Birth</label>
+                        <input type="date" class="form-control" id="dateOfBirth" name="dateOfBirth" value="{{ form_data.dateOfBirth if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="gender" class="form-label">Gender</label>
+                        <select class="form-select" id="gender" name="gender" required>
+                            <option value="">Select Gender</option>
+                            <option value="Male" {% if form_data and form_data.gender == 'Male' %}selected{% endif %}>Male</option>
+                            <option value="Female" {% if form_data and form_data.gender == 'Female' %}selected{% endif %}>Female</option>
+                            <option value="Other" {% if form_data and form_data.gender == 'Other' %}selected{% endif %}>Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="association" class="form-label">Relationship to Raphael Nyanga</label>
+                        <select class="form-select" id="association" name="association" required>
+                            <option value="">Select Relationship</option>
+                            <option value="Son of Raphael Nyanga" {% if form_data and form_data.association == 'Son of Raphael Nyanga' %}selected{% endif %}>Son of Raphael Nyanga</option>
+                            <option value="Daughter of Raphael Nyanga" {% if form_data and form_data.association == 'Daughter of Raphael Nyanga' %}selected{% endif %}>Daughter of Raphael Nyanga</option>
+                            <option value="Grandchild of Raphael Nyanga" {% if form_data and form_data.association == 'Grandchild of Raphael Nyanga' %}selected{% endif %}>Grandchild of Raphael Nyanga</option>
+                            <option value="Great-grandchild of Raphael Nyanga" {% if form_data and form_data.association == 'Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Great-grandchild of Raphael Nyanga</option>
+                            <option value="Great-great-grandchild of Raphael Nyanga" {% if form_data and form_data.association == 'Great-great-grandchild of Raphael Nyanga' %}selected{% endif %}>Great-great-grandchild of Raphael Nyanga</option>
+                            <option value="Spouse of Son of Raphael Nyanga" {% if form_data and form_data.association == 'Spouse of Son of Raphael Nyanga' %}selected{% endif %}>Spouse of Son of Raphael Nyanga</option>
+                            <option value="Spouse of Daughter of Raphael Nyanga" {% if form_data and form_data.association == 'Spouse of Daughter of Raphael Nyanga' %}selected{% endif %}>Spouse of Daughter of Raphael Nyanga</option>
+                            <option value="Spouse of Grandchild of Raphael Nyanga" {% if form_data and form_data.association == 'Spouse of Grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Grandchild of Raphael Nyanga</option>
+                            <option value="Spouse of Great-grandchild of Raphael Nyanga" {% if form_data and form_data.association == 'Spouse of Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Great-grandchild of Raphael Nyanga</option>
+                            <option value="Spouse of Great-great-grandchild of Raphael Nyanga" {% if form_data and form_data.association == 'Spouse of Great-great-grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Great-great-grandchild of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Son of Raphael Nyanga" {% if form_data and form_data.association == 'Fiance(e) of Son of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Son of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Daughter of Raphael Nyanga" {% if form_data and form_data.association == 'Fiance(e) of Daughter of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Daughter of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Grandchild of Raphael Nyanga" {% if form_data and form_data.association == 'Fiance(e) of Grandchild of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Grandchild of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Great-grandchild of Raphael Nyanga" {% if form_data and form_data.association == 'Fiance(e) of Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Great-grandchild of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Great-great-grandchild of Raphael Nyanga" {% if form_data and form_data.association == 'Fiance(e) of Great-great-grandchild of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Great-great-grandchild of Raphael Nyanga</option>
+                            <option value="Other" {% if form_data and form_data.association == 'Other' %}selected{% endif %}>Other (Please specify in personal details)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="maritalStatus" class="form-label">Marital Status</label>
+                        <select class="form-select" id="maritalStatus" name="maritalStatus">
+                            <option value="Single" {% if form_data and form_data.maritalStatus == 'Single' %}selected{% endif %}>Single</option>
+                            <option value="Engaged" {% if form_data and form_data.maritalStatus == 'Engaged' %}selected{% endif %}>Engaged</option>
+                            <option value="Married" {% if form_data and form_data.maritalStatus == 'Married' %}selected{% endif %}>Married</option>
+                            <option value="Divorced" {% if form_data and form_data.maritalStatus == 'Divorced' %}selected{% endif %}>Divorced</option>
+                            <option value="Widowed" {% if form_data and form_data.maritalStatus == 'Widowed' %}selected{% endif %}>Widowed</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="spouseNamesField" style="display: none;">
+                        <label for="spouseNames" class="form-label">Spouse Name(s) (comma-separated)</label>
+                        <input type="text" class="form-control" id="spouseNames" name="spouseNames" value="{{ form_data.spouseNames if form_data else '' }}">
+                    </div>
+                    <div class="mb-3" id="girlfriendNamesField" style="display: none;">
+                        <label for="girlfriendNames" class="form-label">Fiance(e) Name(s) (comma-separated)</label>
+                        <input type="text" class="form-control" id="girlfriendNames" name="girlfriendNames" value="{{ form_data.girlfriendNames if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="childrenNames" class="form-label">Children Name(s) (comma-separated)</label>
+                        <input type="text" class="form-control" id="childrenNames" name="childrenNames" value="{{ form_data.childrenNames if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="schoolName" class="form-label">School/University Name</label>
+                        <input type="text" class="form-control" id="schoolName" name="schoolName" value="{{ form_data.schoolName if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="whereabouts" class="form-label">Current Whereabouts (City, Country)</label>
+                        <input type="text" class="form-control" id="whereabouts" name="whereabouts" value="{{ form_data.whereabouts if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="contact" class="form-label">Contact Information (Phone, Email, comma-separated)</label>
+                        <input type="text" class="form-control" id="contact" name="contact" value="{{ form_data.contact if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="bio" class="form-label">Short Biography</label>
+                        <textarea class="form-control" id="bio" name="bio" rows="3">{{ form_data.bio if form_data else '' }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="personalRelationshipDescription" class="form-label">Say more about yourself so that people can recognize you better</label>
+                        <textarea class="form-control" id="personalRelationshipDescription" name="personalRelationshipDescription" rows="3">{{ form_data.personalRelationshipDescription if form_data else '' }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="profilePhoto" class="form-label">Profile Photo</label>
+                        <input type="file" class="form-control" id="profilePhoto" name="profilePhoto" accept="image/*">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Add Member</button>
+                </form>
+                <div class="text-center mt-3">
+                    <a href="{{ url_for('list_members') }}" class="btn btn-secondary">Cancel</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const maritalStatusSelect = document.getElementById('maritalStatus');
+        const spouseNamesField = document.getElementById('spouseNamesField');
+        const girlfriendNamesField = document.getElementById('girlfriendNamesField');
+
+        function toggleSpouseFields() {
+            const selectedStatus = maritalStatusSelect.value;
+            if (selectedStatus === 'Engaged') {
+                girlfriendNamesField.style.display = 'block';
+                spouseNamesField.style.display = 'none';
+            } else if (selectedStatus === 'Married' || selectedStatus === 'Divorced' || selectedStatus === 'Widowed') {
+                spouseNamesField.style.display = 'block';
+                girlfriendNamesField.style.display = 'none';
+            } else {
+                spouseNamesField.style.display = 'none';
+                girlfriendNamesField.style.display = 'none';
+            }
+        }
+
+        maritalStatusSelect.addEventListener('change', toggleSpouseFields);
+
+        // Initial call to set correct visibility on page load
+        toggleSpouseFields();
+    });
+</script>
+{% endblock %}

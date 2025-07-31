@@ -1,0 +1,298 @@
+{% extends 'base.html' %}
+
+{% block title %}Friends{% endblock %} {# Changed title here #}
+
+{% block content %}
+<style>
+    /* Ensure HTML and Body take full height and manage overflow */
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden; /* Crucial: Prevents main body scroll */
+    }
+
+    body {
+        display: flex; /* Use flexbox for main body layout */
+        flex-direction: column; /* Stack children vertically */
+        min-height: 100vh; /* Ensure body takes full viewport height */
+        background-color: var(--background-color); /* Match background */
+        color: var(--text-color); /* Match text color */
+    }
+
+    /* Main Members List Container (Scrollable) */
+    .members-list-container {
+        position: fixed; /* Make it fixed */
+        top: 70px; /* Space for the main navbar */
+        left: 0;
+        right: 0;
+        width: 100%; /* Ensure it spans full width */
+        background-color: var(--background-color); /* Match background */
+        border: none; /* No border */
+        box-shadow: none; /* No shadow */
+        overflow-y: auto; /* THIS MAKES IT SCROLLABLE */
+        box-sizing: border-box;
+        padding: 20px; /* Padding inside the scrollable area */
+        /* bottom will be set by JS */
+    }
+
+    /* Member List Item Styles */
+    .list-group-item {
+        background-color: transparent; /* Ensure list item background matches card */
+        border-color: transparent;      /* Ensure list item border matches card */
+        color: var(--text-color); /* Ensure text color matches theme */
+        transition: background-color 0.2s ease; /* Smooth hover transition */
+    }
+
+    .list-group-item:hover {
+        background-color: var(--nav-link-hover-bg); /* Use a subtle hover effect */
+        cursor: pointer;
+    }
+
+    /* Style for the clickable area within the list item */
+    .list-group-item a.text-reset {
+        display: flex; /* Make the anchor tag a flex container */
+        align-items: center; /* Vertically align image and text */
+        width: 100%; /* Make the anchor tag take full width */
+        height: 100%; /* Make the anchor tag take full height */
+        padding: 0; /* Remove default padding from anchor */
+    }
+
+    .profile-pic-wrapper {
+        flex-shrink: 0; /* Prevent image from shrinking */
+        width: 50px; /* Explicit width for wrapper */
+        height: 50px; /* Explicit height for wrapper */
+        display: flex; /* For centering if needed */
+        align-items: center;
+        justify-content: center;
+        overflow: hidden; /* Ensure rounded corners */
+    }
+
+    .member-name {
+        font-size: 1.1em; /* Slightly larger font for name */
+        white-space: nowrap; /* Prevent name from wrapping */
+        overflow: hidden; /* Hide overflow text */
+        text-overflow: ellipsis; /* Add ellipsis for overflow text */
+    }
+
+    /* Alert container positioning */
+    .alert-container {
+        position: fixed; /* Fixed position for alerts */
+        top: 70px; /* Below navbar */
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 600px;
+        z-index: 1050; /* Above all other content */
+        text-align: center;
+    }
+
+    /* Responsive adjustments */
+    @media (min-width: 768px) {
+        .members-list-container {
+            padding: 20px 30px;
+        }
+        .member-name {
+            font-size: 1.2em;
+        }
+    }
+</style>
+
+{# Alerts will be positioned fixed, so they don't need to be in a container #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="alert-container">
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message | safe }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+{# Main Members List Container (Scrollable) #}
+<div class="members-list-container" id="membersListContainer">
+    <h1 class="text-center mb-4">Friends</h1> {# Changed title here #}
+
+    {# Search Input Field #}
+    <div class="mb-4">
+        <input type="text" id="memberSearchInput" class="form-control" placeholder="Search by name or username...">
+    </div>
+
+    {# Add New Member Button - Only visible to admin users #}
+    {% if current_user.is_admin %}
+    <div class="text-end mb-3">
+        <a href="{{ url_for('add_member_form') }}" class="btn btn-success">Add New Member</a>
+    </div>
+    {% endif %}
+
+    <div class="members-list-content"> {# New wrapper for the list #}
+        {% if members %}
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <ul class="list-group list-group-flush" id="membersList"> {# Added ID for JS access #}
+                        {# Members will be rendered here by JavaScript #}
+                    </ul>
+                </div>
+            </div>
+        {% else %}
+            <p class="text-center text-muted mt-3">No other family members found.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const membersListContainer = document.getElementById('membersListContainer');
+        const footerHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--footer-height')) || 60; // From base.html CSS var
+
+        function adjustMembersListPosition() {
+            if (membersListContainer) { // Check if membersListContainer exists
+                const navbarHeight = 70; // Assuming your navbar is 70px tall
+
+                // The members list starts below the navbar
+                membersListContainer.style.top = `${navbarHeight}px`;
+                // Its height fills the rest of the viewport above the footer
+                membersListContainer.style.bottom = `${footerHeight}px`;
+            }
+        }
+
+        // Adjust on load and on window resize
+        adjustMembersListPosition();
+        window.addEventListener('resize', adjustMembersListPosition);
+
+        // --- Live Search and Filter Logic ---
+        const memberSearchInput = document.getElementById('memberSearchInput');
+        const membersListElement = document.getElementById('membersList');
+
+        // Store all members data from Jinja into a JavaScript array
+        // Include AdminAI in this list as a regular member
+        const allMembers = [
+            {% for member in members %}
+                {# No exclusion for AdminAI here, it will be listed like others #}
+                {
+                    id: {{ member.id }},
+                    fullName: "{{ member.fullName | e }}",
+                    username: "{{ (member.username if member.username is defined else '') | e }}",
+                    profilePhoto: "{{ member.profilePhoto | e if member.profilePhoto else url_for('static', filename='img/default_profile.png') | e }}",
+                    detailUrl: "{{ url_for('member_detail', member_id=member.id) | e }}"
+                },
+            {% endfor %}
+        ];
+
+        // Function to render members into the list
+        function renderMembers(membersToRender) {
+            membersListElement.innerHTML = ''; // Clear current list
+
+            if (membersToRender.length === 0) {
+                membersListElement.innerHTML = `
+                    <li class="list-group-item text-center py-4 text-muted">
+                        <p class="mb-0">No matching family members found.</p>
+                    </li>
+                `;
+                return;
+            }
+
+            membersToRender.forEach(member => {
+                const listItem = document.createElement('li');
+                listItem.className = 'list-group-item d-flex align-items-center py-3 px-3';
+                listItem.innerHTML = `
+                    <a href="${member.detailUrl}" class="d-flex align-items-center flex-grow-1 text-decoration-none text-reset">
+                        <div class="profile-pic-wrapper me-3">
+                            <img src="${member.profilePhoto}" class="img-fluid rounded-circle" alt="${member.fullName} Profile Photo" style="width: 50px; height: 50px; object-fit: cover;">
+                        </div>
+                        <div class="member-name fw-bold">
+                            ${member.fullName}
+                            ${member.username ? `<span class="text-muted ms-2 fw-normal">(@${member.username})</span>` : ''}
+                        </div>
+                    </a>
+                `;
+                membersListElement.appendChild(listItem);
+            });
+        }
+
+        // Function to filter and sort members
+        function filterAndSortMembers() {
+            const searchTerm = memberSearchInput.value.toLowerCase().trim();
+
+            if (searchTerm === '') {
+                // Sort all members alphabetically by fullName when search is empty
+                const sortedAllMembers = [...allMembers].sort((a, b) => a.fullName.localeCompare(b.fullName));
+                renderMembers(sortedAllMembers);
+                return;
+            }
+
+            // Filter members based on search term
+            const filteredMembers = allMembers.filter(member => {
+                const fullName = member.fullName.toLowerCase();
+                const username = member.username ? member.username.toLowerCase() : '';
+                return fullName.includes(searchTerm) || username.includes(searchTerm);
+            });
+
+            // Sort members based on priority:
+            // 1. Full Name starts with search term
+            // 2. Username starts with search term
+            // 3. Full Name contains search term
+            // 4. Username contains search term
+            filteredMembers.sort((a, b) => {
+                const aFullName = a.fullName.toLowerCase();
+                const bFullName = b.fullName.toLowerCase();
+                const aUsername = a.username ? a.username.toLowerCase() : '';
+                const bUsername = b.username ? b.username.toLowerCase() : '';
+
+                const aFullNameStarts = aFullName.startsWith(searchTerm);
+                const bFullNameStarts = bFullName.startsWith(searchTerm);
+                const aUsernameStarts = aUsername.startsWith(searchTerm);
+                const bUsernameStarts = bUsername.startsWith(searchTerm);
+
+                const aFullNameIncludes = aFullName.includes(searchTerm);
+                const bFullNameIncludes = bFullName.includes(searchTerm);
+                const aUsernameIncludes = aUsername.includes(searchTerm);
+                const bUsernameIncludes = bUsername.includes(searchTerm);
+
+                // Priority 1: Full Name starts with
+                if (aFullNameStarts && !bFullNameStarts) return -1;
+                if (!aFullNameStarts && bFullNameStarts) return 1;
+
+                // Priority 2: Username starts with (if Full Name doesn't start with, or both do)
+                if (aFullNameStarts === bFullNameStarts) { // If they are equal on Priority 1
+                    if (aUsernameStarts && !bUsernameStarts) return -1;
+                    if (!aUsernameStarts && bUsernameStarts) return 1;
+                }
+
+                // Priority 3: Full Name contains
+                if (aFullNameIncludes && !bFullNameIncludes) return -1;
+                if (!aFullNameIncludes && bFullNameIncludes) return 1;
+
+                // Priority 4: Username contains
+                if (aUsernameIncludes && !bUsernameIncludes) return -1;
+                if (!aUsernameIncludes && bUsernameIncludes) return 1;
+
+                // Default: alphabetical by full name if no other criteria differentiate
+                return aFullName.localeCompare(bFullName);
+            });
+
+            renderMembers(filteredMembers);
+        }
+
+        // Event listener for input changes in the search box
+        memberSearchInput.addEventListener('input', filterAndSortMembers);
+
+        // Initial render of all members when the page loads
+        // Sort initially by full name
+        const sortedInitialMembers = [...allMembers].sort((a, b) => a.fullName.localeCompare(b.fullName));
+        renderMembers(sortedInitialMembers);
+
+        // Auto-hide flash messages (copied from base.html for consistency)
+        const flashMessages = document.querySelectorAll('.flash');
+        flashMessages.forEach(function(flash) {
+            setTimeout(function() {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s ease-out';
+                setTimeout(function() {
+                    flash.remove();
+                }, 500);
+            }, 5000);
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block title %}Photo Gallery{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="card p-4 shadow text-center">
+                <h2 class="card-title mb-4">Family Photo Gallery</h2>
+                <p class="lead">This gallery is coming soon! Get ready to browse and share cherished family photos.</p>
+                <i class="fas fa-images fa-5x text-info my-4"></i>
+                <p class="text-muted">We're working hard to bring you this feature!</p>
+                <a href="{{ url_for('home') }}" class="btn btn-primary mt-3">Back to Home</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

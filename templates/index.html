@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<div class="container-fluid d-flex flex-column align-items-center justify-content-center text-white text-center" style="min-height: calc(100vh - 70px - 60px); background-image: url('{{ background_image }}'); background-size: cover; background-position: center; background-attachment: fixed; position: relative;">
+    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 1;"></div>
+    <div class="position-relative z-index-2 p-4 rounded" style="background-color: rgba(0, 0, 0, 0.6);">
+        {% if current_user.is_authenticated %}
+            <h1 class="display-4 mb-3">Welcome, {{ current_user.username }}!</h1>
+            <p class="lead mb-4">Explore your family history and connect with relatives.</p>
+
+            {% if member %}
+                <p class="lead">Your profile: <strong>{{ member.fullName }}</strong></p>
+                <a href="{{ url_for('my_profile') }}" class="btn btn-lg btn-primary mb-3">View My Profile</a>
+            {% else %}
+                <p class="lead">It looks like you haven't added your personal details yet.</p>
+                <a href="{{ url_for('add_my_details') }}" class="btn btn-lg btn-warning mb-3">Add My Details</a>
+            {% endif %}
+
+            {# Removed redundant "View All Members" and "Messages" buttons #}
+            {# These are now in the main navigation bar (base.html) #}
+            {#
+            <div class="d-flex flex-column flex-md-row justify-content-center gap-3 mt-4">
+                <a href="{{ url_for('list_members') }}" class="btn btn-lg btn-outline-light">View All Members</a>
+                <a href="{{ url_for('inbox') }}" class="btn btn-lg btn-outline-light">
+                    Messages
+                    {% if unread_messages_count > 0 %}
+                        <span class="badge bg-danger rounded-pill ms-2">{{ unread_messages_count }}</span>
+                    {% endif %}
+                </a>
+            </div>
+            #}
+
+            {% if current_user.is_admin %}
+                <div class="mt-4">
+                    <a href="{{ url_for('admin_manage_users') }}" class="btn btn-lg btn-outline-info">Admin Panel</a>
+                </div>
+            {% endif %}
+        {% else %}
+            <h1 class="display-4 mb-3">Welcome to the Family Tree App</h1>
+            <p class="lead mb-4">Connect with your family, explore your lineage, and share memories.</p>
+            <a href="{{ url_for('login') }}" class="btn btn-lg btn-primary me-2">Login</a>
+            <a href="{{ url_for('register') }}" class="btn btn-lg btn-secondary">Register</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

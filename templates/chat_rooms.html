@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block title %}Chat Rooms{% endblock %}
+
+{% block content %}
+<div class="container mx-auto p-4 max-w-2xl">
+    <h1 class="text-3xl font-bold mb-6 text-center text-gray-800 dark:text-white">Chat Rooms</h1>
+
+    <div class="mb-6 flex justify-between items-center">
+        <a href="{{ url_for('create_chat_room') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+            Create New Chat Room
+        </a>
+    </div>
+
+    {% if chat_rooms %}
+    <div class="bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden">
+        <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for room_info in chat_rooms %}
+            <li class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-150 ease-in-out">
+                <a href="{{ url_for('chat_room', room_id=room_info.room.id) }}" class="flex items-center justify-between">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center">
+                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white truncate">
+                                {{ room_info.room.name }}
+                            </h2>
+                            {% if room_info.room.is_group_chat %}
+                                <span class="ml-2 px-2 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-200">Group</span>
+                            {% endif %}
+                        </div>
+                        {% if room_info.last_message %}
+                        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1 truncate">
+                            {{ room_info.last_message.content }}
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {{ moment(room_info.last_message.timestamp).fromNow() }}
+                        </p>
+                        {% else %}
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">No messages yet.</p>
+                        {% endif %}
+                    </div>
+                    {% if room_info.unread_count > 0 %}
+                    <span class="ml-4 flex-shrink-0 bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full">
+                        {{ room_info.unread_count }}
+                    </span>
+                    {% endif %}
+                    <svg class="ml-4 h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% else %}
+    <p class="text-center text-gray-600 dark:text-gray-400">You haven't joined or created any chat rooms yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

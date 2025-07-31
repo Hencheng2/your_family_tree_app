@@ -1,0 +1,417 @@
+{% extends 'base.html' %}
+
+{% block title %}Chat with Admin AI{% endblock %}
+
+{% block content %}
+<style>
+    /* Main chat container: Fixed position to fit screen */
+    .chat-container {
+        display: flex;
+        flex-direction: column; /* Stack header, messages, input vertically */
+
+        /* Position fixed to fill the screen below the navbar */
+        position: fixed;
+        top: 60px; /* Adjust this value if your navbar height is different */
+        left: 0;
+        right: 0;
+        bottom: 0; /* Extend to the very bottom of the viewport */
+
+        max-width: 800px; /* Max width for desktop */
+        width: 100%; /* Ensure it takes full width on smaller screens */
+        margin: 0 auto; /* Center the container horizontally on wider screens */
+
+        border-radius: 0; /* Remove border-radius for full screen fit */
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        background-color: var(--card-bg);
+        overflow: hidden; /* Hide scrollbars for the container itself */
+        z-index: 1020; /* Ensure it's above other page content, but below navbar (1030) */
+
+        /* Background image styling */
+        background-size: cover;
+        background-position: center;
+        background-attachment: scroll; /* Kept as scroll for WhatsApp-like behavior */
+        {% if g.user_chat_background %}
+            background-image: url('/{{ g.user_chat_background }}');
+        {% else %}
+            background-image: url('{{ url_for('static', filename='img/default_chat_bg.jpg') }}');
+        {% endif %}
+    }
+
+    /* Chat Header: Fixed at top of chat container, doesn't scroll */
+    .chat-header {
+        background-color: var(--header-bg);
+        color: var(--header-text);
+        padding: 15px;
+        text-align: center;
+        font-size: 1.2em;
+        font-weight: bold;
+        border-bottom: 1px solid var(--card-border);
+        flex-shrink: 0; /* Prevents header from shrinking */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative; /* For back arrow positioning */
+        z-index: 2; /* Ensure header is above chat messages */
+    }
+    .chat-header a {
+        position: absolute;
+        left: 15px;
+        color: white;
+        text-decoration: none;
+    }
+
+    /* Chat Messages: Takes up remaining space and is scrollable */
+    .chat-messages {
+        flex-grow: 1; /* Messages take all available space */
+        padding: 15px;
+        overflow-y: auto; /* THIS IS THE KEY: Makes only messages scrollable */
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 1; /* Ensure messages are above background image, below header */
+    }
+    .message-bubble {
+        max-width: 80%;
+        word-wrap: break-word;
+        border-radius: 15px;
+        padding: 10px 15px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .message-bubble.sent {
+        align-self: flex-end;
+        background-color: #28a745; /* Green for sent */
+        color: white;
+        border-bottom-right-radius: 5px;
+    }
+    .message-bubble.received {
+        align-self: flex-start;
+        background-color: #e9ecef; /* Light gray for received */
+        color: #343a40;
+        border-bottom-left-radius: 5px;
+    }
+    .message-time {
+        font-size: 0.75em;
+        margin-top: 5px;
+        opacity: 0.8;
+    }
+    .loading-spinner {
+        display: none; /* Hidden by default */
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+        margin-left: 10px;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Chat Input Area: Fixed at bottom of chat container, doesn't scroll */
+    .chat-input-area {
+        flex-shrink: 0; /* Prevents input area from shrinking */
+        padding: 10px;
+        background-color: var(--card-bg);
+        border-top: 1px solid var(--card-border);
+        z-index: 2; /* Ensure input area is above chat messages */
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .chat-input-area .input-group {
+        flex-grow: 1; /* Text input and send button take up available space */
+        display: flex;
+        align-items: center;
+    }
+    .chat-input-area .form-control {
+        flex-grow: 1; /* Text input expands */
+        padding: 10px 15px;
+        border: 1px solid var(--input-border);
+        border-radius: 25px; /* More rounded input */
+        box-sizing: border-box;
+        background-color: var(--background-color);
+        color: var(--text-color);
+    }
+    .chat-input-area .btn {
+        background-color: var(--button-bg);
+        color: var(--button-text);
+        border: none;
+        border-radius: 50%; /* Circular buttons */
+        width: 45px; /* Fixed width for icon buttons */
+        height: 45px; /* Fixed height for icon buttons */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0; /* Prevent buttons from shrinking */
+        padding: 0; /* Remove default padding from buttons */
+    }
+    .chat-input-area .btn:hover {
+        opacity: 0.9;
+    }
+
+    /* Responsive adjustments for smaller screens */
+    @media (max-width: 600px) {
+        .chat-container {
+            border-radius: 0; /* No border-radius on small screens */
+        }
+        .chat-messages {
+            padding: 10px;
+        }
+        .message-bubble {
+            max-width: 90%;
+        }
+        .chat-input-area {
+            padding: 10px;
+        }
+    }
+</style>
+
+<div class="chat-container">
+    <div class="chat-header">
+        <a href="{{ url_for('inbox') }}" class="text-white"><i class="fas fa-arrow-left fa-lg"></i></a>
+        <h4 class="mb-0 flex-grow-1">{{ other_user.originalName }} ({{ other_user.username }})</h4>
+    </div>
+
+    <div class="chat-messages" id="chatMessages">
+        {# Chat messages will be dynamically loaded here by JavaScript #}
+        <div class="text-center text-muted small my-2" id="initialLoadingMessage">
+            <span class="badge bg-secondary text-white">Loading chat history...</span>
+        </div>
+    </div>
+
+    <div class="chat-input-area">
+        <form id="aiMessageForm" class="input-group">
+            <input type="text" class="form-control" placeholder="Type your message to Admin AI..." id="ai_message_body" autocomplete="off">
+            <button type="submit" class="btn btn-primary" id="aiSendBtn">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+            <div class="loading-spinner" id="aiLoadingSpinner"></div>
+        </form>
+    </div>
+</div>
+
+<script type="module">
+    // Import the functions you need from the Firebase SDKs
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Global variables from Flask context processor
+    const CANVAS_APP_ID = "{{ canvas_app_id }}";
+    const INITIAL_AUTH_TOKEN = "{{ initial_auth_token }}";
+    const FIREBASE_CONFIG = JSON.parse('{{ firebase_config_json | tojson | safe }}');
+    const CURRENT_USER_ID = "{{ current_user.id }}";
+    const AI_USER_ID = "{{ other_user.id }}"; // This is the AI's user ID from Flask
+
+    let db;
+    let auth;
+    let currentUserFirebaseId = null; // This will be the Firebase Auth UID
+
+    document.addEventListener('DOMContentLoaded', async function() {
+        const chatMessages = document.getElementById('chatMessages');
+        const aiMessageForm = document.getElementById('aiMessageForm');
+        const aiMessageInput = document.getElementById('ai_message_body');
+        const aiSendBtn = document.getElementById('aiSendBtn');
+        const aiLoadingSpinner = document.getElementById('aiLoadingSpinner');
+        const initialLoadingMessage = document.getElementById('initialLoadingMessage');
+
+        // Initialize Firebase
+        try {
+            const app = initializeApp(FIREBASE_CONFIG);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            console.log("Firebase app and services initialized.");
+        } catch (error) {
+            console.error("Error initializing Firebase:", error);
+            initialLoadingMessage.className = 'alert alert-danger';
+            initialLoadingMessage.innerHTML = 'Failed to initialize chat service. Check console for details.';
+            aiSendBtn.disabled = true;
+            return; // Stop execution if Firebase fails to initialize
+        }
+
+        // Firebase Authentication
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUserFirebaseId = user.uid;
+                console.log("Firebase user authenticated:", currentUserFirebaseId);
+                setupFirestoreListener();
+            } else {
+                console.log("No Firebase user, attempting sign-in...");
+                try {
+                    if (INITIAL_AUTH_TOKEN) {
+                        await signInWithCustomToken(auth, INITIAL_AUTH_TOKEN);
+                        console.log("Signed in with custom token.");
+                    } else {
+                        await signInAnonymously(auth);
+                        console.log("Signed in anonymously.");
+                    }
+                    currentUserFirebaseId = auth.currentUser.uid; // Get UID after successful sign-in
+                    setupFirestoreListener();
+                } catch (error) {
+                    console.error("Error signing in to Firebase:", error);
+                    initialLoadingMessage.className = 'alert alert-danger';
+                    initialLoadingMessage.innerHTML = 'Failed to authenticate with chat service. Please try again later.';
+                    aiSendBtn.disabled = true;
+                }
+            }
+        });
+
+        function appendMessage(text, type, timestamp = new Date()) {
+            const messageBubble = document.createElement('div');
+            messageBubble.className = `message-bubble ${type} p-2 rounded-lg mb-2 shadow-sm`;
+
+            // Format timestamp using moment.js (available via base.html)
+            const formattedTime = moment(timestamp).fromNow();
+
+            messageBubble.innerHTML = `
+                ${text}
+                <div class="message-time text-end text-muted small mt-1">${formattedTime}</div>
+            `;
+            chatMessages.appendChild(messageBubble);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        let isFirstSnapshot = true; // Flag to handle initial clearing of messages
+
+        function setupFirestoreListener() {
+            // Firestore collection path for this specific user's conversation with AI
+            // Note: CURRENT_USER_ID and AI_USER_ID are Flask user IDs, not Firebase UIDs.
+            // The Firestore path uses the Flask user IDs as part of the document path.
+            const chatCollectionPath = `artifacts/${CANVAS_APP_ID}/users/${CURRENT_USER_ID}/conversations/${AI_USER_ID}/messages`;
+            console.log("Setting up Firestore listener for path:", chatCollectionPath);
+
+            const q = query(collection(db, chatCollectionPath), orderBy("timestamp"));
+
+            onSnapshot(q, (snapshot) => {
+                if (isFirstSnapshot) {
+                    chatMessages.innerHTML = ''; // Clear initial loading message
+                    isFirstSnapshot = false;
+                    console.log("Initial snapshot received. Clearing messages and rendering history.");
+                    if (snapshot.empty) {
+                        appendMessage("No messages yet. Start a conversation!", 'received', new Date());
+                    }
+                }
+
+                snapshot.docChanges().forEach((change) => {
+                    const messageData = change.doc.data();
+                    const messageId = change.doc.id;
+                    console.log("Firestore change:", change.type, messageData);
+
+                    // Prevent re-adding messages that are already there, especially if a full re-render is not desired
+                    // For simplicity, we'll just check if it's an 'added' type and add if not already present.
+                    // For 'modified' (e.g., streaming AI response), you'd update content.
+                    if (change.type === "added") {
+                        if (!document.getElementById(`msg-${messageId}`)) { // Check if element already exists
+                            const senderId = messageData.senderId;
+                            const messageText = messageData.message;
+                            const timestamp = messageData.timestamp ? messageData.timestamp.toDate() : new Date(); // Convert Firestore Timestamp to JS Date
+                            const isAI = messageData.isAI;
+
+                            let messageType = 'received';
+                            if (String(senderId) === String(CURRENT_USER_ID)) {
+                                messageType = 'sent';
+                            } else if (isAI) {
+                                messageType = 'received'; // AI messages are received by the human user
+                            }
+
+                            const messageBubble = document.createElement('div');
+                            messageBubble.id = `msg-${messageId}`; // Assign ID for future updates/checks
+                            messageBubble.className = `message-bubble ${messageType} p-2 rounded-lg mb-2 shadow-sm`;
+
+                            const formattedTime = moment(timestamp).fromNow();
+                            messageBubble.innerHTML = `
+                                ${messageText}
+                                <div class="message-time text-end text-muted small mt-1">${formattedTime}</div>
+                            `;
+                            chatMessages.appendChild(messageBubble);
+                            chatMessages.scrollTop = chatMessages.scrollHeight; // Scroll to new message
+                        }
+                    }
+                    // If you need to handle real-time updates (e.g., AI streaming), you'd add:
+                    // else if (change.type === "modified") {
+                    //     let existing = document.getElementById(`msg-${messageId}`);
+                    //     if (existing) {
+                    //         existing.querySelector('.message-content').innerText = messageData.message; // Assuming a content class
+                    //         existing.querySelector('.message-time').innerText = moment(messageData.timestamp.toDate()).fromNow();
+                    //     }
+                    // }
+                });
+            }, (error) => {
+                console.error("Error listening to Firestore:", error);
+                initialLoadingMessage.className = 'alert alert-danger';
+                initialLoadingMessage.innerHTML = 'Failed to load chat history. Please check console for details.';
+            });
+        }
+
+        // Send message to AI
+        aiMessageForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const messageText = aiMessageInput.value.trim();
+
+            if (!messageText) {
+                return; // Don't send empty messages
+            }
+
+            if (!currentUserFirebaseId) {
+                console.error("Firebase user not authenticated yet. Cannot send message.");
+                appendMessage("Error: Not authenticated with chat service. Please refresh.", 'received');
+                return;
+            }
+
+            aiSendBtn.disabled = true;
+            aiLoadingSpinner.style.display = 'inline-block';
+            aiMessageInput.value = ''; // Clear input immediately
+
+            try {
+                const response = await fetch('/api/send_ai_message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: messageText,
+                        humanUserId: CURRENT_USER_ID // Pass the Flask user ID
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to get AI response from server.');
+                }
+
+                console.log("AI response process initiated by server. Response:", data.response);
+                // The actual AI response message will be added to UI via Firestore listener
+            } catch (error) {
+                console.error("Error sending message to AI:", error);
+                // Display error to user
+                const errorBubble = document.createElement('div');
+                errorBubble.className = 'message-bubble received bg-danger text-white p-2 rounded-lg mb-2 shadow-sm me-auto';
+                errorBubble.innerHTML = `Error: ${error.message}`;
+                chatMessages.appendChild(errorBubble);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            } finally {
+                aiSendBtn.disabled = false;
+                aiLoadingSpinner.style.display = 'none';
+            }
+        });
+
+        // Auto-hide flash messages (from base.html, but re-applying for robustness)
+        const flashMessages = document.querySelectorAll('.alert-container .alert');
+        flashMessages.forEach(function(flash) {
+            setTimeout(function() {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s ease-out';
+                setTimeout(function() {
+                    flash.remove();
+                }, 500);
+            }, 5000);
+        });
+    });
+</script>
+{% endblock %}
+
+{% block footer %}{% endblock %}

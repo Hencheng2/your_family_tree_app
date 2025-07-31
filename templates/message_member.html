@@ -1,0 +1,382 @@
+{% extends 'base.html' %}
+
+{% block title %}Start New Conversation{% endblock %}
+
+{% block content %}
+<style>
+    /* Ensure HTML and Body take full height and manage overflow */
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden; /* Crucial: Prevents main body scroll */
+    }
+
+    body {
+        display: flex; /* Use flexbox for main body layout */
+        flex-direction: column; /* Stack children vertically */
+        min-height: 100vh; /* Ensure body takes full viewport height */
+        background-color: var(--background-color); /* Match background */
+        color: var(--text-color); /* Match text color */
+    }
+
+    /* Fixed Header Container for this page (Title + Search) */
+    .fixed-message-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background-color: var(--background-color); /* Match page background */
+        color: var(--text-color);
+        padding: 15px 20px;
+        box-shadow: none;
+        border: none;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding-top: 70px; /* Space for the main navbar */
+        padding-bottom: 15px; /* Padding below search input */
+        min-height: 140px; /* Adjusted height for title, description, search */
+        justify-content: center;
+    }
+
+    .fixed-message-header h2 {
+        margin-bottom: 10px; /* Space below title */
+        font-size: 1.8em;
+    }
+    .fixed-message-header p {
+        margin-bottom: 15px; /* Space below description */
+    }
+
+    .fixed-message-header .search-input-group {
+        width: 100%;
+        max-width: 400px; /* Limit search input width */
+    }
+
+    /* NEW: Fixed AI "List Item" */
+    .fixed-ai-list-item {
+        position: fixed;
+        left: 0;
+        right: 0;
+        width: 100%;
+        background-color: var(--card-bg); /* Match card background */
+        border-bottom: 1px solid var(--card-border); /* Separator */
+        color: var(--text-color);
+        transition: background-color 0.2s ease;
+        padding: 10px 15px; /* Match list-group-item padding */
+        display: flex;
+        align-items: center;
+        text-decoration: none;
+        z-index: 999; /* Below header, above scrollable content */
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1); /* Subtle shadow */
+    }
+
+    .fixed-ai-list-item:hover {
+        background-color: var(--nav-link-hover-bg); /* Subtle hover effect */
+        cursor: pointer;
+    }
+
+    .fixed-ai-list-item .profile-pic-wrapper {
+        flex-shrink: 0;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        overflow: hidden;
+        margin-right: 15px;
+    }
+
+    .fixed-ai-list-item .profile-pic {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .fixed-ai-list-item .member-name {
+        font-weight: bold;
+        font-size: 1.1em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--text-color);
+    }
+
+    /* Main Members List Container (Scrollable) */
+    .members-list-container {
+        position: fixed; /* Make it fixed relative to viewport */
+        left: 0;
+        right: 0;
+        width: 100%;
+        background-color: var(--background-color);
+        border: none;
+        box-shadow: none;
+        overflow-y: auto; /* THIS MAKES IT SCROLLABLE */
+        box-sizing: border-box;
+        padding: 20px; /* Padding inside the scrollable area */
+        /* top and bottom will be set by JS */
+    }
+
+    /* Member List Item Styles (for the scrollable list) */
+    .list-group-item {
+        background-color: transparent;
+        border-color: transparent;
+        color: var(--text-color);
+        transition: background-color 0.2s ease;
+    }
+
+    .list-group-item:hover {
+        background-color: var(--nav-link-hover-bg);
+        cursor: pointer;
+    }
+
+    .list-group-item a.text-reset {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        height: 100%;
+        padding: 0;
+    }
+
+    .profile-pic-wrapper {
+        flex-shrink: 0;
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    .member-name {
+        font-size: 1.1em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Alert container positioning */
+    .alert-container {
+        position: fixed;
+        top: 70px; /* Below navbar */
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 600px;
+        z-index: 1050;
+        text-align: center;
+    }
+
+    /* Responsive adjustments */
+    @media (min-width: 768px) {
+        .fixed-message-header {
+            min-height: 120px; /* Adjust height for desktop */
+        }
+        .fixed-ai-list-item {
+            padding: 15px 30px; /* Adjust padding for desktop */
+        }
+        .members-list-container {
+            padding: 20px 30px;
+        }
+    }
+</style>
+
+{# Alerts will be positioned fixed, so they don't need to be in a container #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="alert-container">
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message | safe }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+{# Fixed Header Container for this page (Title + Search) #}
+<div class="fixed-message-header" id="fixedMessageHeader">
+    <h2 class="text-center">Start New Conversation</h2>
+    <p class="text-center text-muted mb-3">Choose a family member to start a new conversation.</p>
+
+    {# Search Input Field #}
+    <div class="search-input-group">
+        <input type="text" id="memberSearchInput" class="form-control" placeholder="Search by name or username...">
+    </div>
+</div>
+
+{# NEW: Fixed AI "List Item" #}
+<div class="fixed-ai-list-item" id="aiFixedListItem">
+    <a href="{{ url_for('messages_with', other_user_id=ai_user_id) }}" class="d-flex align-items-center flex-grow-1 text-decoration-none text-reset">
+        <div class="profile-pic-wrapper me-3">
+            <img src="{{ url_for('static', filename='img/ai_icon.png') }}" class="img-fluid rounded-circle" alt="Admin AI Profile Photo" style="width: 50px; height: 50px; object-fit: cover;">
+        </div>
+        <div class="member-name fw-bold">
+            Admin
+            <span class="text-muted ms-2 fw-normal">(@AdminAI)</span>
+        </div>
+    </a>
+</div>
+
+{# Main Members List Container (Scrollable) #}
+<div class="members-list-container" id="membersListContainer">
+    <div class="members-list-content"> {# New wrapper for the list #}
+        {% if messageable_members %} {# Changed to messageable_members #}
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <ul class="list-group list-group-flush" id="membersList"> {# Added ID for JS access #}
+                        {# Members will be rendered here by JavaScript #}
+                    </ul>
+                </div>
+            </div>
+        {% else %}
+            <p class="text-center text-muted mt-3">No other family members found who can be messaged.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const membersListContainer = document.getElementById('membersListContainer');
+        const fixedMessageHeader = document.getElementById('fixedMessageHeader');
+        const aiFixedListItem = document.getElementById('aiFixedListItem');
+        const footerHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--footer-height')) || 60;
+
+        function adjustLayoutPositions() {
+            if (fixedMessageHeader && aiFixedListItem && membersListContainer) {
+                const headerHeight = fixedMessageHeader.offsetHeight;
+                aiFixedListItem.style.top = `${headerHeight}px`; // Position AI item below header
+
+                const aiItemHeight = aiFixedListItem.offsetHeight;
+                membersListContainer.style.top = `${headerHeight + aiItemHeight}px`; // Position scrollable list below AI item
+                membersListContainer.style.bottom = `${footerHeight}px`; // Ensure space for footer
+            }
+        }
+
+        // Adjust on load and on window resize
+        adjustLayoutPositions();
+        window.addEventListener('resize', adjustLayoutPositions);
+
+        // --- Live Search and Filter Logic ---
+        const memberSearchInput = document.getElementById('memberSearchInput');
+        const membersListElement = document.getElementById('membersList');
+
+        // Store all members data from Jinja into a JavaScript array
+        const allMembers = [
+            {% for member in messageable_members %} {# Changed to messageable_members #}
+                {
+                    id: {{ member.id }},
+                    fullName: "{{ member.fullName | e }}",
+                    username: "{{ (member.linked_username if member.linked_username is defined else '') | e }}", {# Use linked_username #}
+                    profilePhoto: "{{ member.profilePhotoUrl | e }}", {# Use profilePhotoUrl #}
+                    detailUrl: "{{ url_for('messages_with', other_user_id=member.user_id) | e }}"
+                },
+            {% endfor %}
+        ];
+
+        // Function to render members into the list
+        function renderMembers(membersToRender) {
+            membersListElement.innerHTML = ''; // Clear current list
+
+            if (membersToRender.length === 0) {
+                membersListElement.innerHTML = `
+                    <li class="list-group-item text-center py-4 text-muted">
+                        <p class="mb-0">No matching family members found.</p>
+                    </li>
+                `;
+                return;
+            }
+
+            membersToRender.forEach(member => {
+                const listItem = document.createElement('li');
+                listItem.className = 'list-group-item d-flex align-items-center py-3 px-3';
+                listItem.innerHTML = `
+                    <a href="${member.detailUrl}" class="d-flex align-items-center flex-grow-1 text-decoration-none text-reset">
+                        <div class="profile-pic-wrapper me-3">
+                            <img src="${member.profilePhoto}" class="img-fluid rounded-circle" alt="${member.fullName} Profile Photo" style="width: 50px; height: 50px; object-fit: cover;">
+                        </div>
+                        <div class="member-name fw-bold">
+                            ${member.fullName}
+                            ${member.username ? `<span class="text-muted ms-2 fw-normal">(@${member.username})</span>` : ''}
+                        </div>
+                    </a>
+                `;
+                membersListElement.appendChild(listItem);
+            });
+        }
+
+        // Function to filter and sort members
+        function filterAndSortMembers() {
+            const searchTerm = memberSearchInput.value.toLowerCase().trim();
+
+            if (searchTerm === '') {
+                renderMembers(allMembers); // If search box is empty, show all members
+                return;
+            }
+
+            // Filter members based on search term
+            const filteredMembers = allMembers.filter(member => {
+                const fullName = member.fullName.toLowerCase();
+                const username = member.username ? member.username.toLowerCase() : '';
+                return fullName.includes(searchTerm) || username.includes(searchTerm);
+            });
+
+            // Sort members based on priority (as per your existing logic)
+            filteredMembers.sort((a, b) => {
+                const aFullName = a.fullName.toLowerCase();
+                const bFullName = b.fullName.toLowerCase();
+                const aUsername = a.username ? a.username.toLowerCase() : '';
+                const bUsername = b.username ? b.username.toLowerCase() : '';
+
+                const aFullNameStarts = aFullName.startsWith(searchTerm);
+                const bFullNameStarts = bFullName.startsWith(searchTerm);
+                const aUsernameStarts = aUsername.startsWith(searchTerm);
+                const bUsernameStarts = bUsername.startsWith(searchTerm);
+
+                // Priority 1: Full Name starts with
+                if (aFullNameStarts && !bFullNameStarts) return -1;
+                if (!aFullNameStarts && bFullNameStarts) return 1;
+
+                // Priority 2: Username starts with (if Full Name doesn't start with, or both do)
+                if (aFullNameStarts === bFullNameStarts) { // If they are equal on Priority 1
+                    if (aUsernameStarts && !bUsernameStarts) return -1;
+                    if (!aUsernameStarts && bUsernameStarts) return 1;
+                }
+
+                // Priority 3: Full Name contains
+                const aFullNameIncludes = fullName.includes(searchTerm); // Corrected variable name
+                const bFullNameIncludes = fullName.includes(searchTerm); // Corrected variable name
+                if (aFullNameIncludes && !bFullNameIncludes) return -1;
+                if (!aFullNameIncludes && bFullNameIncludes) return 1;
+
+                // Priority 4: Username contains
+                const aUsernameIncludes = username.includes(searchTerm); // Corrected variable name
+                const bUsernameIncludes = username.includes(searchTerm); // Corrected variable name
+                if (aUsernameIncludes && !bUsernameIncludes) return -1;
+                if (!aUsernameIncludes && bUsernameIncludes) return 1;
+
+                // Default: alphabetical by full name if no other criteria differentiate
+                return aFullName.localeCompare(bFullName);
+            });
+
+            renderMembers(filteredMembers);
+        }
+
+        // Event listener for input changes in the search box
+        memberSearchInput.addEventListener('input', filterAndSortMembers);
+
+        // Initial render of all members when the page loads
+        renderMembers(allMembers);
+
+        // Auto-hide flash messages (copied from base.html for consistency)
+        const flashMessages = document.querySelectorAll('.alert-container .alert');
+        flashMessages.forEach(function(flash) {
+            setTimeout(function() {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s ease-out';
+                setTimeout(function() {
+                    flash.remove();
+                }, 500);
+            }, 5000);
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,263 @@
+{% extends 'base.html' %}
+
+{% block title %}My Profile{% endblock %}
+
+{% block content %}
+<style>
+    /* Custom styles for my_profile page (similar to member_detail) */
+    body {
+        /* Ensure body allows for scrolling content below fixed header */
+        padding-top: 0; /* Reset base.html padding-top as we'll handle it here */
+        padding-bottom: var(--footer-height); /* Ensure space for fixed footer */
+    }
+
+    .fixed-profile-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background-color: var(--background-color); /* Match page background */
+        color: var(--text-color);
+        padding: 15px 20px; /* Adjust padding as needed */
+        box-shadow: none; /* No shadow */
+        border: none; /* No border */
+        z-index: 1000; /* Ensure it's above scrollable content */
+        display: flex;
+        flex-direction: column; /* Stack elements vertically within header */
+        align-items: center; /* Center horizontally */
+        justify-content: space-between; /* Push content to top, buttons to bottom */
+        text-align: center;
+        padding-top: 70px; /* Space for the main navbar */
+        padding-bottom: 15px; /* Padding below buttons */
+        min-height: 150px; /* Adjusted min-height for mobile as buttons are removed */
+    }
+
+    .fixed-profile-header .profile-info-top {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%; /* Take full width of its parent */
+        margin-bottom: 0; /* No margin-bottom as buttons are removed */
+    }
+
+    .fixed-profile-header .profile-photo-wrapper {
+        margin-bottom: 10px; /* Space between photo and name */
+    }
+
+    .fixed-profile-header .profile-photo {
+        width: 100px; /* Adjust size for fixed header */
+        height: 100px;
+        object-fit: cover;
+        border-radius: 50%;
+        border: 2px solid var(--primary-color); /* Small border for emphasis */
+    }
+
+    .fixed-profile-header .profile-name {
+        font-size: 1.5em; /* Larger name */
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+
+    .fixed-profile-header .profile-association {
+        font-size: 0.9em;
+        color: var(--secondary-color);
+        margin-bottom: 0; /* No bottom margin here, controlled by parent */
+    }
+
+    /* Removed .profile-buttons-bottom as it's no longer needed here */
+
+    .scrollable-content {
+        /* Adjusted margin-top to clear the fixed header.
+            This value should be slightly more than the fixed-profile-header's height. */
+        margin-top: 220px; /* Adjusted for smaller fixed header */
+        padding-top: 20px; /* Padding inside scrollable content */
+        background-color: transparent; /* Transparent background */
+        border: none; /* No border */
+        box-shadow: none; /* No shadow */
+        min-height: calc(100vh - 220px - var(--footer-height)); /* Adjust to fill remaining viewport height, considering fixed footer */
+        padding-bottom: 20px; /* Add some padding before footer */
+    }
+
+    .scrollable-content .card {
+        background-color: transparent; /* Make inner cards transparent too */
+        border: none;
+        box-shadow: none;
+    }
+
+    .scrollable-content .card-body {
+        padding: 0; /* Remove default padding from inner card body if needed */
+    }
+
+    /* Adjust alert container position */
+    .alert-container {
+        top: 220px; /* Position below the fixed header (adjusted) */
+    }
+
+    /* Responsive adjustments */
+    @media (min-width: 768px) { /* Medium devices and up */
+        .fixed-profile-header {
+            flex-direction: row; /* Align horizontally on larger screens */
+            justify-content: center; /* Center content horizontally */
+            align-items: center;
+            padding-left: 20px;
+            padding-right: 20px;
+            padding-top: 70px; /* Maintain space for main navbar */
+            height: 150px; /* Fixed height for desktop header */
+            min-height: unset; /* Remove min-height override */
+        }
+
+        .fixed-profile-header .profile-info-top {
+            flex-direction: row; /* Align photo and text horizontally */
+            align-items: center;
+            text-align: left;
+            width: auto; /* Allow content to dictate width */
+            margin-bottom: 0; /* Remove bottom margin */
+        }
+
+        .fixed-profile-header .profile-photo-wrapper {
+            margin-bottom: 0;
+            margin-right: 20px; /* Space between photo and text */
+        }
+
+        .fixed-profile-header .profile-name {
+            margin-bottom: 0; /* Remove bottom margin */
+        }
+        .fixed-profile-header .profile-association {
+            margin-bottom: 0; /* Remove bottom margin */
+            margin-left: 10px; /* Space between name and association */
+        }
+
+        /* Removed .profile-buttons-bottom responsive styles */
+
+        .scrollable-content {
+            margin-top: 150px; /* Adjust margin-top for desktop header height */
+            min-height: calc(100vh - 150px - var(--footer-height)); /* Adjust for desktop header height */
+        }
+        .alert-container {
+            top: 150px; /* Adjust for desktop fixed header height */
+        }
+    }
+</style>
+
+{# Fixed Header Container #}
+<div class="fixed-profile-header">
+    <div class="profile-info-top">
+        <div class="profile-photo-wrapper">
+            {% if member.profilePhoto %}
+                <img src="/{{ member.profilePhoto }}" alt="{{ member.fullName }} Profile Photo" class="profile-photo">
+            {% else %}
+                <img src="{{ url_for('static', filename='img/default_profile.png') }}" alt="Default Profile" class="profile-photo">
+            {% endif %}
+        </div>
+        <div>
+            <h2 class="profile-name">{{ member.fullName }}</h2>
+            <p class="profile-association">My Family Profile</p>
+        </div>
+    </div>
+    {# All Buttons (Edit, Settings, Video Status) have been moved out of this page #}
+</div>
+
+{# Scrollable Content Container #}
+<div class="container scrollable-content">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card p-4"> {# Removed shadow here, will be transparent #}
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div class="alert-container mb-3">
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }}">{{ message | safe }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                <div class="mb-4">
+                    <p class="lead">
+                        <strong>{{ member.fullName }}</strong> is a {{ member.association | lower }}.
+                        {% set pronoun_subject = "He" if member.gender == 'Male' else "She" if member.gender == 'Female' else "They" %}
+                        {% set pronoun_possessive = "His" if member.gender == 'Male' else "Her" if member.gender == 'Female' else "Their" %}
+                        {% set pronoun_object = "him" if member.gender == 'Male' else "her" if member.gender == 'Female' else "them" %}
+
+                        {% if member.gender %}
+                            {{ pronoun_subject }} is {% if member.maritalStatus == 'Single' %}single{% elif member.maritalStatus == 'Engaged' %}engaged{% else %}married{% endif %}.
+                        {% else %}
+                            This member is {% if member.maritalStatus == 'Single' %}single{% elif member.maritalStatus == 'Engaged' %}engaged{% else %}married{% endif %}.
+                        {% endif %}
+
+                        {% if member.maritalStatus != 'Single' and member.maritalStatus != 'Engaged' and member.spouseNames %}
+                            {{ pronoun_possessive }} spouse(s) include {{ member.spouseNames }}.
+                        {% elif member.maritalStatus == 'Engaged' and member.spouseNames %}
+                        {% if member.gender == 'Male' %}
+                            {{ pronoun_possessive }} girlfriend is {{ member.spouseNames }}.
+                        {% elif member.gender == 'Female' %}
+                            {{ pronoun_possessive }} boyfriend is {{ member.spouseNames }}.
+                        {% else %} {# For 'Other' or undefined gender #}
+                            {{ pronoun_possessive }} fiance(e) is {{ member.spouseNames }}.
+                        {% endif %}
+                        {% endif %}
+
+                        {% if member.childrenNames %}
+                            {{ pronoun_subject }} ha{{ "s" if pronoun_subject == "He" or pronoun_subject == "She" else "ve" }} children:
+                            <ul class="list-unstyled ms-3 mt-1"> {# Use list-unstyled for no bullets, or remove for default bullets #}
+                                {% for child_name in member.childrenNames.split(',') %}
+                                    {% if child_name.strip() %} {# Ensure no empty list items from extra commas #}
+                                        <li><i class="fas fa-child me-2"></i>{{ child_name.strip() }}</li>
+                                    {% endif %}
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+
+                        {% if member.dateOfBirth %}
+                            Born on {{ member.dateOfBirth }}.
+                        {% endif %}
+
+                        {% if member.schoolName %}
+                            {{ pronoun_subject }} attends {{ member.schoolName }}.
+                        {% endif %}
+
+                        {% if member.whereabouts %}
+                            Currently residing in {{ member.whereabouts }}.
+                        {% endif %}
+
+                        {% if member.contact %}
+                            You can be reached at {{ member.contact }}.
+                        {% endif %}
+
+                        {% if member.bio %}
+                            <br><br>
+                            <strong>Biography:</strong> {{ member.bio }}
+                        {% endif %}
+
+                        {% if member.personalRelationshipDescription %}
+                            <br><br>
+                            <strong>Say more about yourself so that people can recognize you better:</strong> {{ member.personalRelationshipDescription }}
+                        {% endif %}
+                    </p>
+                </div>
+
+                {# Video Status Section - No longer displayed here #}
+
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Video Upload Modal (removed from here, will be in status_feed.html) #}
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Auto-hide flash messages
+        const flashMessages = document.querySelectorAll('.flash');
+        flashMessages.forEach(function(flash) {
+            setTimeout(function() {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s ease-out';
+                setTimeout(function() {
+                    flash.remove();
+                }, 500);
+            }, 5000);
+        });
+    });
+</script>
+{% endblock %}

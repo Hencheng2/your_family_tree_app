@@ -1,0 +1,388 @@
+{% extends 'base.html' %}
+
+{% block title %}
+    {% if member %}Edit My Details{% else %}Add My Personal Details{% endif %}
+{% endblock %}
+
+{% block content %}
+<style>
+    /* Ensure HTML and Body take full height and manage overflow */
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden; /* Crucial: Prevents main body scroll */
+    }
+
+    body {
+        display: flex; /* Use flexbox for main body layout */
+        flex-direction: column; /* Stack children vertically */
+        min-height: 100vh; /* Ensure body takes full viewport height */
+        background-color: var(--background-color); /* Match background */
+        color: var(--text-color); /* Match text color */
+    }
+
+    /* Main form container is no longer the primary layout manager,
+       but still holds the data and submit method. */
+    form {
+        height: 100%; /* Take full height to contain its children logically */
+        display: block; /* No longer flex container for main layout */
+    }
+
+    /* Fixed Top Title Container */
+    .fixed-top-title-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background-color: var(--background-color); /* Match page background */
+        color: var(--text-color);
+        padding: 8px 20px; /* Reduced vertical padding */
+        box-shadow: none; /* No shadow */
+        border: none; /* No border */
+        z-index: 1000; /* Ensure it's above other content */
+        display: flex;
+        flex-direction: column; /* Stack title and photo vertically on mobile */
+        align-items: center;
+        text-align: center;
+        padding-top: 70px; /* Space for main navbar */
+        padding-bottom: 8px; /* Reduced padding below content */
+        border-bottom: 1px solid var(--card-border); /* Separator */
+        box-sizing: border-box; /* Include padding in width/height */
+    }
+
+    .fixed-top-title-container h2 {
+        margin-bottom: 6px; /* Reduced space between title and photo */
+        font-size: 1.5em; /* Reduced font size for title */
+    }
+
+    .fixed-top-title-container .profile-photo-top-preview {
+        display: flex;
+        flex-direction: column; /* Stack photo and text */
+        align-items: center;
+        margin-bottom: 0;
+    }
+
+    .fixed-top-title-container .profile-photo-top-preview img {
+        width: 55px; /* Further reduced photo size */
+        height: 55px;
+        object-fit: cover;
+        border-radius: 50%;
+        border: 2px solid var(--primary-color);
+        margin-bottom: 2px; /* Reduced space between photo and text */
+    }
+    .fixed-top-title-container .profile-photo-top-preview p {
+        font-size: 0.75em; /* Even smaller text for photo info */
+        margin-bottom: 0;
+    }
+    .fixed-top-title-container .profile-photo-top-preview a {
+        font-size: 0.75em; /* Even smaller link text */
+    }
+
+    /* Fixed Bottom Upload/Submit Container */
+    .fixed-bottom-upload-submit-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background-color: var(--background-color);
+        color: var(--text-color);
+        padding: 10px 20px; /* Vertical padding */
+        box-shadow: none;
+        border: none;
+        z-index: 1010; /* Above footer */
+        border-top: 1px solid var(--card-border);
+        display: flex;
+        flex-direction: column; /* Stack on mobile */
+        align-items: center;
+        text-align: center;
+        padding-bottom: calc(10px + var(--footer-height)); /* Padding + footer height */
+        box-sizing: border-box;
+    }
+
+    .fixed-bottom-upload-submit-container .form-group-bottom {
+        display: flex;
+        flex-direction: column; /* Stack on mobile */
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        max-width: 600px;
+    }
+
+    .fixed-bottom-upload-submit-container .form-label,
+    .fixed-bottom-upload-submit-container .form-check-label,
+    .fixed-bottom-upload-submit-container .form-text {
+        font-size: 0.85em; /* Slightly smaller font for labels/text in bottom section */
+    }
+
+    .fixed-bottom-upload-submit-container .btn {
+        width: 100%; /* Full width on mobile */
+        padding: 7px 10px; /* Further reduced button padding */
+        border-radius: 8px;
+        font-size: 0.85em; /* Further reduced button font size */
+    }
+
+    /* Fixed Middle Container (now positioned absolutely/fixed and scrollable) */
+    .scrollable-form-content-container {
+        position: fixed; /* Make it fixed */
+        left: 0;
+        right: 0;
+        width: 100%; /* Ensure it spans full width */
+        background-color: transparent;
+        border: none;
+        box-shadow: none;
+        overflow-y: auto; /* THIS MAKES IT SCROLLABLE */
+        box-sizing: border-box;
+        /* top and bottom will be set by JS */
+        padding: 20px; /* Padding inside the scrollable area */
+    }
+
+    /* General card styling (for the inner card in scrollable content) */
+    .card {
+        background-color: transparent;
+        border: none;
+        box-shadow: none;
+    }
+
+    /* Alert container inside scrollable content */
+    .alert-container {
+        position: relative; /* Flows normally within its parent */
+        top: unset;
+        left: unset;
+        transform: none;
+        width: 100%;
+        max-width: unset;
+        z-index: unset;
+        text-align: center;
+        margin-bottom: 15px;
+    }
+
+    /* Responsive adjustments */
+    @media (min-width: 768px) {
+        .fixed-top-title-container {
+            flex-direction: row; /* Align title and photo horizontally */
+            justify-content: center;
+            align-items: center;
+            padding-top: 70px;
+            padding-bottom: 10px;
+        }
+        .fixed-top-title-container h2 {
+            margin-bottom: 0;
+            margin-right: 20px;
+        }
+        .fixed-top-title-container .profile-photo-top-preview {
+            flex-direction: row;
+            align-items: center;
+            margin-bottom: 0;
+        }
+        .fixed-top-title-container .profile-photo-top-preview img {
+            margin-bottom: 0;
+            margin-right: 10px;
+        }
+
+        .fixed-bottom-upload-submit-container {
+            flex-direction: row; /* Align items horizontally */
+            justify-content: center;
+            align-items: center;
+            padding-bottom: calc(10px + var(--footer-height));
+        }
+        .fixed-bottom-upload-submit-container .form-group-bottom {
+            flex-direction: row; /* Buttons side-by-side on desktop */
+            justify-content: center;
+            align-items: center;
+            gap: 15px; /* Slightly more gap on desktop */
+        }
+        .fixed-bottom-upload-submit-container .btn {
+            width: auto; /* Buttons take natural width on desktop */
+        }
+    }
+</style>
+
+{# Fixed Top Container: Page Title and Profile Photo Preview #}
+<div class="fixed-top-title-container" id="fixedTopTitleContainer">
+    <h2 class="card-title text-center">
+        {% if member %}Edit Details for {{ member.fullName }}{% else %}Add My Personal Details{% endif %}
+    </h2>
+    <div class="profile-photo-top-preview">
+        {% if member and member.profilePhoto %}
+            <img src="/{{ member.profilePhoto }}" alt="Current Profile Photo">
+            <p class="text-muted small mt-1 mb-0">Current Photo: <a href="/{{ member.profilePhoto }}" target="_blank">View</a></p>
+        {% else %}
+            <img src="{{ url_for('static', filename='img/default_profile.png') }}" alt="Default Profile Photo">
+            <p class="text-muted small mt-1 mb-0">No Photo</p>
+        {% endif %}
+    </div>
+</div>
+
+{# The entire form is now wrapped in one <form> tag #}
+<form method="POST" enctype="multipart/form-data">
+    {# Fixed Middle Container (now positioned absolutely/fixed and scrollable) #}
+    <div class="container scrollable-form-content-container" id="scrollableFormContentContainer">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card p-4"> {# Card for styling, but transparent #}
+                    {# Moved alert-container inside scrollable content #}
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            <div class="alert-container mb-3">
+                                {% for category, message in messages %}
+                                    <div class="alert alert-{{ category }}">{{ message | safe }}</div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    {% endwith %}
+
+                    {# All form fields go here #}
+                    <div class="mb-3">
+                        <label for="fullName" class="form-label">Full Name</label>
+                        <input type="text" class="form-control" id="fullName" name="fullName" required value="{{ member.fullName if member else form_data.fullName if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="dateOfBirth" class="form-label">Date of Birth</label>
+                        <input type="date" class="form-control" id="dateOfBirth" name="dateOfBirth" value="{{ member.dateOfBirth if member else form_data.dateOfBirth if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="gender" class="form-label">Gender</label>
+                        <select class="form-select" id="gender" name="gender" required>
+                            <option value="">Select Gender</option>
+                            <option value="Male" {% if member and member.gender == 'Male' %}selected{% elif form_data and form_data.gender == 'Male' %}selected{% endif %}>Male</option>
+                            <option value="Female" {% if member and member.gender == 'Female' %}selected{% elif form_data and form_data.gender == 'Female' %}selected{% endif %}>Female</option>
+                            <option value="Other" {% if member and member.gender == 'Other' %}selected{% elif form_data and form_data.gender == 'Other' %}selected{% endif %}>Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="association" class="form-label">Your Relationship to Raphael Nyanga</label>
+                        <select class="form-select" id="association" name="association" required>
+                            <option value="">Select Relationship</option>
+                            <option value="Son of Raphael Nyanga" {% if member and member.association == 'Son of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Son of Raphael Nyanga' %}selected{% endif %}>Son of Raphael Nyanga</option>
+                            <option value="Daughter of Raphael Nyanga" {% if member and member.association == 'Daughter of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Daughter of Raphael Nyanga' %}selected{% endif %}>Daughter of Raphael Nyanga</option>
+                            <option value="Grandchild of Raphael Nyanga" {% if member and member.association == 'Grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Grandchild of Raphael Nyanga' %}selected{% endif %}>Grandchild of Raphael Nyanga</option>
+                            <option value="Great-grandchild of Raphael Nyanga" {% if member and member.association == 'Great-grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Great-grandchild of Raphael Nyanga</option>
+                            <option value="Great-great-grandchild of Raphael Nyanga" {% if member and member.association == 'Great-great-grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Great-great-grandchild of Raphael Nyanga' %}selected{% endif %}>Great-great-grandchild of Raphael Nyanga</option>
+                            <option value="Spouse of Son of Raphael Nyanga" {% if member and member.association == 'Spouse of Son of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Son of Raphael Nyanga' %}selected{% endif %}>Spouse of Son of Raphael Nyanga</option>
+                            <option value="Spouse of Daughter of Raphael Nyanga" {% if member and member.association == 'Spouse of Daughter of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Daughter of Raphael Nyanga' %}selected{% endif %}>Spouse of Daughter of Raphael Nyanga</option>
+                            <option value="Spouse of Grandchild of Raphael Nyanga" {% if member and member.association == 'Spouse of Grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Grandchild of Raphael Nyanga</option>
+                            <option value="Spouse of Great-grandchild of Raphael Nyanga" {% if member and member.association == 'Spouse of Great-grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Great-grandchild of Raphael Nyanga</option>
+                            <option value="Spouse of Great-great-grandchild of Raphael Nyanga" {% if member and member.association == 'Spouse of Great-great-grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Great-great-grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Great-great-grandchild of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Son of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Son of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Son of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Daughter of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Daughter of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Daughter of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Grandchild of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Grandchild of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Grandchild of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Great-grandchild of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Great-grandchild of Raphael Nyanga</option>
+                            <option value="Fiance(e) of Great-great-grandchild of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Great-great-grandchild of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Great-great-grandchild of Raphael Nyanga</option>
+                            <option value="Other" {% if member and member.association == 'Other' %}selected{% elif form_data and form_data.association == 'Other' %}selected{% endif %}>Other (Please specify in personal details)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="maritalStatus" class="form-label">Marital Status</label>
+                        <select class="form-select" id="maritalStatus" name="maritalStatus">
+                            <option value="Single" {% if member and member.maritalStatus == 'Single' %}selected{% elif form_data and form_data.maritalStatus == 'Single' %}selected{% endif %}>Single</option>
+                            <option value="Engaged" {% if member and member.maritalStatus == 'Engaged' %}selected{% elif form_data and form_data.maritalStatus == 'Engaged' %}selected{% endif %}>Engaged</option>
+                            <option value="Married" {% if member and member.maritalStatus == 'Married' %}selected{% elif form_data and form_data.maritalStatus == 'Married' %}selected{% endif %}>Married</option>
+                            <option value="Divorced" {% if member and member.maritalStatus == 'Divorced' %}selected{% elif form_data and form_data.maritalStatus == 'Divorced' %}selected{% endif %}>Divorced</option>
+                            <option value="Widowed" {% if member and member.maritalStatus == 'Widowed' %}selected{% elif form_data and form_data.maritalStatus == 'Widowed' %}selected{% endif %}>Widowed</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="spouseNamesField" style="display: none;">
+                        <label for="spouseNames" class="form-label">Spouse Name(s) (comma-separated)</label>
+                        <input type="text" class="form-control" id="spouseNames" name="spouseNames" value="{{ member.spouseNames if member else form_data.spouseNames if form_data else '' }}">
+                    </div>
+                    <div class="mb-3" id="girlfriendNamesField" style="display: none;">
+                        <label for="girlfriendNames" class="form-label">Fiance(e) Name(s) (comma-separated)</label>
+                        <input type="text" class="form-control" id="girlfriendNames" name="girlfriendNames" value="{{ member.spouseNames if member and member.maritalStatus == 'Engaged' else form_data.girlfriendNames if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="childrenNames" class="form-label">Children Name(s) (comma-separated)</label>
+                        <input type="text" class="form-control" id="childrenNames" name="childrenNames" value="{{ member.childrenNames if member else form_data.childrenNames if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="schoolName" class="form-label">School/University Name (if applicable)</label>
+                        <input type="text" class="form-control" id="schoolName" name="schoolName" value="{{ member.schoolName if member else form_data.schoolName if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="whereabouts" class="form-label">Current Whereabouts</label>
+                        <input type="text" class="form-control" id="whereabouts" name="whereabouts" value="{{ member.whereabouts if member else form_data.whereabouts if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="contact" class="form-label">Contact Information (phone/email, comma-separated)</label>
+                        <input type="text" class="form-control" id="contact" name="contact" value="{{ member.contact if member else form_data.contact if form_data else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="bio" class="form-label">Biography</label>
+                        <textarea class="form-control" id="bio" name="bio" rows="4">{{ member.bio if member else form_data.bio if form_data else '' }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="personalRelationshipDescription" class="form-label">Say more about yourself so that people can recognize you better</label>
+                        <textarea class="form-control" id="personalRelationshipDescription" name="personalRelationshipDescription" rows="3">{{ member.personalRelationshipDescription if member else form_data.personalRelationshipDescription if form_data else '' }}</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Fixed Bottom Upload/Submit Container #}
+    <div class="fixed-bottom-upload-submit-container" id="fixedBottomUploadSubmitContainer">
+        <div class="form-group-bottom">
+            <div class="mb-3 flex-grow-1 w-100 w-md-auto">
+                <label for="profilePhoto" class="form-label">Upload New Profile Photo</label>
+                <input type="file" class="form-control" id="profilePhoto" name="profilePhoto" accept="image/*">
+            </div>
+            <div class="mb-3 form-check flex-shrink-0">
+                <input type="checkbox" class="form-check-input" id="can_message" name="can_message" value="1" {% if member and member.can_message %}checked{% endif %}>
+                <label class="form-check-label" for="can_message">Allow others to send me messages</label>
+            </div>
+            <div class="d-flex justify-content-center gap-3 w-100"> {# This ensures buttons are side-by-side #}
+                <button type="submit" class="btn btn-primary flex-fill">
+                    {% if member %}Update Details{% else %}Add Details{% endif %}
+                </button>
+                <a href="{{ url_for('my_profile') }}" class="btn btn-secondary flex-fill">Cancel</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const maritalStatusSelect = document.getElementById('maritalStatus');
+        const spouseNamesField = document.getElementById('spouseNamesField');
+        const girlfriendNamesField = document.getElementById('girlfriendNamesField');
+
+        function toggleSpouseFields() {
+            if (maritalStatusSelect.value === 'Married' || maritalStatusSelect.value === 'Divorced' || maritalStatusSelect.value === 'Widowed') {
+                spouseNamesField.style.display = 'block';
+                girlfriendNamesField.style.display = 'none';
+            } else if (maritalStatusSelect.value === 'Engaged') {
+                spouseNamesField.style.display = 'none';
+                girlfriendNamesField.style.display = 'block';
+            } else {
+                spouseNamesField.style.display = 'none';
+                girlfriendNamesField.style.display = 'none';
+            }
+        }
+
+        maritalStatusSelect.addEventListener('change', toggleSpouseFields);
+        toggleSpouseFields(); // Initial call
+
+        // --- Dynamic positioning for the fixed middle container ---
+        const fixedTopTitleContainer = document.getElementById('fixedTopTitleContainer');
+        const scrollableContainer = document.getElementById('scrollableFormContentContainer');
+        const fixedBottomUploadSubmitContainer = document.getElementById('fixedBottomUploadSubmitContainer');
+
+        function adjustMiddleContainerPosition() {
+            if (fixedTopTitleContainer && scrollableContainer && fixedBottomUploadSubmitContainer) {
+                const topHeight = fixedTopTitleContainer.offsetHeight;
+                const bottomHeight = fixedBottomUploadSubmitContainer.offsetHeight;
+                const footerHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--footer-height')) || 60; // From base.html CSS var
+
+                // Set the top and bottom offsets for the fixed middle container
+                scrollableContainer.style.top = `${topHeight}px`;
+                scrollableContainer.style.bottom = `${bottomHeight + footerHeight}px`;
+            }
+        }
+
+        // Adjust on load and on window resize
+        adjustMiddleContainerPosition();
+        window.addEventListener('resize', adjustMiddleContainerPosition);
+    });
+</script>
+{% endblock %}
