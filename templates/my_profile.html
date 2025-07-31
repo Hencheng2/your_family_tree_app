@@ -174,6 +174,9 @@
 
                 <div class="mb-4">
                     <p class="lead">
+                        <p class="debug-info" style="color: red; background-color: yellow; padding: 5px;">
+                            DEBUG: maritalStatus="{{ member.maritalStatus }}", gender="{{ member.gender }}", spouseNames="{{ member.spouseNames }}"
+                        </p>
                         <strong>{{ member.fullName }}</strong> is a {{ member.association | lower }}.
                         {% set pronoun_subject = "He" if member.gender == 'Male' else "She" if member.gender == 'Female' else "They" %}
                         {% set pronoun_possessive = "His" if member.gender == 'Male' else "Her" if member.gender == 'Female' else "Their" %}
@@ -187,21 +190,22 @@
 
                         {# Refined logic for spouseNames based on marital status and gender #}
                         {% if member.spouseNames and member.spouseNames.strip() %}
+                            {% set spouse_name = member.spouseNames.strip() %} {# Store stripped name for cleaner use #}
                             {% if member.maritalStatus == 'Engaged' %}
                                 {% if member.gender == 'Male' %}
-                                    {{ pronoun_possessive }} girlfriend is {{ member.spouseNames }}.
+                                    {{ pronoun_possessive }} girlfriend is {{ spouse_name }}.
                                 {% elif member.gender == 'Female' %}
-                                    {{ pronoun_possessive }} boyfriend is {{ member.spouseNames }}.
+                                    {{ pronoun_possessive }} boyfriend is {{ spouse_name }}.
                                 {% else %} {# For 'Other' or undefined gender, engaged #}
-                                    {{ pronoun_possessive }} fiance(e) is {{ member.spouseNames }}.
+                                    {{ pronoun_possessive }} fiance(e) is {{ spouse_name }}.
                                 {% endif %}
                             {% elif member.maritalStatus == 'Married' %}
                                 {% if member.gender == 'Male' %}
-                                    {{ pronoun_possessive }} wife is {{ member.spouseNames }}.
+                                    {{ pronoun_possessive }} wife is {{ spouse_name }}.
                                 {% elif member.gender == 'Female' %}
-                                    {{ pronoun_possessive }} husband is {{ member.spouseNames }}.
+                                    {{ pronoun_possessive }} husband is {{ spouse_name }}.
                                 {% else %} {# For 'Other' or undefined gender, married #}
-                                    {{ pronoun_possessive }} spouse(s) include {{ member.spouseNames }}.
+                                    {{ pronoun_possessive }} spouse(s) include {{ spouse_name }}.
                                 {% endif %}
                             {% endif %}
                         {% endif %}
