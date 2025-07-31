@@ -174,9 +174,6 @@
 
                 <div class="mb-4">
                     <p class="lead">
-                        <p class="debug-info" style="color: red; background-color: yellow; padding: 5px;">
-                            DEBUG: maritalStatus="{{ member.maritalStatus }}", gender="{{ member.gender }}", spouseNames="{{ member.spouseNames }}"
-                        </p>
                         <strong>{{ member.fullName }}</strong> is a {{ member.association | lower }}.
                         {% set pronoun_subject = "He" if member.gender == 'Male' else "She" if member.gender == 'Female' else "They" %}
                         {% set pronoun_possessive = "His" if member.gender == 'Male' else "Her" if member.gender == 'Female' else "Their" %}
