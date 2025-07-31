@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Capture the Flag Game</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='games/game_style.css') }}">
+    </head>
+<body>
+    <header>
+        <h1>3D Capture the Flag</h1>
+        <p>A multiplayer zone control game.</p>
+    </header>
+
+    <main>
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="gameUI">
+            <div id="scoreBoard">
+                <p>Red Team: <span id="redScore">0</span></p>
+                <p>Blue Team: <span id="blueScore">0</span></p>
+            </div>
+            <div id="gameStatus">
+                <p>Status: <span id="statusMessage">Waiting for players...</span></p>
+            </div>
+            <button id="startGameButton" style="display:none;">Start Game</button>
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; Your Family Tree App Games</p>
+    </footer>
+
+    <script async src="https://unpkg.com/three@0.165.0/build/three.min.js"></script>
+
+    <script src="{{ url_for('static', filename='js/games.js') }}"></script>
+</body>
+</html>
