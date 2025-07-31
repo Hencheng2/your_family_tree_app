@@ -29,6 +29,7 @@
         padding-top: 70px; /* Space for main navbar */
         padding-bottom: 20px; /* Padding at the bottom of this container */
         border-bottom: 1px solid var(--card-border); /* Separator between fixed sections */
+        box-sizing: border-box; /* Include padding in width/height */
     }
 
     /* New style for the header with theme switch */
@@ -102,7 +103,7 @@
 
     /* Fixed Bottom Container for Account Actions */
     .fixed-settings-bottom-container {
-        position: fixed;
+        position: fixed; /* Keep it fixed */
         bottom: var(--footer-height); /* Position above the fixed footer */
         left: 0;
         width: 100%;
@@ -119,6 +120,7 @@
         border-top: 1px solid var(--card-border); /* Separator from scrollable content */
         padding-top: 20px;
         padding-bottom: 20px;
+        box-sizing: border-box; /* Include padding in width/height */
     }
 
     .fixed-settings-bottom-container h5 {
@@ -139,7 +141,15 @@
 
     /* Adjust content padding to avoid overlap with fixed sections */
     .content {
+        /* This padding will be dynamically set by JS to account for both fixed top and bottom */
         padding-top: 0; /* Reset base.html padding-top */
+        padding-bottom: 0; /* Reset base.html padding-bottom */
+        overflow-y: auto; /* Enable scrolling for content in between */
+        position: fixed; /* Make content fixed and scrollable */
+        left: 0;
+        right: 0;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     /* Adjust alert container position */
@@ -151,7 +161,7 @@
     @media (min-width: 768px) {
         .fixed-settings-top-container {
             padding-top: 70px; /* Maintain space for main navbar */
-            min-height: 250px; /* Adjust as needed for desktop */
+            min-height: auto; /* Allow height to adjust to content */
             justify-content: flex-start; /* Align content to top */
         }
         .fixed-settings-top-container .image-previews {
@@ -169,10 +179,13 @@
         }
 
         .fixed-settings-bottom-container {
-            position: relative; /* Make it relative on desktop, so it flows after top container */
-            border-top: none; /* No border if it's not fixed relative to viewport bottom */
-            padding-bottom: 0; /* No extra padding at bottom */
-            margin-top: 20px; /* Space from top container */
+            /* Keep fixed positioning, but ensure it's at the bottom of the viewport */
+            position: fixed;
+            bottom: var(--footer-height);
+            left: 0;
+            width: 100%;
+            border-top: 1px solid var(--card-border); /* Re-add border if removed */
+            margin-top: 0; /* No extra margin */
         }
         .fixed-settings-bottom-container .btn-group {
             justify-content: center;
@@ -181,7 +194,7 @@
 </style>
 
 {# Fixed Top Container: Account Settings & Chat Background #}
-<div class="fixed-settings-top-container">
+<div class="fixed-settings-top-container" id="fixedSettingsTopContainer">
     <div class="settings-header-container">
         {# Dark Mode Switch - Far Left #}
         <div class="form-check form-switch me-auto"> {# ms-auto pushes it left #}
@@ -240,7 +253,7 @@
 </div>
 
 {# Fixed Bottom Container: Account Actions #}
-<div class="fixed-settings-bottom-container">
+<div class="fixed-settings-bottom-container" id="fixedSettingsBottomContainer">
     <h5>Account Actions</h5>
     <div class="btn-group">
         {# Edit My Details button - NEW LOCATION #}
@@ -297,6 +310,37 @@
                 });
             });
         }
+
+        // --- Dynamic positioning for the content area between fixed top and bottom ---
+        const fixedSettingsTopContainer = document.getElementById('fixedSettingsTopContainer');
+        const fixedSettingsBottomContainer = document.getElementById('fixedSettingsBottomContainer');
+        const contentArea = document.querySelector('.content'); // This is the block content is rendered into
+        const navbarHeight = 70; // From base.html CSS var
+
+        function adjustContentPadding() {
+            if (fixedSettingsTopContainer && fixedSettingsBottomContainer && contentArea) {
+                const topHeight = fixedSettingsTopContainer.offsetHeight;
+                const bottomHeight = fixedSettingsBottomContainer.offsetHeight;
+                const footerHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--footer-height')) || 60;
+
+                // Set padding-top of the content area to be below the fixed top container
+                // And padding-bottom to be above the fixed bottom container + footer
+                contentArea.style.paddingTop = `${topHeight}px`;
+                contentArea.style.paddingBottom = `${bottomHeight + footerHeight}px`;
+                
+                // Ensure the content area itself is not fixed, allowing it to scroll if needed
+                contentArea.style.position = 'static'; /* Reset to static or relative for normal flow */
+                contentArea.style.height = 'auto'; /* Allow height to be determined by content */
+                contentArea.style.overflowY = 'visible'; /* Allow content to overflow and body to scroll */
+            }
+        }
+
+        // Adjust on load and on window resize
+        adjustContentPadding();
+        window.addEventListener('resize', adjustContentPadding);
+
+        // Re-adjust after images load or content changes that might affect height
+        window.addEventListener('load', adjustContentPadding);
     });
 </script>
 {% endblock %}
