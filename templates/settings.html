@@ -7,8 +7,8 @@
     /* Ensure body padding for fixed elements */
     body {
         /* Reset base.html padding-top/bottom as we'll manage content area directly */
-        padding-top: 0;
-        padding-bottom: 0;
+        padding-top: 0 !important; /* Override any padding from base.html */
+        padding-bottom: 0 !important; /* Override any padding from base.html */
         overflow: hidden; /* Prevent body scroll, scrolling will be in content-wrapper */
     }
 
@@ -135,7 +135,7 @@
     }
 
     /* New: Scrollable Content Wrapper */
-    .settings-scrollable-content {
+    .settings-main-scroll-area {
         position: absolute; /* Positioned relative to the body/viewport */
         left: 0;
         right: 0;
@@ -143,6 +143,7 @@
         -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
         box-sizing: border-box;
         padding: 20px; /* Padding for the content inside */
+        background-color: var(--background-color); /* Ensure background matches */
         /* Top and Bottom will be set by JS */
     }
 
@@ -201,10 +202,7 @@
 </div>
 
 {# Scrollable Content Wrapper - This will hold the main settings forms #}
-<div class="settings-scrollable-content" id="settingsScrollableContent">
-    {# The content that was previously directly in fixed-settings-top-container's lower part #}
-    {# and the fixed-settings-bottom-container's content will now go here #}
-
+<div class="settings-main-scroll-area" id="settingsMainScrollArea">
     <h5>Chat Background</h5>
     <div class="image-previews">
         <div class="preview-item">
@@ -241,8 +239,7 @@
         </form>
     </div>
 
-    {# Account Actions - Now part of the scrollable content, but will be pushed down by fixed footer section #}
-    {# It will appear at the bottom of the scrollable content, just above the fixed footer #}
+    {# Account Actions - Now part of the scrollable content #}
     <h5 class="mt-5">Account Actions</h5> {# Added mt-5 for spacing from content above if it scrolls #}
     <div class="btn-group mb-5"> {# Added mb-5 for space at the very bottom of scrollable content #}
         {# Edit My Details button #}
@@ -257,8 +254,8 @@
 
 {# Fixed Bottom Container: Account Actions (This will be the actual fixed footer section) #}
 <div class="settings-footer-section" id="settingsFooterSection">
+    {# No content needed here, as the content is now in settings-main-scroll-area #}
     {# This section will be dynamically positioned by JS right above the base.html footer #}
-    {# No content needed here, as the content is now in settings-scrollable-content #}
 </div>
 
 <script>
@@ -307,27 +304,27 @@
         // --- Dynamic positioning for the scrollable content area ---
         const settingsHeaderSection = document.getElementById('settingsHeaderSection');
         const settingsFooterSection = document.getElementById('settingsFooterSection');
-        const settingsScrollableContent = document.getElementById('settingsScrollableContent');
-        const baseNavbarHeight = 70; // Assuming your base.html navbar is 70px tall
-        const baseFooterHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--footer-height')) || 60;
+        const settingsMainScrollArea = document.getElementById('settingsMainScrollArea');
+        const baseNavbar = document.querySelector('.navbar'); // Get the actual navbar element
+        const baseFooter = document.querySelector('.footer'); // Get the actual footer element
 
         function adjustLayoutHeights() {
-            if (settingsHeaderSection && settingsFooterSection && settingsScrollableContent) {
+            if (settingsHeaderSection && settingsFooterSection && settingsMainScrollArea && baseNavbar && baseFooter) {
                 // Position the header section right below the base navbar
-                settingsHeaderSection.style.top = `${baseNavbarHeight}px`;
+                settingsHeaderSection.style.top = `${baseNavbar.offsetHeight}px`;
 
                 // Calculate the height of the fixed header section
                 const headerHeight = settingsHeaderSection.offsetHeight;
 
                 // Position the footer section right above the base footer
-                settingsFooterSection.style.bottom = `${baseFooterHeight}px`;
+                settingsFooterSection.style.bottom = `${baseFooter.offsetHeight}px`;
 
                 // Calculate the height of the fixed footer section
                 const footerHeight = settingsFooterSection.offsetHeight;
 
                 // Set top and bottom for the scrollable content area
-                settingsScrollableContent.style.top = `${baseNavbarHeight + headerHeight}px`;
-                settingsScrollableContent.style.bottom = `${baseFooterHeight + footerHeight}px`;
+                settingsMainScrollArea.style.top = `${baseNavbar.offsetHeight + headerHeight}px`;
+                settingsMainScrollArea.style.bottom = `${baseFooter.offsetHeight + footerHeight}px`;
             }
         }
 
@@ -341,4 +338,4 @@
     });
 </script>
 {% endblock %}
-{% block footer %}{% endblock %}
+{# Removed {% block footer %}{% endblock %} as base.html already defines it #}
