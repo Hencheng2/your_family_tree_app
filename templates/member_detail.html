@@ -93,9 +93,9 @@
 
     .scrollable-content {
         /* Adjusted margin-top to clear the fixed header.
-           This value should be slightly more than the fixed-profile-header's height.
-           On mobile, it's roughly 200px (min-height) + 70px (navbar) + 15px (header bottom padding) + some buffer.
-           Let's use a dynamic calculation or a generous fixed value. */
+            This value should be slightly more than the fixed-profile-header's height.
+            On mobile, it's roughly 200px (min-height) + 70px (navbar) + 15px (header bottom padding) + some buffer.
+            Let's use a dynamic calculation or a generous fixed value. */
         margin-top: 280px; /* Adjusted to accommodate taller fixed header */
         padding-top: 20px; /* Padding inside scrollable content */
         background-color: transparent; /* Transparent background */
@@ -232,6 +232,9 @@
 
                 <div class="mb-4">
                     <p class="lead">
+                        <p class="debug-info" style="color: red; background-color: yellow; padding: 5px;">
+                            DEBUG: maritalStatus="{{ member.maritalStatus }}", gender="{{ member.gender }}", spouseNames="{{ member.spouseNames }}"
+                        </p>
                         <strong>{{ member.fullName }}</strong> is a {{ member.association | lower }}.
                         {% set pronoun_subject = "He" if member.gender == 'Male' else "She" if member.gender == 'Female' else "They" %}
                         {% set pronoun_possessive = "His" if member.gender == 'Male' else "Her" if member.gender == 'Female' else "Their" %}
@@ -243,15 +246,25 @@
                             This member is {% if member.maritalStatus == 'Single' %}single{% elif member.maritalStatus == 'Engaged' %}engaged{% else %}married{% endif %}.
                         {% endif %}
 
-                        {% if member.maritalStatus != 'Single' and member.maritalStatus != 'Engaged' and member.spouseNames %}
-                            {{ pronoun_possessive }} spouse(s) include {{ member.spouseNames }}.
-                        {% elif member.maritalStatus == 'Engaged' and member.spouseNames %} {# spouseNames is used for girlfriendNames when engaged #}
-                            {% if member.gender == 'Male' %}
-                                {{ pronoun_possessive }} girlfriend is {{ member.spouseNames }}.
-                            {% elif member.gender == 'Female' %}
-                                {{ pronoun_possessive }} boyfriend is {{ member.spouseNames }}.
-                            {% else %} {# For 'Other' or undefined gender #}
-                                {{ pronoun_possessive }} fiance(e) is {{ member.spouseNames }}.
+                        {# Refined logic for spouseNames based on marital status and gender #}
+                        {% if member.spouseNames and member.spouseNames.strip() %}
+                            {% set spouse_name = member.spouseNames.strip() %} {# Store stripped name for cleaner use #}
+                            {% if member.maritalStatus == 'Engaged' %}
+                                {% if member.gender == 'Male' %}
+                                    {{ pronoun_possessive }} girlfriend is {{ spouse_name }}.
+                                {% elif member.gender == 'Female' %}
+                                    {{ pronoun_possessive }} boyfriend is {{ spouse_name }}.
+                                {% else %} {# For 'Other' or undefined gender, engaged #}
+                                    {{ pronoun_possessive }} fiance(e) is {{ spouse_name }}.
+                                {% endif %}
+                            {% elif member.maritalStatus == 'Married' %}
+                                {% if member.gender == 'Male' %}
+                                    {{ pronoun_possessive }} wife is {{ spouse_name }}.
+                                {% elif member.gender == 'Female' %}
+                                    {{ pronoun_possessive }} husband is {{ spouse_name }}.
+                                {% else %} {# For 'Other' or undefined gender, married #}
+                                    {{ pronoun_possessive }} spouse(s) include {{ spouse_name }}.
+                                {% endif %}
                             {% endif %}
                         {% endif %}
 
@@ -285,6 +298,11 @@
                         {% if member.bio %}
                             <br><br>
                             <strong>Biography:</strong> {{ member.bio }}
+                        {% endif %}
+                        
+                        {% if member.personalRelationshipDescription %}
+                            <br><br>
+                            <strong>Say more about yourself so that people can recognize you better:</strong> {{ member.personalRelationshipDescription }}
                         {% endif %}
                     </p>
                 </div>
