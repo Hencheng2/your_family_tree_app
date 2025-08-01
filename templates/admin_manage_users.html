@@ -238,7 +238,6 @@
                                 <th>ID</th>
                                 <th>Username</th>
                                 <th>Original Name</th>
-                                <th>Relationship</th>
                                 <th>Unique Key</th>
                                 <th>Admin</th>
                                 <th>P/W Reset</th> {# Abbreviated header #}
@@ -251,7 +250,6 @@
                                 <td>{{ user.id }}</td>
                                 <td>{{ user.username }}</td>
                                 <td>{{ user.originalName }}</td>
-                                <td>{{ user.relationship }}</td>
                                 <td>{{ user.unique_key }}</td>
                                 <td>
                                     {% if user.username == config.ADMIN_USERNAME %}
@@ -348,7 +346,7 @@
 {# Members Container (Bottom Half) #}
 <div class="fixed-panel-container members-container" id="membersContainer">
     <div class="panel-header">
-        <h3 class="card-title">Member Profiles (Linked & Unlinked)</h3>
+        <h3 class="card-title">Member Profiles</h3>
     </div>
     <div class="panel-content-scrollable">
         <div class="card">
@@ -359,7 +357,6 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Full Name</th>
-                                <th>Linked User</th>
                                 <th>Login Access</th>
                                 <th>Messaging</th>
                                 <th>Actions</th>
@@ -370,13 +367,6 @@
                             <tr>
                                 <td>{{ member.id }}</td>
                                 <td>{{ member.fullName }}</td>
-                                <td>
-                                    {% if member.user_id %}
-                                        <span class="badge bg-success">{{ member.linked_username }}</span>
-                                    {% else %}
-                                        <span class="badge bg-warning text-dark">Unlinked</span>
-                                    {% endif %}
-                                </td>
                                 <td>
                                     {% if member.user_id %}
                                         <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
@@ -407,10 +397,6 @@
                                     <div class="d-flex flex-column flex-md-row gap-1"> {# Smaller gap #}
                                         <a href="{{ url_for('member_detail', member_id=member.id) }}" class="btn btn-sm btn-info">View</a>
                                         <a href="{{ url_for('edit_member', member_id=member.id) }}" class="btn btn-sm btn-warning">Edit</a>
-                                        {% if not member.user_id %}
-                                            {# Changed to call custom JS function #}
-                                            <button type="button" class="btn btn-sm btn-primary" onclick="showLinkUserOverlay({{ member.id }}, '{{ member.fullName }}')">Link User</button>
-                                        {% endif %}
                                         <form action="{{ url_for('delete_member', member_id=member.id) }}" method="POST" style="display:inline;">
                                             <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete member {{ member.fullName }}? This cannot be undone.');">Delete</button>
                                         </form>
@@ -431,14 +417,13 @@
         <div id="linkUserOverlay" class="in-page-overlay">
             <div class="modal-content"> {# Re-using Bootstrap's modal-content class for styling #}
                 <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">Link <span id="linkMemberNameSpan"></span> to a New User Account</h5>
+                    <h5 class="modal-title">Create New User Account for <span id="linkMemberNameSpan"></span></h5>
                     <button type="button" class="btn-close btn-close-white" onclick="hideLinkUserOverlay()" aria-label="Close"></button>
                 </div>
                 <form action="{{ url_for('admin_manage_users') }}" method="POST">
-                    <input type="hidden" name="action" value="link_member_to_user">
+                    <input type="hidden" name="action" value="create_user_for_member">
                     <input type="hidden" name="member_id" id="linkMemberId">
                     <div class="modal-body">
-                        <p class="text-muted">This will create a new user account and link it to the selected family member profile.</p>
                         <div class="mb-3">
                             <label for="newUsername" class="form-label">New Username</label>
                             <input type="text" class="form-control" id="newUsername" name="new_username" required>
@@ -454,7 +439,7 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="hideLinkUserOverlay()">Close</button>
-                        <button type="submit" class="btn btn-primary">Create User & Link</button>
+                        <button type="submit" class="btn btn-primary">Create User</button>
                     </div>
                 </form>
             </div>
