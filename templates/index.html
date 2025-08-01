@@ -8,7 +8,7 @@
     <div class="position-relative z-index-2 p-4 rounded" style="background-color: rgba(0, 0, 0, 0.6);">
         {% if current_user.is_authenticated %}
             <h1 class="display-4 mb-3">Welcome, {{ current_user.username }}!</h1>
-            <p class="lead mb-4">Explore your family history and connect with relatives.</p>
+            <p class="lead mb-4">Explore your social network and connect with your friends.</p>
 
             {% if member %}
                 <p class="lead">Your profile: <strong>{{ member.fullName }}</strong></p>
@@ -38,8 +38,8 @@
                 </div>
             {% endif %}
         {% else %}
-            <h1 class="display-4 mb-3">Welcome to the Family Tree App</h1>
-            <p class="lead mb-4">Connect with your family, explore your lineage, and share memories.</p>
+            <h1 class="display-4 mb-3">Welcome to the SociaFam23</h1>
+            <p class="lead mb-4">Connect with your friends and share memories.</p>
             <a href="{{ url_for('login') }}" class="btn btn-lg btn-primary me-2">Login</a>
             <a href="{{ url_for('register') }}" class="btn btn-lg btn-secondary">Register</a>
         {% endif %}
