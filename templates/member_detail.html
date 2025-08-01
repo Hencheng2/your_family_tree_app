@@ -93,9 +93,9 @@
 
     .scrollable-content {
         /* Adjusted margin-top to clear the fixed header.
-            This value should be slightly more than the fixed-profile-header's height.
-            On mobile, it's roughly 200px (min-height) + 70px (navbar) + 15px (header bottom padding) + some buffer.
-            Let's use a dynamic calculation or a generous fixed value. */
+           This value should be slightly more than the fixed-profile-header's height.
+           On mobile, it's roughly 200px (min-height) + 70px (navbar) + 15px (header bottom padding) + some buffer.
+           Let's use a dynamic calculation or a generous fixed value. */
         margin-top: 280px; /* Adjusted to accommodate taller fixed header */
         padding-top: 20px; /* Padding inside scrollable content */
         background-color: transparent; /* Transparent background */
@@ -296,7 +296,7 @@
                             <br><br>
                             <strong>Biography:</strong> {{ member.bio }}
                         {% endif %}
-                        
+                       
                         {% if member.personalRelationshipDescription %}
                             <br><br>
                             <strong>Say more about yourself so that people can recognize you better:</strong> {{ member.personalRelationshipDescription }}
