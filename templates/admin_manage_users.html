@@ -251,7 +251,7 @@
                                 <td>{{ user.id }}</td>
                                 <td>{{ user.username }}</td>
                                 <td>{{ user.originalName }}</td>
-                                <td>{{ user.relationshipToRaphael }}</td>
+                                <td>{{ user.relationship }}</td>
                                 <td>{{ user.unique_key }}</td>
                                 <td>
                                     {% if user.username == config.ADMIN_USERNAME %}
@@ -463,7 +463,6 @@
     </div>
 </div>
 
-<!-- Admin Show Status Modal (from previous version, kept as single modal) -->
 <div class="modal fade" id="adminShowStatusModal" tabindex="-1" aria-labelledby="adminShowStatusModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
