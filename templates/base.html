@@ -1,606 +1,696 @@
-{% extends 'base.html' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Family Tree App{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
-{% block title %}Admin - Manage Users{% endblock %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/locale/en-gb.min.js"></script>
 
-{% block content %}
-<style>
-    /* Ensure HTML and Body take full height and manage overflow */
-    html, body {
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        overflow: hidden; /* Crucial: Prevents main body scroll */
-    }
-
-    body {
-        display: flex; /* Use flexbox for main body layout */
-        flex-direction: column; /* Stack children vertically */
-        min-height: 100vh; /* Ensure body takes full viewport height */
-        background-color: var(--background-color); /* Match background */
-        color: var(--text-color); /* Match text color */
-    }
-
-    /* Common styles for fixed containers (each half of the screen) */
-    .fixed-panel-container {
-        position: fixed;
-        left: 0;
-        width: 100%;
-        background-color: var(--background-color);
-        box-shadow: none;
-        border: none;
-        box-sizing: border-box; /* Include padding in width/height calculations */
-        display: flex; /* Make it a flex container for its header and scrollable content */
-        flex-direction: column; /* Stack children vertically */
-    }
-
-    /* Specific styles for the top container (Users) */
-    .users-container {
-        top: 0; /* Will be adjusted by JS */
-        border-bottom: 1px solid var(--card-border); /* Separator */
-        z-index: 999; /* Below global modals, above other content */
-    }
-
-    /* Specific styles for the bottom container (Members) */
-    .members-container {
-        bottom: 0; /* Will be adjusted by JS */
-        border-top: 1px solid var(--card-border); /* Separator */
-        z-index: 998; /* Below users-container, above footer */
-        position: relative; /* Crucial: Establishes a new stacking context and positioning context for its children */
-    }
-
-    /* New: Header section WITHIN each fixed panel */
-    .panel-header {
-        flex-shrink: 0; /* Prevents header from shrinking */
-        padding: 15px 20px 10px; /* Top/bottom padding, matches horizontal */
-        background-color: var(--background-color); /* Ensure consistent background */
-        border-bottom: 1px solid var(--card-border); /* Separator from content */
-        box-sizing: border-box;
-    }
-
-    /* New: Scrollable content section WITHIN each fixed panel */
-    .panel-content-scrollable {
-        flex-grow: 1; /* Takes remaining vertical space */
-        overflow-y: auto; /* Enables scrolling within this area */
-        padding: 0 20px 20px; /* Horizontal padding, plus bottom padding */
-        box-sizing: border-box;
-        position: relative; /* Crucial for absolute positioning of the in-page overlay */
-    }
-
-    /* Reduce font sizes for titles */
-    .fixed-panel-container h1 {
-        font-size: 1.6em; /* Smaller global title */
-        margin-bottom: 8px; /* Reduced margin */
-    }
-    .fixed-panel-container h3 {
-        font-size: 1.1em; /* Smaller panel titles */
-        margin-bottom: 0; /* No margin below panel title as it's in panel-header */
-    }
-
-    /* Table styling for better appearance */
-    .table {
-        color: var(--text-color); /* Table text color */
-        margin-bottom: 0; /* Remove default table margin */
-    }
-    .table th {
-        background-color: var(--header-bg); /* Table header background */
-        color: var(--header-text); /* Table header text */
-        position: sticky; /* Make headers sticky for scrolling tables */
-        top: 0;
-        z-index: 10;
-        font-size: 0.75em; /* Smaller table header font */
-        padding: 8px; /* Reduced padding */
-    }
-    .table td {
-        vertical-align: middle;
-        font-size: 0.7em; /* Even smaller table cell font */
-        padding: 8px; /* Reduced padding */
-    }
-    .table-hover tbody tr:hover {
-        background-color: var(--hover-bg); /* Hover effect */
-    }
-
-    /* Card styling (inner cards within fixed containers) */
-    .card {
-        background-color: transparent; /* Transparent background */
-        border: none; /* No border */
-        box-shadow: none; /* No shadow */
-        margin-bottom: 0; /* Remove default card margin */
-    }
-
-    /* Alert container positioning */
-    .alert-container {
-        position: fixed; /* Fixed position for alerts */
-        top: 70px; /* Below navbar */
-        left: 50%;
-        transform: translateX(-50%);
-        width: 90%;
-        max-width: 600px;
-        z-index: 1050; /* Above all other content */
-        text-align: center;
-    }
-
-    /* Global Bootstrap Modals (Reset Password, Admin Show Status) */
-    /* Ensure these are always on top */
-    .modal.fade.show {
-        z-index: 99999 !important; /* Extremely high to override anything */
-        display: block !important; /* Ensure it's displayed */
-        visibility: visible !important; /* Ensure it's visible */
-        opacity: 1 !important; /* Ensure it's not transparent */
-        position: fixed !important; /* Ensure it's fixed to viewport */
-        top: 0 !important;
-        left: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        transform: none !important; /* Crucial: Prevents new stacking context */
-        overflow-x: hidden; /* Prevent horizontal scroll for modal */
-        overflow-y: auto; /* Allow vertical scroll for modal content if needed */
-    }
-
-    .modal-backdrop.fade.show {
-        z-index: 99998 !important; /* Just below the modal */
-        opacity: 0.5 !important;
-        position: fixed !important;
-    }
-
-    /* Ensure modal dialog and content are also correctly positioned and visible */
-    .modal-dialog {
-        z-index: 99999 !important; /* Ensure dialog is also on top */
-        position: relative !important; /* Ensure z-index applies correctly */
-        transform: none !important; /* Prevent new stacking context on dialog */
-    }
-
-    .modal-content {
-        z-index: 99999 !important; /* Ensure content is also on top */
-        position: relative !important; /* Ensure z-index applies correctly */
-    }
-
-    /* Custom In-Page Overlay for Link User */
-    .in-page-overlay {
-        position: absolute; /* Positioned relative to its parent .panel-content-scrollable */
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        display: flex; /* Use flexbox to center content */
-        align-items: center; /* Center vertically */
-        justify-content: center; /* Center horizontally */
-        background-color: rgba(0, 0, 0, 0.6); /* Semi-transparent background */
-        z-index: 100; /* Higher than table, lower than global modals */
-        visibility: hidden; /* Hidden by default */
-        opacity: 0; /* Start transparent */
-        transition: opacity 0.3s ease, visibility 0.3s ease; /* Smooth transition */
-    }
-
-    .in-page-overlay.show {
-        visibility: visible;
-        opacity: 1;
-    }
-
-    .in-page-overlay .modal-content { /* Re-using Bootstrap's modal-content styling */
-        position: relative; /* Override fixed from global modal styles */
-        z-index: 101; /* Above the in-page overlay backdrop */
-        background-color: var(--card-bg); /* Use theme variable */
-        color: var(--text-color);
-        border: 1px solid var(--card-border);
-        border-radius: 0.5rem;
-        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-        max-width: 500px; /* Limit width */
-        width: 90%; /* Responsive width */
-        margin: auto; /* Center horizontally */
-    }
-
-    /* Buttons in tables */
-    .table .btn {
-        font-size: 0.7em; /* Smaller buttons in tables */
-        padding: 4px 8px; /* Reduced padding */
-    }
-
-    /* Responsive adjustments */
-    @media (min-width: 768px) {
-        .panel-header {
-            padding: 20px 30px 10px; /* More padding on desktop */
+    <script>
+        moment.locale('en');
+    </script>
+    <style>
+        /* Theme Variables */
+        :root {
+            --primary-color: #4CAF50; /* Green */
+            --secondary-color: #6c757d; /* Grey */
+            --background-color: #f8f9fa; /* Light background */
+            --text-color: #212529; /* Dark text */
+            --header-bg: #4CAF50;
+            --header-text: #ffffff;
+            --card-bg: #ffffff;
+            --card-border: #e0e0e0;
+            --input-border: #ced4da;
+            --button-bg: #4CAF50;
+            --button-text: #ffffff;
+            --link-color: #007bff;
+            --flash-success-bg: #d4edda;
+            --flash-success-text: #155724;
+            --flash-danger-bg: #f8d7da;
+            --flash-danger-text: #721c24;
+            --flash-info-bg: #d1ecf1;
+            --flash-info-text: #0c5460;
+            --flash-warning-bg: #fff3cd;
+            --flash-warning-text: #856404;
+            --dark-color: #343a40; /* Defined dark color */
+            --dropdown-bg-color: #495057; /* Explicitly grey for dropdown background */
+            --dropdown-button-bg-color: #5a6268; /* Darker grey for dropdown buttons */
+            --dropdown-button-hover-bg-color: #6c757d; /* Lighter grey on hover */
+            --footer-height: 60px; /* Define footer height */
         }
-        .panel-content-scrollable {
-            padding: 0 30px 30px; /* More padding on desktop */
+
+        .dark-theme {
+            --primary-color: #388E3C; /* Darker Green */
+            --secondary-color: #adb5bd;
+            --background-color: #343a40; /* Dark background */
+            --text-color: #f8f9fa; /* Light text */
+            --header-bg: #212529;
+            --header-text: #ffffff;
+            --card-bg: #495057;
+            --card-border: #6c757d;
+            --input-border: #6c757d;
+            --button-bg: #28a745;
+            --button-text: #ffffff;
+            --link-color: #87CEEB; /* Light blue */
+            --flash-success-bg: #28a745;
+            --flash-success-text: #ffffff;
+            --flash-danger-bg: #dc3545;
+            --flash-danger-text: #ffffff;
+            --flash-info-bg: #17a2b8;
+            --flash-info-text: #ffffff;
+            --flash-warning-bg: #ffc107;
+            --flash-warning-text: #343a40;
+            --dark-color: #212529; /* Even darker for dark theme */
+            --dropdown-bg-color: #2c3e50; /* Darker grey for dropdown in dark theme */
+            --dropdown-button-bg-color: #34495e; /* Darker grey for dropdown buttons in dark theme */
+            --dropdown-button-hover-bg-color: #4a627a; /* Lighter grey on hover in dark theme */
         }
-        .fixed-panel-container h1 {
-            font-size: 2em; /* Larger global title on desktop */
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden; /* Prevent horizontal scroll */
+            padding-bottom: var(--footer-height); /* Space for fixed footer */
         }
-        .fixed-panel-container h3 {
-            font-size: 1.4em; /* Larger panel titles on desktop */
+
+        .navbar {
+            background-color: var(--header-bg);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: fixed;
+            width: 100%;
+            top: 0;
+            left: 0;
+            z-index: 1030;
         }
-        .table th {
-            font-size: 0.85em;
+
+        .navbar-brand, .navbar-nav .nav-link {
+            color: var(--header-text) !important;
         }
-        .table td {
-            font-size: 0.8em;
+        .navbar-nav .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
         }
-        .table .btn {
+        .dark-theme .navbar-nav .nav-link:hover {
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+
+        .navbar-toggler-icon {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.75%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
+        }
+
+        .content {
+            flex: 1;
+            padding-top: 70px;
+        }
+
+        .footer {
+            background-color: var(--header-bg);
+            color: var(--header-text);
+            padding: 20px 0;
+            text-align: center;
+            border-top: 1px solid var(--card-border);
+            position: fixed; /* Make footer fixed */
+            bottom: 0; /* Position at the bottom */
+            width: 100%; /* Take full width */
+            z-index: 1020; /* Ensure it's below navbar but above most content */
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-color: var(--card-border);
+            color: var(--text-color);
+        }
+
+        .form-control {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            border-color: var(--input-border);
+        }
+
+        .form-control:focus {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.25rem rgba(76, 175, 80, 0.25);
+        }
+
+        .btn-primary, .btn-success, .btn-info, .btn-danger, .btn-warning, .btn-secondary {
+            color: var(--button-text);
+        }
+
+        .btn-primary { background-color: var(--primary-color); border-color: var(--primary-color); }
+        .btn-primary:hover { background-color: #43a047; border-color: #43a047; }
+
+        .btn-success { background-color: #28a745; border-color: #28a745; }
+        .btn-success:hover { background-color: #218838; border-color: #1e7e34; }
+
+        .btn-info { background-color: #17a2b8; border-color: #17a2b8; }
+        .btn-info:hover { background-color: #138496; border-color: #117a8b; }
+
+        .btn-danger { background-color: #dc3545; border-color: #dc3545; }
+        .btn-danger:hover { background-color: #c82333; border-color: #bd2130; }
+
+        .btn-warning { background-color: #ffc107; border-color: #ffc107; color: #212529; }
+        .btn-warning:hover { background-color: #e0a800; border-color: #d39e00; }
+
+        .btn-secondary { background-color: var(--secondary-color); border-color: var(--secondary-color); }
+        .btn-secondary:hover { background-color: #5a6268; border-color: #545b62; }
+
+        .alert-container {
+            position: fixed;
+            top: 70px; /* Default for pages without custom fixed headers */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 600px;
+            z-index: 1050;
+            text-align: center;
+        }
+        .alert {
+            margin-bottom: 10px;
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            opacity: 1;
+            transition: opacity 0.5s ease-out;
+        }
+
+        /* Ensure modal text is visible */
+        .modal-body, .modal-header, .modal-footer {
+            color: var(--text-color);
+            background-color: var(--card-bg);
+        }
+
+        .modal-body p, .modal-body label, .modal-body small {
+            color: var(--text-color);
+        }
+
+        .modal {
+            z-index: 1050;
+        }
+        .modal-backdrop {
+            z-index: 1040;
+        }
+
+        /* NEW: Styles for the direct navigation icons */
+        .navbar-nav-direct-icons {
+            display: flex;
+            align-items: center;
+            flex-grow: 1; /* Allow this div to take up available space */
+            justify-content: space-around; /* Distribute items evenly with space around them */
+            padding: 0 10px; /* Add some padding on the sides */
+        }
+
+        /* Responsive adjustments for icon spacing */
+        @media (max-width: 768px) { /* Adjust for smaller screens like tablets */
+            .navbar-nav-direct-icons {
+                gap: 5px; /* Smaller gap on smaller screens, let space-around handle main distribution */
+            }
+            .navbar-nav-direct-icons .nav-link {
+                font-size: 1.1rem; /* Slightly smaller icons */
+                padding: 3px 5px;
+            }
+        }
+
+        @media (max-width: 576px) { /* Adjust for very small screens like phones */
+            .navbar-nav-direct-icons {
+                gap: 2px; /* Even smaller gap on mobile */
+                padding: 0 2px; /* Less padding on very small screens */
+            }
+            .navbar-nav-direct-icons .nav-link {
+                font-size: 0.9rem; /* Smallest icons */
+                padding: 2px 3px;
+            }
+            .navbar-brand {
+                font-size: 0.9rem !important; /* Smaller home text */
+                padding-left: 5px;
+                padding-right: 5px;
+            }
+        }
+
+
+        .navbar-nav-direct-icons .nav-link {
+            font-size: 1.2rem; /* Larger icon size */
+            padding: 5px 10px; /* Padding around icons */
+            position: relative; /* For badge positioning */
+            text-align: center; /* Ensure icon is centered within its link area */
+        }
+
+        .navbar-nav-direct-icons .nav-link .badge {
+            position: absolute;
+            top: 0px; /* Adjust as needed */
+            right: 0px; /* Adjust as needed */
+            font-size: 0.6em; /* Smaller badge text */
+            padding: .3em .5em;
+            background-color: var(--flash-danger-bg);
+            color: var(--flash-danger-text);
+            border-radius: 50%;
+            transform: translate(50%, -50%);
+            z-index: 1;
+        }
+
+        /* Ensure the main navbar container distributes items */
+        .navbar .container-fluid {
+            display: flex;
+            justify-content: space-between; /* Distribute items with space between */
+            align-items: center;
+        }
+
+        /* --- AI Chat Modal Specific Styles --- */
+        .ai-chat-modal .modal-content {
+            border-radius: 15px;
+            overflow: hidden; /* Ensures rounded corners apply to children */
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            background-color: var(--card-bg);
+            color: var(--text-color);
+        }
+        .ai-chat-modal .modal-header {
+            background-color: var(--primary-color);
+            color: var(--header-text);
+            border-bottom: none;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .ai-chat-modal .modal-title {
+            color: var(--header-text);
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .ai-chat-modal .modal-title img {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.5);
+        }
+        .ai-chat-modal .btn-close {
+            filter: invert(1); /* Makes close button white for dark backgrounds */
+        }
+        .ai-chat-modal .modal-body {
+            padding: 0; /* Remove padding to let chat container manage it */
+            max-height: 70vh; /* Limit height for scrollability */
+            overflow-y: auto; /* Enable scrolling for chat messages */
+            display: flex;
+            flex-direction: column;
+            background-color: var(--background-color); /* Chat background */
+        }
+        .ai-chat-modal .message-container {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .ai-chat-modal .message {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 15px;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        .ai-chat-modal .user-message {
+            background-color: var(--primary-color);
+            color: var(--button-text);
+            align-self: flex-end;
+            border-bottom-right-radius: 5px; /* Sharpen one corner */
+        }
+        .ai-chat-modal .ai-message {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+            align-self: flex-start;
+            border: 1px solid var(--card-border);
+            border-bottom-left-radius: 5px; /* Sharpen one corner */
+        }
+        .ai-chat-modal .message-timestamp {
             font-size: 0.75em;
-            padding: 5px 10px;
+            color: var(--secondary-color);
+            margin-top: 5px;
         }
-    }
-</style>
+        .ai-chat-modal .user-message .message-timestamp {
+            text-align: right;
+            color: rgba(255,255,255,0.7);
+        }
+        .ai-chat-modal .modal-footer {
+            border-top: none;
+            padding: 15px 20px;
+            background-color: var(--card-bg);
+        }
+        .ai-chat-modal .input-group .form-control {
+            border-radius: 20px 0 0 20px;
+            border-color: var(--input-border);
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+        .ai-chat-modal .input-group .btn {
+            border-radius: 0 20px 20px 0;
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            color: var(--button-text);
+        }
+        .ai-chat-modal .input-group .btn:hover {
+            background-color: #43a047;
+            border-color: #43a047;
+        }
+        .ai-chat-modal .loading-indicator {
+            text-align: center;
+            padding: 10px;
+            color: var(--secondary-color);
+            font-style: italic;
+        }
+    </style>
+</head>
+<body class="{{ g.user_theme if g.user_theme else 'light' }}-theme"> {# Apply theme class to body #}
 
-{# Users Container (Top Half) #}
-<div class="fixed-panel-container users-container" id="usersContainer">
-    <div class="panel-header">
-        <h1 class="text-center">Admin Panel - Manage Users</h1>
-        <h3 class="card-title">Registered Users</h3>
+    <nav class="navbar navbar-expand-lg">
+        <div class="container-fluid">
+            {# Left-aligned Home button #}
+            <a class="navbar-brand" href="{{ url_for('home') }}">Home</a>
+
+            {# All direct navigation icons - now flex-grow-1 to take available space #}
+            {% if current_user.is_authenticated %}
+            <div class="navbar-nav-direct-icons">
+                <a class="nav-link" href="{{ url_for('inbox') }}" title="Messages">
+                    <i class="fas fa-comments"></i>
+                    {% if g.unread_messages_count > 0 %}
+                        <span class="badge">{{ g.unread_messages_count }}</span>
+                    {% endif %}
+                </a>
+                <a class="nav-link" href="{{ url_for('list_members') }}" title="Members">
+                    <i class="fas fa-users"></i>
+                </a>
+                <a class="nav-link" href="{{ url_for('status_feed') }}" title="Status">
+                    <i class="fas fa-play-circle"></i>
+                </a>
+                <a class="nav-link" href="{{ url_for('photo_gallery_page') }}" title="Photo Gallery">
+                    <i class="fas fa-image"></i>
+                </a>
+                <a class="nav-link" href="{{ url_for('settings') }}" title="Settings">
+                    <i class="fas fa-cog"></i>
+                </a>
+                <a class="nav-link" href="{{ url_for('my_profile') }}" title="My Profile">
+                    <i class="fas fa-user-circle"></i>
+                </a>
+                {% if current_user.is_admin %}
+                {# Admin Panel link (only if admin) - now part of the main icon group #}
+                 <a class="nav-link" href="{{ url_for('admin_manage_users') }}" title="Admin Panel">
+                    <i class="fas fa-user-shield"></i> {# Admin icon #}
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+
+        </div>
+    </nav>
+
+    <div class="content">
+        <div class="alert-container">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} flash">{{ message | safe }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+        {% block content %}{% endblock %}
     </div>
-    <div class="panel-content-scrollable">
-        <div class="card">
-            {% if users %}
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Username</th>
-                                <th>Original Name</th>
-                                <th>Relationship</th>
-                                <th>Unique Key</th>
-                                <th>Admin</th>
-                                <th>P/W Reset</th> {# Abbreviated header #}
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for user in users %}
-                            <tr>
-                                <td>{{ user.id }}</td>
-                                <td>{{ user.username }}</td>
-                                <td>{{ user.originalName }}</td>
-                                <td>{{ user.relationship }}</td>
-                                <td>{{ user.unique_key }}</td>
-                                <td>
-                                    {% if user.username == config.ADMIN_USERNAME %}
-                                        <span class="badge bg-success">Super Admin</span>
-                                    {% else %}
-                                        <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
-                                            <input type="hidden" name="action" value="toggle_admin">
-                                            <input type="hidden" name="user_id" value="{{ user.id }}">
-                                            <button type="submit" class="btn btn-sm {% if user.is_admin %}btn-success{% else %}btn-secondary{% endif %}"
-                                                    {% if user.id == current_user.id %}disabled title="Cannot change your own admin status"{% endif %}>
-                                                {% if user.is_admin %}Yes{% else %}No{% endif %}
-                                            </button>
-                                        </form>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if user.password_reset_pending == 1 %}
-                                        <span class="badge bg-warning text-dark">Yes</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary">No</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div class="d-flex flex-column flex-md-row gap-1"> {# Smaller gap #}
-                                        <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#resetPasswordModal{{ user.id }}">Reset P/W</button> {# Abbreviated button text #}
-                                        <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
-                                            <input type="hidden" name="action" value="delete_user">
-                                            <input type="hidden" name="user_id" value="{{ user.id }}">
-                                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete user {{ user.username }} and all associated member profiles? This cannot be undone.');"
-                                                    {% if user.id == current_user.id %}disabled title="Cannot delete your own account"{% endif %}>Delete</button>
-                                        </form>
-                                        {% if user.password_reset_pending == 0 %}
-                                            <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
-                                                <input type="hidden" name="action" value="initiate_password_reset">
-                                                <input type="hidden" name="user_id" value="{{ user.id }}">
-                                                <button type="submit" class="btn btn-sm btn-warning">Initiate Reset</button>
-                                            </form>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                            </tr>
 
-                            {# Reset Password Modal for each user #}
-                            <div class="modal fade" id="resetPasswordModal{{ user.id }}" tabindex="-1" aria-labelledby="resetPasswordModalLabel{{ user.id }}" aria-hidden="true">
-                                <div class="modal-dialog modal-dialog-centered">
-                                    <div class="modal-content">
-                                        <div class="modal-header">
-                                            <h5 class="modal-title" id="resetPasswordModalLabel{{ user.id }}">Reset Password for {{ user.username }}</h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                        </div>
-                                        <form action="{{ url_for('admin_manage_users') }}" method="POST">
-                                            <input type="hidden" name="action" value="reset_password">
-                                            <input type="hidden" name="user_id" value="{{ user.id }}">
-                                            <div class="modal-body">
-                                                <div class="mb-3">
-                                                    <label for="new_password_{{ user.id }}" class="form-label">New Password</label>
-                                                    <input type="password" class="form-control" id="new_password_{{ user.id }}" name="new_password_{{ user.id }}" required>
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label for="confirm_password_{{ user.id }}" class="form-label">Confirm New Password</label>
-                                                    <input type="password" class="form-control" id="confirm_password_{{ user.id }}" name="confirm_new_password_{{ user.id }}" required>
-                                                </div>
-                                            </div>
-                                            <div class="modal-footer">
-                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                <button type="submit" class="btn btn-primary">Reset Password</button>
-                                            </div>
-                                        </form>
-                                    </div>
+    {% block footer %} {# <--- ADDED THIS BLOCK TAG #}
+    <footer class="footer">
+        <div class="container">
+            <span>&copy; {{ now.year }} Family Tree App. All rights reserved.</span>
+        </div>
+    </footer>
+    {% endblock %} {# <--- ADDED THIS BLOCK TAG #}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Auto-hide flash messages
+            const flashMessages = document.querySelectorAll('.flash');
+            flashMessages.forEach(function(flash) {
+                setTimeout(function() {
+                    flash.style.opacity = '0';
+                    flash.style.transition = 'opacity 0.5s ease-out';
+                    setTimeout(function() {
+                        flash.remove();
+                    }, 500);
+                }, 5000);
+            });
+
+          // Theme Switch Logic (removed from here, will be in settings page)
+            // const themeSwitch = document.getElementById('themeSwitch');
+            // if (themeSwitch) {
+            //     const initialTheme = "{{ g.user_theme if g.user_theme else 'light' }}";
+            //     document.body.className = initialTheme + '-theme';
+            //     themeSwitch.checked = (initialTheme === 'dark');
+
+            //     themeSwitch.addEventListener('change', function() {
+            //         const theme = this.checked ? 'dark' : 'light';
+            //         document.body.className = theme + '-theme';
+            //         fetch('/update-theme-preference', {
+            //             method: 'POST',
+            //             headers: { 'Content-Type': 'application/json' },
+            //             body: JSON.stringify({ theme: theme })
+            //         })
+            //         .then(response => response.json())
+            //         .then(data => { console.log('Theme updated:', data.message); })
+            //         .catch(error => { console.error('Error updating theme:', error); });
+            //     });
+            // }
+        });
+    </script>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="module">
+        // Import the Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, orderBy, limit, addDoc, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Make these available globally for the React component
+        window.firebase_app_module = { initializeApp, getFirestore, collection, query, orderBy, limit, addDoc, serverTimestamp, onSnapshot, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged };
+    </script>
+
+    <div class="modal fade ai-chat-modal" id="aiChatModal" tabindex="-1" aria-labelledby="aiChatModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="aiChatModalLabel">
+                        <img src="{{ url_for('static', filename='img/ai_icon.png') }}" alt="Admin AI">
+                        Chat with Admin AI
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    {# React will render chat messages here #}
+                    <div id="ai-chat-root"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { initializeApp, getFirestore, collection, query, orderBy, limit, addDoc, serverTimestamp, onSnapshot, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = window.firebase_app_module;
+
+        // Get config from Jinja context (passed by Flask's app.context_processor)
+        const firebaseConfig = JSON.parse('{{ firebase_config_json | tojson | safe }}');
+        const initialAuthToken = '{{ initial_auth_token | safe }}';
+        const canvasAppId = '{{ canvas_app_id | safe }}';
+        const currentUserId = '{{ current_user.id | safe }}'; // Flask-Login current_user.id
+
+        function AIChatApp() {
+            const [messages, setMessages] = useState([]);
+            const [inputMessage, setInputMessage] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const messagesEndRef = useRef(null);
+
+            const [db, setDb] = useState(null);
+            const [auth, setAuth] = useState(null);
+            const [currentFirebaseUser, setCurrentFirebaseUser] = useState(null);
+            const [aiUserId, setAiUserId] = useState(null); // To store AI's user ID from Flask
+
+            // Initialize Firebase and get AI user ID
+            useEffect(() => {
+                const app = initializeApp(firebaseConfig);
+                const firestoreDb = getFirestore(app);
+                const firebaseAuth = getAuth(app);
+
+                setDb(firestoreDb);
+                setAuth(firebaseAuth);
+
+                // Sign in anonymously or with custom token
+                const signIn = async () => {
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(firebaseAuth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(firebaseAuth);
+                        }
+                    } catch (error) {
+                        console.error("Firebase Auth Error:", error);
+                    }
+                };
+                signIn();
+
+                // Listen for auth state changes
+                const unsubscribeAuth = onAuthStateChanged(firebaseAuth, (user) => {
+                    setCurrentFirebaseUser(user);
+                });
+
+                // Fetch AI user ID from Flask backend (since AI user is in SQLite)
+                // You'll need a Flask endpoint to provide AI user ID
+                fetch('/get-ai-user-id') // Flask route to get AI user ID
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.ai_user_id) {
+                            setAiUserId(String(data.ai_user_id)); // Ensure it's a string
+                        } else {
+                            console.error("Failed to get AI user ID from backend.");
+                        }
+                    })
+                    .catch(error => console.error("Error fetching AI user ID:", error));
+
+                return () => unsubscribeAuth();
+            }, []); // Run only once on component mount
+
+            // Listen for messages once Firebase and AI user ID are ready
+            useEffect(() => {
+                if (db && currentFirebaseUser && aiUserId && currentUserId) {
+                    const chatCollectionPath = `artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/conversations/${aiUserId}/messages`;
+                    const messagesRef = collection(db, chatCollectionPath);
+                    const q = query(messagesRef, orderBy('timestamp', 'asc'), limit(50)); // Limit messages to 50
+
+                    const unsubscribe = onSnapshot(q, (snapshot) => {
+                        const loadedMessages = snapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data(),
+                            timestamp: doc.data().timestamp ? doc.data().timestamp.toDate() : new Date() // Convert Firestore Timestamp to JS Date
+                        }));
+                        setMessages(loadedMessages);
+                        setIsLoading(false); // Stop loading after messages are fetched
+                    }, (error) => {
+                        console.error("Error fetching messages:", error);
+                        setIsLoading(false);
+                    });
+
+                    return () => unsubscribe(); // Clean up listener on unmount
+                }
+            }, [db, currentFirebaseUser, aiUserId, currentUserId, canvasAppId]);
+
+            // Scroll to bottom on new messages
+            useEffect(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            const handleSendMessage = async () => {
+                if (inputMessage.trim() === '' || !currentFirebaseUser || !aiUserId || !db) {
+                    return;
+                }
+
+                setIsLoading(true); // Show loading indicator
+
+                try {
+                    // Send message to Flask backend API
+                    const response = await fetch('/api/send_ai_message', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest' // Flask expects this for AJAX
+                        },
+                        body: JSON.stringify({
+                            message: inputMessage,
+                            humanUserId: currentUserId // Pass the Flask user ID
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Failed to get AI response');
+                    }
+
+                    // No need to manually add message to state here; onSnapshot will handle it
+                    setInputMessage(''); // Clear input
+                } catch (error) {
+                    console.error("Error sending message to AI:", error);
+                    alert(`Error: ${error.message}`); // Use alert for now, consider custom modal later
+                    setIsLoading(false); // Hide loading indicator on error
+                }
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault(); // Prevent newline in textarea
+                    handleSendMessage();
+                }
+            };
+
+            return (
+                <div className="d-flex flex-column h-100">
+                    <div className="message-container flex-grow-1">
+                        {messages.length === 0 && !isLoading && (
+                            <p className="text-center text-muted">Start a conversation with Admin AI!</p>
+                        )}
+                        {messages.map((msg) => (
+                            <div key={msg.id} className={`message ${msg.isAI ? 'ai-message' : 'user-message'}`}>
+                                {msg.message}
+                                <div className="message-timestamp">
+                                    {moment(msg.timestamp).format('MMM D, h:mm A')}
                                 </div>
                             </div>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <p class="text-center text-muted mt-3">No registered users found.</p>
-            {% endif %}
-        </div>
-    </div>
-</div>
-
-{# Alerts will be positioned fixed, so they don't need to be in a container #}
-{% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        <div class="alert-container">
-            {% for category, message in messages %}
-                <div class="alert alert-{{ category }}">{{ message | safe }}</div>
-            {% endfor %}
-        </div>
-    {% endif %}
-{% endwith %}
-
-{# Members Container (Bottom Half) #}
-<div class="fixed-panel-container members-container" id="membersContainer">
-    <div class="panel-header">
-        <h3 class="card-title">Member Profiles (Linked & Unlinked)</h3>
-    </div>
-    <div class="panel-content-scrollable">
-        <div class="card">
-            {% if members_with_status %}
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Full Name</th>
-                                <th>Linked User</th>
-                                <th>Login Access</th>
-                                <th>Messaging</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for member in members_with_status %}
-                            <tr>
-                                <td>{{ member.id }}</td>
-                                <td>{{ member.fullName }}</td>
-                                <td>
-                                    {% if member.user_id %}
-                                        <span class="badge bg-success">{{ member.linked_username }}</span>
-                                    {% else %}
-                                        <span class="badge bg-warning text-dark">Unlinked</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if member.user_id %}
-                                        <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
-                                            <input type="hidden" name="action" value="toggle_login_access">
-                                            <input type="hidden" name="member_id" value="{{ member.id }}">
-                                            <button type="submit" class="btn btn-sm {% if member.can_message %}btn-success{% else %}btn-secondary{% endif %}"> {# can_message is used for login access #}
-                                                {% if member.can_message %}Enabled{% else %}Disabled{% endif %}
-                                            </button>
-                                        </form>
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if member.user_id %}
-                                        <form action="{{ url_for('admin_manage_users') }}" method="POST" style="display:inline;">
-                                            <input type="hidden" name="action" value="toggle_messaging_capability">
-                                            <input type="hidden" name="member_id" value="{{ member.id }}">
-                                            <button type="submit" class="btn btn-sm {% if member.can_message %}btn-success{% else %}btn-secondary{% endif %}">
-                                                {% if member.can_message %}Enabled{% else %}Disabled{% endif %}
-                                            </button>
-                                        </form>
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div class="d-flex flex-column flex-md-row gap-1"> {# Smaller gap #}
-                                        <a href="{{ url_for('member_detail', member_id=member.id) }}" class="btn btn-sm btn-info">View</a>
-                                        <a href="{{ url_for('edit_member', member_id=member.id) }}" class="btn btn-sm btn-warning">Edit</a>
-                                        {% if not member.user_id %}
-                                            {# Changed to call custom JS function #}
-                                            <button type="button" class="btn btn-sm btn-primary" onclick="showLinkUserOverlay({{ member.id }}, '{{ member.fullName }}')">Link User</button>
-                                        {% endif %}
-                                        <form action="{{ url_for('delete_member', member_id=member.id) }}" method="POST" style="display:inline;">
-                                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete member {{ member.fullName }}? This cannot be undone.');">Delete</button>
-                                        </form>
-                                        {# Removed the "View Status" button from here #}
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <p class="text-center text-muted mt-3">No member profiles found.</p>
-            {% endif %}
-        </div>
-
-        {# Custom In-Page Overlay for Link User (moved inside panel-content-scrollable) #}
-        <div id="linkUserOverlay" class="in-page-overlay">
-            <div class="modal-content"> {# Re-using Bootstrap's modal-content class for styling #}
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">Link <span id="linkMemberNameSpan"></span> to a New User Account</h5>
-                    <button type="button" class="btn-close btn-close-white" onclick="hideLinkUserOverlay()" aria-label="Close"></button>
-                </div>
-                <form action="{{ url_for('admin_manage_users') }}" method="POST">
-                    <input type="hidden" name="action" value="link_member_to_user">
-                    <input type="hidden" name="member_id" id="linkMemberId">
-                    <div class="modal-body">
-                        <p class="text-muted">This will create a new user account and link it to the selected family member profile.</p>
-                        <div class="mb-3">
-                            <label for="newUsername" class="form-label">New Username</label>
-                            <input type="text" class="form-control" id="newUsername" name="new_username" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="linkNewPassword" class="form-label">New Password</label>
-                            <input type="password" class="form-control" id="linkNewPassword" name="new_password" required minlength="6">
-                        </div>
-                        <div class="mb-3">
-                            <label for="linkConfirmNewPassword" class="form-label">Confirm New Password</label>
-                            <input type="password" class="form-control" id="linkConfirmNewPassword" name="confirm_new_password" required minlength="6">
+                        ))}
+                        {isLoading && (
+                            <div className="loading-indicator">Admin AI is typing...</div>
+                        )}
+                        <div ref={messagesEndRef} /> {/* Scroll target */}
+                    </div>
+                    <div className="modal-footer">
+                        <div className="input-group">
+                            <textarea
+                                className="form-control"
+                                placeholder="Type your message..."
+                                value={inputMessage}
+                                onChange={(e) => setInputMessage(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                rows="1"
+                                style="resize: none;"
+                            ></textarea>
+                            <button className="btn btn-primary" onClick={handleSendMessage} disabled={isLoading}>
+                                <i className="fas fa-paper-plane"></i>
+                            </button>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" onclick="hideLinkUserOverlay()">Close</button>
-                        <button type="submit" class="btn btn-primary">Create User & Link</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-    </div>
-</div>
-
-<div class="modal fade" id="adminShowStatusModal" tabindex="-1" aria-labelledby="adminShowStatusModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header bg-dark text-white">
-                <h5 class="modal-title" id="adminShowStatusModalLabel">Status for <span id="statusMemberNameSpan"></span></h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div id="statusVideoContainer" class="text-center">
-                    <p id="statusLoadingMessage">Loading status...</p>
-                    <video id="statusVideoPlayer" controls class="img-fluid rounded shadow-sm" style="max-height: 500px; display: none;"></video>
-                    <p id="statusVideoMessage" class="mt-2"></p>
-                    <p id="statusVideoExpires" class="text-muted small"></p>
                 </div>
-                <form id="deleteStatusForm" action="" method="POST" class="mt-3 text-center" style="display: none;">
-                    <input type="hidden" name="action" value="admin_delete_user_status">
-                    <input type="hidden" name="member_id" id="deleteStatusMemberId">
-                    <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this video status?');">Delete Status</button>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const usersContainer = document.getElementById('usersContainer');
-        const membersContainer = document.getElementById('membersContainer');
-        const footerHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--footer-height')) || 60; // From base.html CSS var
-        const navbarHeight = 70; // Assuming your navbar is 70px tall
-
-        function adjustPanelHeights() {
-            const viewportHeight = window.innerHeight;
-            const availableHeight = viewportHeight - navbarHeight - footerHeight; // Total height available for both panels
-
-            const panelHeight = availableHeight / 2; // Each panel gets exactly half
-
-            // Users Container (Top Half)
-            usersContainer.style.top = `${navbarHeight}px`;
-            usersContainer.style.height = `${panelHeight}px`;
-
-            // Members Container (Bottom Half)
-            membersContainer.style.top = `${navbarHeight + panelHeight}px`;
-            membersContainer.style.height = `${panelHeight}px`;
+            );
         }
 
-        // Adjust on load and on window resize
-        adjustPanelHeights();
-        window.addEventListener('resize', adjustPanelHeights);
-
-        // Auto-hide flash messages
-        const flashMessages = document.querySelectorAll('.alert-container .alert');
-        flashMessages.forEach(function(flash) {
-            setTimeout(function() {
-                flash.style.opacity = '0';
-                flash.style.transition = 'opacity 0.5s ease-out';
-                setTimeout(function() {
-                    flash.remove();
-                }, 500);
-            }, 5000);
-        });
-
-        // Admin Show Status Modal Logic (kept as a single modal, dynamically populated)
-        var adminShowStatusModal = document.getElementById('adminShowStatusModal');
-        adminShowStatusModal.addEventListener('show.bs.modal', function (event) {
-            var button = event.relatedTarget;
-            var memberId = button.getAttribute('data-member-id');
-            var memberName = button.getAttribute('data-member-name');
-
-            var statusMemberNameSpan = adminShowStatusModal.querySelector('#statusMemberNameSpan');
-            var statusVideoPlayer = adminShowStatusModal.querySelector('#statusVideoPlayer');
-            var statusLoadingMessage = adminShowStatusModal.querySelector('#statusLoadingMessage');
-            var statusVideoMessage = adminShowStatusModal.querySelector('#statusVideoMessage');
-            var statusVideoExpires = adminShowStatusModal.querySelector('#statusVideoExpires');
-            var deleteStatusForm = adminShowStatusModal.querySelector('#deleteStatusForm');
-            var deleteStatusMemberIdInput = adminShowStatusModal.querySelector('#deleteStatusMemberId');
-
-            statusMemberNameSpan.textContent = memberName;
-            statusVideoPlayer.style.display = 'none';
-            statusLoadingMessage.style.display = 'block';
-            statusVideoMessage.textContent = '';
-            statusVideoExpires.textContent = '';
-            deleteStatusForm.style.display = 'none';
-            deleteStatusMemberIdInput.value = memberId; // Set member ID for delete form
-
-            // Fetch status video data
-            fetch(`/get-member-status-video/${memberId}`)
-                .then(response => response.json())
-                .then(data => {
-                    statusLoadingMessage.style.display = 'none';
-                    if (data.video_url) {
-                        statusVideoPlayer.src = data.video_url;
-                        statusVideoPlayer.style.display = 'block';
-                        statusVideoMessage.textContent = 'Active status video.';
-
-                        // Format expiration time
-                        const expiresAt = new Date(data.expires_at);
-                        statusVideoExpires.textContent = `Expires: ${expiresAt.toLocaleString()}`;
-                        deleteStatusForm.style.display = 'block'; // Show delete button if video exists
-                    } else {
-                        statusVideoMessage.textContent = data.message || 'No active status video found for this user.';
-                        statusVideoPlayer.src = ''; // Clear video source
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching status video:', error);
-                    statusLoadingMessage.style.display = 'none';
-                    statusVideoMessage.textContent = 'Error loading status video.';
-                    statusVideoPlayer.src = '';
-                });
-        });
-
-        // Custom In-Page Overlay Logic for Link User
-        const linkUserOverlay = document.getElementById('linkUserOverlay');
-        const linkMemberNameSpan = linkUserOverlay.querySelector('#linkMemberNameSpan');
-        const linkMemberIdInput = linkUserOverlay.querySelector('#linkMemberId');
-        const newUsernameInput = linkUserOverlay.querySelector('#newUsername');
-        const linkNewPasswordInput = linkUserOverlay.querySelector('#linkNewPassword');
-        const linkConfirmNewPasswordInput = linkUserOverlay.querySelector('#linkConfirmNewPassword');
-
-        window.showLinkUserOverlay = function(memberId, memberName) {
-            linkMemberNameSpan.textContent = memberName;
-            linkMemberIdInput.value = memberId;
-            newUsernameInput.value = ''; // Clear fields
-            linkNewPasswordInput.value = ''; // Clear fields
-            linkConfirmNewPasswordInput.value = ''; // Clear fields
-            linkUserOverlay.classList.add('show'); // Add 'show' class to make it visible
-        };
-
-        window.hideLinkUserOverlay = function() {
-            linkUserOverlay.classList.remove('show'); // Remove 'show' class to hide it
-        };
-    });
-</script>
-{% endblock %}
-
-{% block footer %}{% endblock %}
+        // Render the React component into the modal body
+        const aiChatModalElement = document.getElementById('aiChatModal');
+        if (aiChatModalElement) {
+            aiChatModalElement.addEventListener('shown.bs.modal', () => {
+                // Render React app when the modal is shown
+                ReactDOM.render(<AIChatApp />, document.getElementById('ai-chat-root'));
+            });
+            aiChatModalElement.addEventListener('hidden.bs.modal', () => {
+                // Unmount React app when the modal is hidden to clean up
+                ReactDOM.unmountComponentAtNode(document.getElementById('ai-chat-root'));
+            });
+        }
+    </script>
+</body>
+</html>
