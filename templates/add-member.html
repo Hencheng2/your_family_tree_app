@@ -27,28 +27,6 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label for="association" class="form-label">Relationship (e.g., Son, Daughter, Grandchild)</label>
-                        <select class="form-select" id="association" name="association" required>
-                            <option value="">Select Relationship</option>
-                            <option value="Son" {% if form_data and form_data.association == 'Son' %}selected{% endif %}>Son</option>
-                            <option value="Daughter" {% if form_data and form_data.association == 'Daughter' %}selected{% endif %}>Daughter</option>
-                            <option value="Grandchild" {% if form_data and form_data.association == 'Grandchild' %}selected{% endif %}>Grandchild</option>
-                            <option value="Great-grandchild" {% if form_data and form_data.association == 'Great-grandchild' %}selected{% endif %}>Great-grandchild</option>
-                            <option value="Great-great-grandchild" {% if form_data and form_data.association == 'Great-great-grandchild' %}selected{% endif %}>Great-great-grandchild</option>
-                            <option value="Spouse of Son" {% if form_data and form_data.association == 'Spouse of Son' %}selected{% endif %}>Spouse of Son</option>
-                            <option value="Spouse of Daughter" {% if form_data and form_data.association == 'Spouse of Daughter' %}selected{% endif %}>Spouse of Daughter</option>
-                            <option value="Spouse of Grandchild" {% if form_data and form_data.association == 'Spouse of Grandchild' %}selected{% endif %}>Spouse of Grandchild</option>
-                            <option value="Spouse of Great-grandchild" {% if form_data and form_data.association == 'Spouse of Great-grandchild' %}selected{% endif %}>Spouse of Great-grandchild</option>
-                            <option value="Spouse of Great-great-grandchild" {% if form_data and form_data.association == 'Spouse of Great-great-grandchild' %}selected{% endif %}>Spouse of Great-great-grandchild</option>
-                            <option value="Fiance(e) of Son" {% if form_data and form_data.association == 'Fiance(e) of Son' %}selected{% endif %}>Fiance(e) of Son</option>
-                            <option value="Fiance(e) of Daughter" {% if form_data and form_data.association == 'Fiance(e) of Daughter' %}selected{% endif %}>Fiance(e) of Daughter</option>
-                            <option value="Fiance(e) of Grandchild" {% if form_data and form_data.association == 'Fiance(e) of Grandchild' %}selected{% endif %}>Fiance(e) of Grandchild</option>
-                            <option value="Fiance(e) of Great-grandchild" {% if form_data and form_data.association == 'Fiance(e) of Great-grandchild' %}selected{% endif %}>Fiance(e) of Great-grandchild</option>
-                            <option value="Fiance(e) of Great-great-grandchild" {% if form_data and form_data.association == 'Fiance(e) of Great-great-grandchild' %}selected{% endif %}>Fiance(e) of Great-great-grandchild</option>
-                            <option value="Other" {% if form_data and form_data.association == 'Other' %}selected{% endif %}>Other (Please specify in personal details)</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
                         <label for="maritalStatus" class="form-label">Marital Status</label>
                         <select class="form-select" id="maritalStatus" name="maritalStatus">
                             <option value="Single" {% if form_data and form_data.maritalStatus == 'Single' %}selected{% endif %}>Single</option>
