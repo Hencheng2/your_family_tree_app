@@ -23,7 +23,7 @@
     }
 
     /* Main form container is no longer the primary layout manager,
-       but still holds the data and submit method. */
+        but still holds the data and submit method. */
     form {
         height: 100%; /* Take full height to contain its children logically */
         display: block; /* No longer flex container for main layout */
@@ -252,24 +252,24 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label for="association" class="form-label">Your Relationship to Raphael Nyanga</label>
+                        <label for="association" class="form-label">Your Relationship</label>
                         <select class="form-select" id="association" name="association" required>
                             <option value="">Select Relationship</option>
-                            <option value="Son of Raphael Nyanga" {% if member and member.association == 'Son of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Son of Raphael Nyanga' %}selected{% endif %}>Son of Raphael Nyanga</option>
-                            <option value="Daughter of Raphael Nyanga" {% if member and member.association == 'Daughter of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Daughter of Raphael Nyanga' %}selected{% endif %}>Daughter of Raphael Nyanga</option>
-                            <option value="Grandchild of Raphael Nyanga" {% if member and member.association == 'Grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Grandchild of Raphael Nyanga' %}selected{% endif %}>Grandchild of Raphael Nyanga</option>
-                            <option value="Great-grandchild of Raphael Nyanga" {% if member and member.association == 'Great-grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Great-grandchild of Raphael Nyanga</option>
-                            <option value="Great-great-grandchild of Raphael Nyanga" {% if member and member.association == 'Great-great-grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Great-great-grandchild of Raphael Nyanga' %}selected{% endif %}>Great-great-grandchild of Raphael Nyanga</option>
-                            <option value="Spouse of Son of Raphael Nyanga" {% if member and member.association == 'Spouse of Son of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Son of Raphael Nyanga' %}selected{% endif %}>Spouse of Son of Raphael Nyanga</option>
-                            <option value="Spouse of Daughter of Raphael Nyanga" {% if member and member.association == 'Spouse of Daughter of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Daughter of Raphael Nyanga' %}selected{% endif %}>Spouse of Daughter of Raphael Nyanga</option>
-                            <option value="Spouse of Grandchild of Raphael Nyanga" {% if member and member.association == 'Spouse of Grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Grandchild of Raphael Nyanga</option>
-                            <option value="Spouse of Great-grandchild of Raphael Nyanga" {% if member and member.association == 'Spouse of Great-grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Great-grandchild of Raphael Nyanga</option>
-                            <option value="Spouse of Great-great-grandchild of Raphael Nyanga" {% if member and member.association == 'Spouse of Great-great-grandchild of Raphael Nyanga' %}selected{% elif form_data and form_data.association == 'Spouse of Great-great-grandchild of Raphael Nyanga' %}selected{% endif %}>Spouse of Great-great-grandchild of Raphael Nyanga</option>
-                            <option value="Fiance(e) of Son of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Son of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Son of Raphael Nyanga</option>
-                            <option value="Fiance(e) of Daughter of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Daughter of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Daughter of Raphael Nyanga</option>
-                            <option value="Fiance(e) of Grandchild of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Grandchild of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Grandchild of Raphael Nyanga</option>
-                            <option value="Fiance(e) of Great-grandchild of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Great-grandchild of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Great-grandchild of Raphael Nyanga</option>
-                            <option value="Fiance(e) of Great-great-grandchild of Raphael Nyanga" {% if member and member.association == 'Fiance(e) of Great-great-grandchild of Raphael Nyanga' %}selected{% endif %}>Fiance(e) of Great-great-grandchild of Raphael Nyanga</option>
+                            <option value="Son" {% if member and member.association == 'Son' %}selected{% elif form_data and form_data.association == 'Son' %}selected{% endif %}>Son</option>
+                            <option value="Daughter" {% if member and member.association == 'Daughter' %}selected{% elif form_data and form_data.association == 'Daughter' %}selected{% endif %}>Daughter</option>
+                            <option value="Grandchild" {% if member and member.association == 'Grandchild' %}selected{% elif form_data and form_data.association == 'Grandchild' %}selected{% endif %}>Grandchild</option>
+                            <option value="Great-grandchild" {% if member and member.association == 'Great-grandchild' %}selected{% elif form_data and form_data.association == 'Great-grandchild' %}selected{% endif %}>Great-grandchild</option>
+                            <option value="Great-great-grandchild" {% if member and member.association == 'Great-great-grandchild' %}selected{% elif form_data and form_data.association == 'Great-great-grandchild' %}selected{% endif %}>Great-great-grandchild</option>
+                            <option value="Spouse of Son" {% if member and member.association == 'Spouse of Son' %}selected{% elif form_data and form_data.association == 'Spouse of Son' %}selected{% endif %}>Spouse of Son</option>
+                            <option value="Spouse of Daughter" {% if member and member.association == 'Spouse of Daughter' %}selected{% elif form_data and form_data.association == 'Spouse of Daughter' %}selected{% endif %}>Spouse of Daughter</option>
+                            <option value="Spouse of Grandchild" {% if member and member.association == 'Spouse of Grandchild' %}selected{% elif form_data and form_data.association == 'Spouse of Grandchild' %}selected{% endif %}>Spouse of Grandchild</option>
+                            <option value="Spouse of Great-grandchild" {% if member and member.association == 'Spouse of Great-grandchild' %}selected{% elif form_data and form_data.association == 'Spouse of Great-grandchild' %}selected{% endif %}>Spouse of Great-grandchild</option>
+                            <option value="Spouse of Great-great-grandchild" {% if member and member.association == 'Spouse of Great-great-grandchild' %}selected{% elif form_data and form_data.association == 'Spouse of Great-great-grandchild' %}selected{% endif %}>Spouse of Great-great-grandchild</option>
+                            <option value="Fiance(e) of Son" {% if member and member.association == 'Fiance(e) of Son' %}selected{% endif %}>Fiance(e) of Son</option>
+                            <option value="Fiance(e) of Daughter" {% if member and member.association == 'Fiance(e) of Daughter' %}selected{% endif %}>Fiance(e) of Daughter</option>
+                            <option value="Fiance(e) of Grandchild" {% if member and member.association == 'Fiance(e) of Grandchild' %}selected{% endif %}>Fiance(e) of Grandchild</option>
+                            <option value="Fiance(e) of Great-grandchild" {% if member and member.association == 'Fiance(e) of Great-grandchild' %}selected{% endif %}>Fiance(e) of Great-grandchild</option>
+                            <option value="Fiance(e) of Great-great-grandchild" {% if member and member.association == 'Fiance(e) of Great-great-grandchild' %}selected{% endif %}>Fiance(e) of Great-great-grandchild</option>
                             <option value="Other" {% if member and member.association == 'Other' %}selected{% elif form_data and form_data.association == 'Other' %}selected{% endif %}>Other (Please specify in personal details)</option>
                         </select>
                     </div>
