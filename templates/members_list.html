@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}Friends{% endblock %} {# Changed title here #}
+{% block title %}Friends{% endblock %}
 
 {% block content %}
 <style>
@@ -38,8 +38,9 @@
 
     /* Member List Item Styles */
     .list-group-item {
-        background-color: transparent; /* Ensure list item background matches card */
-        border-color: transparent;      /* Ensure list item border matches card */
+        background-color: var(--card-bg); /* Use a card background color */
+        border: 1px solid var(--card-border); /* Add a border */
+        border-radius: 0.5rem; /* Match other rounded corners */
         color: var(--text-color); /* Ensure text color matches theme */
         transition: background-color 0.2s ease; /* Smooth hover transition */
     }
@@ -47,15 +48,6 @@
     .list-group-item:hover {
         background-color: var(--nav-link-hover-bg); /* Use a subtle hover effect */
         cursor: pointer;
-    }
-
-    /* Style for the clickable area within the list item */
-    .list-group-item a.text-reset {
-        display: flex; /* Make the anchor tag a flex container */
-        align-items: center; /* Vertically align image and text */
-        width: 100%; /* Make the anchor tag take full width */
-        height: 100%; /* Make the anchor tag take full height */
-        padding: 0; /* Remove default padding from anchor */
     }
 
     .profile-pic-wrapper {
@@ -111,7 +103,7 @@
 
 {# Main Members List Container (Scrollable) #}
 <div class="members-list-container" id="membersListContainer">
-    <h1 class="text-center mb-4">Friends</h1> {# Changed title here #}
+    <h1 class="text-center mb-4">Friends</h1>
 
     {# Search Input Field #}
     <div class="mb-4">
@@ -140,6 +132,32 @@
     </div>
 </div>
 
+{# Game Invitation Modal #}
+<div class="modal fade" id="gameInvitationModal" tabindex="-1" aria-labelledby="gameInvitationModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-gray-800 text-white rounded-2xl">
+      <div class="modal-header border-b border-gray-700">
+        <h5 class="modal-title" id="gameInvitationModalLabel">Invite <span id="inviteeName"></span> to a Game</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-gray-400">Choose a game to invite them to play:</p>
+        <div class="d-grid gap-3">
+          <a id="inviteRacing" href="#" class="btn btn-primary d-flex align-items-center justify-content-center py-3">
+            <i class="fas fa-car-side me-2"></i> Racing Game
+          </a>
+          <a id="inviteChess" href="#" class="btn btn-secondary d-flex align-items-center justify-content-center py-3">
+            <i class="fas fa-chess-knight me-2"></i> Chess
+          </a>
+          <a id="inviteBoardGames" href="#" class="btn btn-success d-flex align-items-center justify-content-center py-3">
+            <i class="fas fa-dice me-2"></i> Board Games
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const membersListContainer = document.getElementById('membersListContainer');
@@ -163,12 +181,15 @@
         // --- Live Search and Filter Logic ---
         const memberSearchInput = document.getElementById('memberSearchInput');
         const membersListElement = document.getElementById('membersList');
+        const gameInvitationModal = new bootstrap.Modal(document.getElementById('gameInvitationModal'));
+        const inviteeNameSpan = document.getElementById('inviteeName');
+        const inviteRacingBtn = document.getElementById('inviteRacing');
+        const inviteChessBtn = document.getElementById('inviteChess');
+        const inviteBoardGamesBtn = document.getElementById('inviteBoardGames');
 
         // Store all members data from Jinja into a JavaScript array
-        // Include AdminAI in this list as a regular member
         const allMembers = [
             {% for member in members %}
-                {# No exclusion for AdminAI here, it will be listed like others #}
                 {
                     id: {{ member.id }},
                     fullName: "{{ member.fullName | e }}",
@@ -194,7 +215,7 @@
 
             membersToRender.forEach(member => {
                 const listItem = document.createElement('li');
-                listItem.className = 'list-group-item d-flex align-items-center py-3 px-3';
+                listItem.className = 'list-group-item d-flex align-items-center justify-content-between py-3 px-3 mb-2 shadow-sm';
                 listItem.innerHTML = `
                     <a href="${member.detailUrl}" class="d-flex align-items-center flex-grow-1 text-decoration-none text-reset">
                         <div class="profile-pic-wrapper me-3">
@@ -205,34 +226,42 @@
                             ${member.username ? `<span class="text-muted ms-2 fw-normal">(@${member.username})</span>` : ''}
                         </div>
                     </a>
+                    <button class="btn btn-primary btn-sm ms-3" onclick="showGameInvitationModal(${member.id}, '${member.fullName.replace(/'/g, "\\'")}')">
+                        <i class="fas fa-gamepad me-1"></i> Invite to Game
+                    </button>
                 `;
                 membersListElement.appendChild(listItem);
             });
         }
+
+        // Global function to show the modal and set the data
+        window.showGameInvitationModal = function(memberId, memberName) {
+            inviteeNameSpan.textContent = memberName;
+            
+            // Set the dynamic URLs for each game's invitation button
+            inviteRacingBtn.href = `{{ url_for('send_game_invite', recipient_id=1, game_name='racing') }}`.replace('1', memberId);
+            inviteChessBtn.href = `{{ url_for('send_game_invite', recipient_id=1, game_name='chess') }}`.replace('1', memberId);
+            inviteBoardGamesBtn.href = `{{ url_for('send_game_invite', recipient_id=1, game_name='board_games') }}`.replace('1', memberId);
+
+            gameInvitationModal.show();
+        };
 
         // Function to filter and sort members
         function filterAndSortMembers() {
             const searchTerm = memberSearchInput.value.toLowerCase().trim();
 
             if (searchTerm === '') {
-                // Sort all members alphabetically by fullName when search is empty
                 const sortedAllMembers = [...allMembers].sort((a, b) => a.fullName.localeCompare(b.fullName));
                 renderMembers(sortedAllMembers);
                 return;
             }
 
-            // Filter members based on search term
             const filteredMembers = allMembers.filter(member => {
                 const fullName = member.fullName.toLowerCase();
                 const username = member.username ? member.username.toLowerCase() : '';
                 return fullName.includes(searchTerm) || username.includes(searchTerm);
             });
 
-            // Sort members based on priority:
-            // 1. Full Name starts with search term
-            // 2. Username starts with search term
-            // 3. Full Name contains search term
-            // 4. Username contains search term
             filteredMembers.sort((a, b) => {
                 const aFullName = a.fullName.toLowerCase();
                 const bFullName = b.fullName.toLowerCase();
@@ -249,25 +278,20 @@
                 const aUsernameIncludes = aUsername.includes(searchTerm);
                 const bUsernameIncludes = bUsername.includes(searchTerm);
 
-                // Priority 1: Full Name starts with
                 if (aFullNameStarts && !bFullNameStarts) return -1;
                 if (!aFullNameStarts && bFullNameStarts) return 1;
 
-                // Priority 2: Username starts with (if Full Name doesn't start with, or both do)
-                if (aFullNameStarts === bFullNameStarts) { // If they are equal on Priority 1
+                if (aFullNameStarts === bFullNameStarts) {
                     if (aUsernameStarts && !bUsernameStarts) return -1;
                     if (!aUsernameStarts && bUsernameStarts) return 1;
                 }
 
-                // Priority 3: Full Name contains
                 if (aFullNameIncludes && !bFullNameIncludes) return -1;
                 if (!aFullNameIncludes && bFullNameIncludes) return 1;
 
-                // Priority 4: Username contains
                 if (aUsernameIncludes && !bUsernameIncludes) return -1;
                 if (!aUsernameIncludes && bUsernameIncludes) return 1;
 
-                // Default: alphabetical by full name if no other criteria differentiate
                 return aFullName.localeCompare(bFullName);
             });
 
@@ -278,21 +302,8 @@
         memberSearchInput.addEventListener('input', filterAndSortMembers);
 
         // Initial render of all members when the page loads
-        // Sort initially by full name
         const sortedInitialMembers = [...allMembers].sort((a, b) => a.fullName.localeCompare(b.fullName));
         renderMembers(sortedInitialMembers);
-
-        // Auto-hide flash messages (copied from base.html for consistency)
-        const flashMessages = document.querySelectorAll('.flash');
-        flashMessages.forEach(function(flash) {
-            setTimeout(function() {
-                flash.style.opacity = '0';
-                flash.style.transition = 'opacity 0.5s ease-out';
-                setTimeout(function() {
-                    flash.remove();
-                }, 500);
-            }, 5000);
-        });
     });
 </script>
 {% endblock %}
