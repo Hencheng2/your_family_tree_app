@@ -14,22 +14,7 @@
                 <p class="lead">Your profile: <strong>{{ member.fullName }}</strong></p>
             {% endif %}
         
-            <div class="d-flex flex-column flex-md-row justify-content-center gap-3 mt-4">
-                <a href="{{ url_for('list_members') }}" class="btn btn-lg btn-outline-light">View All Members</a>
-                <a href="{{ url_for('inbox') }}" class="btn btn-lg btn-outline-light">
-                    Messages
-                    {% if unread_messages_count > 0 %}
-                        <span class="badge bg-danger rounded-pill ms-2">{{ unread_messages_count }}</span>
-                    {% endif %}
-                </a>
-            </div>
-            #}
-
-            {% if current_user.is_admin %}
-                <div class="mt-4">
-                    <a href="{{ url_for('admin_manage_users') }}" class="btn btn-lg btn-outline-info">Admin Panel</a>
-                </div>
-            {% endif %}
+            
         {% else %}
             <h1 class="display-4 mb-3">Welcome to the SociaFam23</h1>
             <p class="lead mb-4">Connect with your friends and share memories.</p>
