@@ -1,41 +1,59 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Capture the Flag Game</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='games/assets/game_style.css') }}">
-    </head>
-<body>
-    <header>
-        <a href="{{ url_for('home') }}" class="home-button">
-            <i class="fas fa-home"></i> Home
-        </a>
-        <h1>3D Capture the Flag</h1>
-        <p>A multiplayer zone control game.</p>
-    </header>
+{% extends 'base.html' %}
 
-    <main>
-        <canvas id="gameCanvas"></canvas>
+{% block title %}Game Library{% endblock %}
 
-        <div id="gameUI">
-            <div id="scoreBoard">
-                <p>Red Team: <span id="redScore">0</span></p>
-                <p>Blue Team: <span id="blueScore">0</span></p>
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="text-center mb-12">
+        <h1 class="text-5xl font-extrabold text-blue-500 tracking-tight mb-2">Game Library</h1>
+        <p class="text-lg text-gray-400">Choose a game to play with friends and family!</p>
+    </div>
+
+    <div class="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        <!-- Racing Game Card -->
+        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
+            <div class="relative h-48 overflow-hidden">
+                <!-- Placeholder for Racing Game Image -->
+                <img src="https://placehold.co/800x400/1e293b/fff?text=Racing+Game" alt="Racing Game" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
+                <div class="absolute bottom-4 left-4 text-white text-2xl font-bold">Racing Game</div>
             </div>
-            <div id="gameStatus">
-                <p>Status: <span id="statusMessage">Waiting for players...</span></p>
+            <div class="p-6">
+                <p class="text-gray-400 mb-4">Challenge your friends to a thrilling race or practice your skills in single-player mode. A game of speed and precision.</p>
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <a href="#" class="w-full sm:w-1/2 bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Single Player</a>
+                    <a href="#" class="w-full sm:w-1/2 bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Multiplayer</a>
+                </div>
             </div>
-            <button id="startGameButton" style="display:none;">Start Game</button>
         </div>
-    </main>
 
-    <footer>
-        <p>&copy; Your Family Tree App Games</p>
-    </footer>
+        <!-- Chess Game Card -->
+        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
+            <div class="relative h-48 overflow-hidden">
+                <!-- Placeholder for Chess Game Image -->
+                <img src="https://placehold.co/800x400/1e293b/fff?text=Chess+Game" alt="Chess Game" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
+                <div class="absolute bottom-4 left-4 text-white text-2xl font-bold">Chess</div>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-400 mb-4">A timeless game of strategy and tactics. Compete against a friend or the computer to checkmate your opponent's king.</p>
+                <a href="#" class="block w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-indigo-700">Play Chess</a>
+            </div>
+        </div>
 
-    <script async src="https://unpkg.com/three@0.165.0/build/three.min.js"></script>
-
-    <script src="{{ url_for('static', filename='js/games.js') }}"></script>
-</body>
-</html>
+        <!-- Board Games Card -->
+        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
+            <div class="relative h-48 overflow-hidden">
+                <!-- Placeholder for Board Games Image -->
+                <img src="https://placehold.co/800x400/1e293b/fff?text=Board+Games" alt="Board Games" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
+                <div class="absolute bottom-4 left-4 text-white text-2xl font-bold">Board Games</div>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-400 mb-4">A collection of various classic and modern board games for you and your family to enjoy together.</p>
+                <a href="#" class="block w-full bg-green-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-green-700">Browse Games</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
