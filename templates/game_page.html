@@ -4,7 +4,15 @@
 
 {% block content %}
 <div class="container mx-auto px-4 py-8">
-    <div class="text-center mb-12">
+    <div class="text-center mb-12 relative">
+        <!-- Home Button -->
+        <a href="{{ url_for('home') }}" class="absolute top-0 left-0 bg-gray-700 text-white font-semibold py-2 px-4 rounded-xl text-center transition duration-300 hover:bg-gray-600 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            Home
+        </a>
         <h1 class="text-5xl font-extrabold text-blue-500 tracking-tight mb-2">Game Library</h1>
         <p class="text-lg text-gray-400">Choose a game to play with friends and family!</p>
     </div>
@@ -12,7 +20,7 @@
     <div class="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         <!-- Racing Game Card -->
         <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
-            <div class="relative h-48 overflow-hidden">
+            <div class="relative h-36 overflow-hidden">
                 <!-- Placeholder for Racing Game Image -->
                 <img src="https://placehold.co/800x400/1e293b/fff?text=Racing+Game" alt="Racing Game" class="w-full h-full object-cover">
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
@@ -29,7 +37,7 @@
 
         <!-- Chess Game Card -->
         <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
-            <div class="relative h-48 overflow-hidden">
+            <div class="relative h-36 overflow-hidden">
                 <!-- Placeholder for Chess Game Image -->
                 <img src="https://placehold.co/800x400/1e293b/fff?text=Chess+Game" alt="Chess Game" class="w-full h-full object-cover">
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
@@ -43,7 +51,7 @@
 
         <!-- Board Games Card -->
         <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
-            <div class="relative h-48 overflow-hidden">
+            <div class="relative h-36 overflow-hidden">
                 <!-- Placeholder for Board Games Image -->
                 <img src="https://placehold.co/800x400/1e293b/fff?text=Board+Games" alt="Board Games" class="w-full h-full object-cover">
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
@@ -57,3 +65,5 @@
     </div>
 </div>
 {% endblock %}
+
+{% block footer %}{% endblock %}
