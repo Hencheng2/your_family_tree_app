@@ -1763,7 +1763,7 @@ def status_feed():
 @app.route('/games')
 @login_required
 def games_hub(): # Renamed function for clarity
-    return render_template('games.html')
+    return render_template('game_page.html')
 
 @app.route('/play_game') # You can choose a more specific URL like '/play_my_awesome_game'
 @login_required
