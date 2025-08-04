@@ -12,15 +12,8 @@
 
             {% if member %}
                 <p class="lead">Your profile: <strong>{{ member.fullName }}</strong></p>
-                <a href="{{ url_for('my_profile') }}" class="btn btn-lg btn-primary mb-3">View My Profile</a>
-            {% else %}
-                <p class="lead">It looks like you haven't added your personal details yet.</p>
-                <a href="{{ url_for('add_my_details') }}" class="btn btn-lg btn-warning mb-3">Add My Details</a>
             {% endif %}
-
-            {# Removed redundant "View All Members" and "Messages" buttons #}
-            {# These are now in the main navigation bar (base.html) #}
-            {#
+        
             <div class="d-flex flex-column flex-md-row justify-content-center gap-3 mt-4">
                 <a href="{{ url_for('list_members') }}" class="btn btn-lg btn-outline-light">View All Members</a>
                 <a href="{{ url_for('inbox') }}" class="btn btn-lg btn-outline-light">
