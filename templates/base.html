@@ -19,661 +19,330 @@
         /* Theme Variables */
         :root {
             --primary-color: #4CAF50; /* Green */
-            --secondary-color: #6c757d; /* Grey */
-            --background-color: #f8f9fa; /* Light background */
-            --text-color: #212529; /* Dark text */
-            --header-bg: #4CAF50;
-            --header-text: #ffffff;
-            --card-bg: #ffffff;
+            --secondary-color: #f4f4f4; /* Light gray */
+            --background-color: #f8f9fa; /* Lighter background */
+            --text-color: #333;
+            --header-bg: #fff;
+            --footer-bg: #fff;
+            --card-bg: #fff;
             --card-border: #e0e0e0;
-            --input-border: #ced4da;
-            --button-bg: #4CAF50;
-            --button-text: #ffffff;
             --link-color: #007bff;
-            --flash-success-bg: #d4edda;
-            --flash-success-text: #155724;
-            --flash-danger-bg: #f8d7da;
-            --flash-danger-text: #721c24;
-            --flash-info-bg: #d1ecf1;
-            --flash-info-text: #0c5460;
-            --flash-warning-bg: #fff3cd;
-            --flash-warning-text: #856404;
-            --dark-color: #343a40; /* Defined dark color */
-            --dropdown-bg-color: #495057; /* Explicitly grey for dropdown background */
-            --dropdown-button-bg-color: #5a6268; /* Darker grey for dropdown buttons */
-            --dropdown-button-hover-bg-color: #6c757d; /* Lighter grey on hover */
-            --footer-height: 60px; /* Define footer height */
+            --link-hover-color: #0056b3;
+            --nav-link-hover-bg: #e9ecef;
+            --footer-height: 60px;
         }
 
-        .dark-theme {
-            --primary-color: #388E3C; /* Darker Green */
-            --secondary-color: #adb5bd;
-            --background-color: #343a40; /* Dark background */
-            --text-color: #f8f9fa; /* Light text */
-            --header-bg: #212529;
-            --header-text: #ffffff;
-            --card-bg: #495057;
-            --card-border: #6c757d;
-            --input-border: #6c757d;
-            --button-bg: #28a745;
-            --button-text: #ffffff;
-            --link-color: #87CEEB; /* Light blue */
-            --flash-success-bg: #28a745;
-            --flash-success-text: #ffffff;
-            --flash-danger-bg: #dc3545;
-            --flash-danger-text: #ffffff;
-            --flash-info-bg: #17a2b8;
-            --flash-info-text: #ffffff;
-            --flash-warning-bg: #ffc107;
-            --flash-warning-text: #343a40;
-            --dark-color: #212529; /* Even darker for dark theme */
-            --dropdown-bg-color: #2c3e50; /* Darker grey for dropdown in dark theme */
-            --dropdown-button-bg-color: #34495e; /* Darker grey for dropdown buttons in dark theme */
-            --dropdown-button-hover-bg-color: #4a627a; /* Lighter grey on hover in dark theme */
+        /* Dark theme variables */
+        [data-bs-theme="dark"] {
+            --primary-color: #4CAF50;
+            --secondary-color: #333;
+            --background-color: #121212;
+            --text-color: #f4f4f4;
+            --header-bg: #1e1e1e;
+            --footer-bg: #1e1e1e;
+            --card-bg: #1e1e1e;
+            --card-border: #333;
+            --link-color: #8ab4f8;
+            --link-hover-color: #c5d8f9;
+            --nav-link-hover-bg: #333;
+        }
+    
+        /* Universal box-sizing */
+        *, *::before, *::after {
+            box-sizing: border-box;
         }
 
+        /* Set font family and base styles */
         body {
             font-family: 'Inter', sans-serif;
             background-color: var(--background-color);
             color: var(--text-color);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow-x: hidden; /* Prevent horizontal scroll */
+            margin: 0;
             padding-bottom: var(--footer-height); /* Space for fixed footer */
+            overflow-y: auto; /* Allow scrolling on the body by default */
         }
 
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--text-color);
+        }
+
+        a {
+            color: var(--link-color);
+            text-decoration: none;
+        }
+    
+        a:hover {
+            color: var(--link-hover-color);
+        }
+
+        /* Navbar Styling */
         .navbar {
             background-color: var(--header-bg);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-bottom: 1px solid var(--card-border);
+            transition: background-color 0.3s, border-color 0.3s;
             position: fixed;
             width: 100%;
             top: 0;
             left: 0;
-            z-index: 1030;
+            z-index: 1000;
         }
 
-        .navbar-brand, .navbar-nav .nav-link {
-            color: var(--header-text) !important;
+        .navbar .nav-link {
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            position: relative; /* Add for badge positioning */
         }
-        .navbar-nav .nav-link:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-            border-radius: 5px;
-        }
-        .dark-theme .navbar-nav .nav-link:hover {
-            background-color: rgba(0, 0, 0, 0.2);
-        }
-
-        .navbar-toggler-icon {
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.75%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
-        }
-
-        .content {
-            flex: 1;
-            padding-top: 70px;
-        }
-
-        .footer {
-            background-color: var(--header-bg);
-            color: var(--header-text);
-            padding: 20px 0;
+    
+        .navbar .nav-link i {
+            width: 24px; /* Fix icon width */
             text-align: center;
+            margin-right: 0.5rem;
+        }
+
+        .navbar .nav-link:hover {
+            background-color: var(--nav-link-hover-bg);
+            color: var(--link-hover-color);
+        }
+
+        /* Main content padding */
+        .container-fluid.mt-5, .container.mt-5, .container.py-4 {
+            padding-top: 80px; /* Offset for fixed navbar */
+            padding-bottom: 80px; /* Offset for fixed footer */
+        }
+
+        /* Fixed Footer Styling */
+        .footer {
+            background-color: var(--footer-bg);
             border-top: 1px solid var(--card-border);
-            position: fixed; /* Make footer fixed */
-            bottom: 0; /* Position at the bottom */
-            width: 100%; /* Take full width */
-            z-index: 1020; /* Ensure it's below navbar but above most content */
-        }
-
-        .card {
-            background-color: var(--card-bg);
-            border-color: var(--card-border);
             color: var(--text-color);
+            padding: 0; /* Remove default padding, children will handle it */
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: var(--footer-height);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
         }
-
-        .form-control {
-            background-color: var(--background-color);
+    
+        .footer .nav-link {
             color: var(--text-color);
-            border-color: var(--input-border);
+            text-align: center;
+            padding: 0.5rem;
+            flex-grow: 1;
+            transition: background-color 0.2s ease;
+            position: relative; /* Add for badge positioning */
+        }
+    
+        .footer .nav-link:hover {
+            background-color: var(--nav-link-hover-bg);
         }
 
-        .form-control:focus {
-            background-color: var(--background-color);
-            color: var(--text-color);
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 0.25rem rgba(76, 175, 80, 0.25);
+        .footer .nav-link i {
+            display: block;
+            margin-bottom: 0.25rem;
         }
 
-        .btn-primary, .btn-success, .btn-info, .btn-danger, .btn-warning, .btn-secondary {
-            color: var(--button-text);
+        .footer .nav-link.active {
+            color: var(--primary-color);
         }
 
-        .btn-primary { background-color: var(--primary-color); border-color: var(--primary-color); }
-        .btn-primary:hover { background-color: #43a047; border-color: #43a047; }
+        /* Theme Switcher */
+        .theme-switch-wrapper {
+            display: flex;
+            align-items: center;
+        }
+    
+        .theme-switch {
+            display: inline-block;
+            height: 34px;
+            position: relative;
+            width: 60px;
+        }
+    
+        .theme-switch input {
+            display:none;
+        }
+    
+        .slider {
+            background-color: #ccc;
+            bottom: 0;
+            cursor: pointer;
+            left: 0;
+            position: absolute;
+            right: 0;
+            top: 0;
+            transition: .4s;
+        }
+    
+        .slider:before {
+            background-color: #fff;
+            bottom: 4px;
+            content: "";
+            height: 26px;
+            left: 4px;
+            position: absolute;
+            transition: .4s;
+            width: 26px;
+        }
+    
+        input:checked + .slider {
+            background-color: var(--primary-color);
+        }
+    
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+    
+        .slider.round {
+            border-radius: 34px;
+        }
+    
+        .slider.round:before {
+            border-radius: 50%;
+        }
 
-        .btn-success { background-color: #28a745; border-color: #28a745; }
-        .btn-success:hover { background-color: #218838; border-color: #1e7e34; }
-
-        .btn-info { background-color: #17a2b8; border-color: #17a2b8; }
-        .btn-info:hover { background-color: #138496; border-color: #117a8b; }
-
-        .btn-danger { background-color: #dc3545; border-color: #dc3545; }
-        .btn-danger:hover { background-color: #c82333; border-color: #bd2130; }
-
-        .btn-warning { background-color: #ffc107; border-color: #ffc107; color: #212529; }
-        .btn-warning:hover { background-color: #e0a800; border-color: #d39e00; }
-
-        .btn-secondary { background-color: var(--secondary-color); border-color: var(--secondary-color); }
-        .btn-secondary:hover { background-color: #5a6268; border-color: #545b62; }
-
+        /* Custom alert styles for flash messages */
         .alert-container {
             position: fixed;
-            top: 70px; /* Default for pages without custom fixed headers */
+            top: 70px; /* Below navbar */
             left: 50%;
             transform: translateX(-50%);
             width: 90%;
             max-width: 600px;
             z-index: 1050;
-            text-align: center;
-        }
-        .alert {
-            margin-bottom: 10px;
-            padding: 10px 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            opacity: 1;
-            transition: opacity 0.5s ease-out;
-        }
-
-        /* Ensure modal text is visible */
-        .modal-body, .modal-header, .modal-footer {
-            color: var(--text-color);
-            background-color: var(--card-bg);
-        }
-
-        .modal-body p, .modal-body label, .modal-body small {
-            color: var(--text-color);
-        }
-
-        .modal {
-            z-index: 1050;
-        }
-        .modal-backdrop {
-            z-index: 1040;
-        }
-
-        /* NEW: Styles for the direct navigation icons */
-        .navbar-nav-direct-icons {
-            display: flex;
-            align-items: center;
-            flex-grow: 1; /* Allow this div to take up available space */
-            justify-content: space-around; /* Distribute items evenly with space around them */
-            padding: 0 10px; /* Add some padding on the sides */
-        }
-
-        /* Responsive adjustments for icon spacing */
-        @media (max-width: 768px) { /* Adjust for smaller screens like tablets */
-            .navbar-nav-direct-icons {
-                gap: 5px; /* Smaller gap on smaller screens, let space-around handle main distribution */
-            }
-            .navbar-nav-direct-icons .nav-link {
-                font-size: 1.1rem; /* Slightly smaller icons */
-                padding: 3px 5px;
-            }
-        }
-
-        @media (max-width: 576px) { /* Adjust for very small screens like phones */
-            .navbar-nav-direct-icons {
-                gap: 2px; /* Even smaller gap on mobile */
-                padding: 0 2px; /* Less padding on very small screens */
-            }
-            .navbar-nav-direct-icons .nav-link {
-                font-size: 0.9rem; /* Smallest icons */
-                padding: 2px 3px;
-            }
-            .navbar-brand {
-                font-size: 0.9rem !important; /* Smaller home text */
-                padding-left: 5px;
-                padding-right: 5px;
-            }
-        }
-
-
-        .navbar-nav-direct-icons .nav-link {
-            font-size: 1.2rem; /* Larger icon size */
-            padding: 5px 10px; /* Padding around icons */
-            position: relative; /* For badge positioning */
-            text-align: center; /* Ensure icon is centered within its link area */
-        }
-
-        .navbar-nav-direct-icons .nav-link .badge {
-            position: absolute;
-            top: 0px; /* Adjust as needed */
-            right: 0px; /* Adjust as needed */
-            font-size: 0.6em; /* Smaller badge text */
-            padding: .3em .5em;
-            background-color: var(--flash-danger-bg);
-            color: var(--flash-danger-text);
-            border-radius: 50%;
-            transform: translate(50%, -50%);
-            z-index: 1;
-        }
-
-        /* Ensure the main navbar container distributes items */
-        .navbar .container-fluid {
-            display: flex;
-            justify-content: space-between; /* Distribute items with space between */
-            align-items: center;
-        }
-
-        /* --- AI Chat Modal Specific Styles --- */
-        .ai-chat-modal .modal-content {
-            border-radius: 15px;
-            overflow: hidden; /* Ensures rounded corners apply to children */
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-            background-color: var(--card-bg);
-            color: var(--text-color);
-        }
-        .ai-chat-modal .modal-header {
-            background-color: var(--primary-color);
-            color: var(--header-text);
-            border-bottom: none;
-            padding: 15px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .ai-chat-modal .modal-title {
-            color: var(--header-text);
-            font-size: 1.25rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .ai-chat-modal .modal-title img {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            border: 1px solid rgba(255,255,255,0.5);
-        }
-        .ai-chat-modal .btn-close {
-            filter: invert(1); /* Makes close button white for dark backgrounds */
-        }
-        .ai-chat-modal .modal-body {
-            padding: 0; /* Remove padding to let chat container manage it */
-            max-height: 70vh; /* Limit height for scrollability */
-            overflow-y: auto; /* Enable scrolling for chat messages */
-            display: flex;
-            flex-direction: column;
-            background-color: var(--background-color); /* Chat background */
-        }
-        .ai-chat-modal .message-container {
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .ai-chat-modal .message {
-            max-width: 80%;
-            padding: 10px 15px;
-            border-radius: 15px;
-            word-wrap: break-word;
-            line-height: 1.4;
-        }
-        .ai-chat-modal .user-message {
-            background-color: var(--primary-color);
-            color: var(--button-text);
-            align-self: flex-end;
-            border-bottom-right-radius: 5px; /* Sharpen one corner */
-        }
-        .ai-chat-modal .ai-message {
-            background-color: var(--card-bg);
-            color: var(--text-color);
-            align-self: flex-start;
-            border: 1px solid var(--card-border);
-            border-bottom-left-radius: 5px; /* Sharpen one corner */
-        }
-        .ai-chat-modal .message-timestamp {
-            font-size: 0.75em;
-            color: var(--secondary-color);
-            margin-top: 5px;
-        }
-        .ai-chat-modal .user-message .message-timestamp {
-            text-align: right;
-            color: rgba(255,255,255,0.7);
-        }
-        .ai-chat-modal .modal-footer {
-            border-top: none;
-            padding: 15px 20px;
-            background-color: var(--card-bg);
-        }
-        .ai-chat-modal .input-group .form-control {
-            border-radius: 20px 0 0 20px;
-            border-color: var(--input-border);
-            background-color: var(--background-color);
-            color: var(--text-color);
-        }
-        .ai-chat-modal .input-group .btn {
-            border-radius: 0 20px 20px 0;
-            background-color: var(--primary-color);
-            border-color: var(--primary-color);
-            color: var(--button-text);
-        }
-        .ai-chat-modal .input-group .btn:hover {
-            background-color: #43a047;
-            border-color: #43a047;
-        }
-        .ai-chat-modal .loading-indicator {
-            text-align: center;
-            padding: 10px;
-            color: var(--secondary-color);
-            font-style: italic;
         }
     </style>
 </head>
-<body class="{{ g.user_theme if g.user_theme else 'light' }}-theme"> {# Apply theme class to body #}
-
-    <nav class="navbar navbar-expand-lg">
+<body>
+    {# The main navigation bar at the top of the page #}
+    <nav class="navbar navbar-expand-lg navbar-light">
         <div class="container-fluid">
-            {# Left-aligned Home button #}
-            <a class="navbar-brand" href="{{ url_for('home') }}">Home</a>
-
-            {# All direct navigation icons - now flex-grow-1 to take available space #}
-            {% if current_user.is_authenticated %}
-            <div class="navbar-nav-direct-icons">
-                <a class="nav-link" href="{{ url_for('inbox') }}" title="Messages">
-                    <i class="fas fa-comments"></i>
-                    {% if g.unread_messages_count > 0 %}
-                        <span class="badge">{{ g.unread_messages_count }}</span>
-                    {% endif %}
-                </a>
-                <a class="nav-link" href="{{ url_for('list_members') }}" title="Members">
-                    <i class="fas fa-users"></i>
-                </a>
-                <a class="nav-link" href="{{ url_for('status_feed') }}" title="Status">
-                    <i class="fas fa-play-circle"></i>
-                </a>
-                <a class="nav-link" href="{{ url_for('games_hub') }}" title="Games">
-                    <i class="fas fa-gamepad"></i>
-                </a>
-                <a class="nav-link" href="{{ url_for('settings') }}" title="Settings">
-                    <i class="fas fa-cog"></i>
-                </a>
-                <a class="nav-link" href="{{ url_for('my_profile') }}" title="My Profile">
-                    <i class="fas fa-user-circle"></i>
-                </a>
-                {% if current_user.is_admin %}
-                {# Admin Panel link (only if admin) - now part of the main icon group #}
-                 <a class="nav-link" href="{{ url_for('admin_manage_users') }}" title="Admin Panel">
-                    <i class="fas fa-user-shield"></i> {# Admin icon #}
-                </a>
-                {% endif %}
+            <a class="navbar-brand" href="{{ url_for('home') }}">
+                <i class="fas fa-home me-2"></i> SociaFam23
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('home') }}">
+                            <i class="fas fa-chart-line"></i> Feed
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('list_members') }}">
+                            <i class="fas fa-users"></i> Friends
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('inbox') }}">
+                            <i class="fas fa-envelope"></i> Inbox
+                            {# The badge will only appear if there are any unread messages or game invitations #}
+                            {% set total_inbox_notifications = (unread_message_count | default(0)) + (unread_game_invite_count | default(0)) %}
+                            {% if total_inbox_notifications > 0 %}
+                                <span class="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle">
+                                    {{ total_inbox_notifications }}
+                                </span>
+                            {% endif %}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('my_profile') }}">
+                            <i class="fas fa-user-circle"></i> Profile
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('logout') }}">
+                            <i class="fas fa-sign-out-alt"></i> Logout
+                        </a>
+                    </li>
+                    <li class="nav-item d-flex align-items-center">
+                        <div class="theme-switch-wrapper">
+                            <label class="theme-switch" for="checkbox">
+                                <input type="checkbox" id="checkbox" />
+                                <div class="slider round"></div>
+                            </label>
+                        </div>
+                    </li>
+                </ul>
             </div>
-            {% endif %}
-
         </div>
     </nav>
 
-    <div class="content">
-        <div class="alert-container">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="alert alert-{{ category }} flash">{{ message | safe }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-        </div>
+    {# Placeholder for the main content of the page #}
+    <div class="main-content">
         {% block content %}{% endblock %}
     </div>
 
-    {% block footer %} {# <--- ADDED THIS BLOCK TAG #}
-    <footer class="footer">
-        <div class="container">
-            <span>&copy; {{ now.year }} SocioFam23. All rights reserved.</span>
-        </div>
+    {# The fixed footer navigation bar #}
+    <footer class="footer d-lg-none">
+        <a class="nav-link active" href="{{ url_for('home') }}">
+            <i class="fas fa-chart-line"></i>
+            <span class="d-block">Feed</span>
+        </a>
+        <a class="nav-link" href="{{ url_for('list_members') }}">
+            <i class="fas fa-users"></i>
+            <span class="d-block">Friends</span>
+        </a>
+        <a class="nav-link" href="{{ url_for('inbox') }}">
+            <i class="fas fa-envelope"></i>
+            <span class="d-block">Inbox</span>
+            {# The badge for mobile will only appear if there are any unread messages or game invitations #}
+            {% set total_inbox_notifications = (unread_message_count | default(0)) + (unread_game_invite_count | default(0)) %}
+            {% if total_inbox_notifications > 0 %}
+                <span class="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle">
+                    {{ total_inbox_notifications }}
+                </span>
+            {% endif %}
+        </a>
+        <a class="nav-link" href="{{ url_for('my_profile') }}">
+            <i class="fas fa-user-circle"></i>
+            <span class="d-block">Profile</span>
+        </a>
     </footer>
-    {% endblock %} {# <--- ADDED THIS BLOCK TAG #}
 
+    {# Bootstrap JS and other scripts #}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Auto-hide flash messages
-            const flashMessages = document.querySelectorAll('.flash');
-            flashMessages.forEach(function(flash) {
+        // Theme switching logic
+        const toggleSwitch = document.querySelector('#checkbox');
+        const currentTheme = localStorage.getItem('theme');
+        if (currentTheme) {
+            document.documentElement.setAttribute('data-bs-theme', currentTheme);
+            if (currentTheme === 'dark') {
+                toggleSwitch.checked = true;
+            }
+        }
+        function switchTheme(e) {
+            if (e.target.checked) {
+                document.documentElement.setAttribute('data-bs-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+            }
+            else {
+                document.documentElement.setAttribute('data-bs-theme', 'light');
+                localStorage.setItem('theme', 'light');
+            }
+        }
+        toggleSwitch.addEventListener('change', switchTheme, false);
+
+        // Auto-hide flash messages
+        const flashMessages = document.querySelectorAll('.alert-container .alert');
+        flashMessages.forEach(function(flash) {
+            setTimeout(function() {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s ease-out';
                 setTimeout(function() {
-                    flash.style.opacity = '0';
-                    flash.style.transition = 'opacity 0.5s ease-out';
-                    setTimeout(function() {
-                        flash.remove();
-                    }, 500);
-                }, 5000);
-            });
-
+                    flash.remove();
+                }, 500);
+            }, 5000);
         });
-    </script>
-
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="module">
-        // Import the Firebase modules
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, orderBy, limit, addDoc, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Make these available globally for the React component
-        window.firebase_app_module = { initializeApp, getFirestore, collection, query, orderBy, limit, addDoc, serverTimestamp, onSnapshot, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged };
-    </script>
-
-    <div class="modal fade ai-chat-modal" id="aiChatModal" tabindex="-1" aria-labelledby="aiChatModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="aiChatModalLabel">
-                        <img src="{{ url_for('static', filename='img/ai_icon.png') }}" alt="Admin AI">
-                        Chat with Admin AI
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    {# React will render chat messages here #}
-                    <div id="ai-chat-root"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        const { initializeApp, getFirestore, collection, query, orderBy, limit, addDoc, serverTimestamp, onSnapshot, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = window.firebase_app_module;
-
-        // Get config from Jinja context (passed by Flask's app.context_processor)
-        const firebaseConfig = JSON.parse('{{ firebase_config_json | tojson | safe }}');
-        const initialAuthToken = '{{ initial_auth_token | safe }}';
-        const canvasAppId = '{{ canvas_app_id | safe }}';
-        const currentUserId = '{{ current_user.id | safe }}'; // Flask-Login current_user.id
-
-        function AIChatApp() {
-            const [messages, setMessages] = useState([]);
-            const [inputMessage, setInputMessage] = useState('');
-            const [isLoading, setIsLoading] = useState(false);
-            const messagesEndRef = useRef(null);
-
-            const [db, setDb] = useState(null);
-            const [auth, setAuth] = useState(null);
-            const [currentFirebaseUser, setCurrentFirebaseUser] = useState(null);
-            const [aiUserId, setAiUserId] = useState(null); // To store AI's user ID from Flask
-
-            // Initialize Firebase and get AI user ID
-            useEffect(() => {
-                const app = initializeApp(firebaseConfig);
-                const firestoreDb = getFirestore(app);
-                const firebaseAuth = getAuth(app);
-
-                setDb(firestoreDb);
-                setAuth(firebaseAuth);
-
-                // Sign in anonymously or with custom token
-                const signIn = async () => {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(firebaseAuth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(firebaseAuth);
-                        }
-                    } catch (error) {
-                        console.error("Firebase Auth Error:", error);
-                    }
-                };
-                signIn();
-
-                // Listen for auth state changes
-                const unsubscribeAuth = onAuthStateChanged(firebaseAuth, (user) => {
-                    setCurrentFirebaseUser(user);
-                });
-
-                // Fetch AI user ID from Flask backend (since AI user is in SQLite)
-                // You'll need a Flask endpoint to provide AI user ID
-                fetch('/get-ai-user-id') // Flask route to get AI user ID
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.ai_user_id) {
-                            setAiUserId(String(data.ai_user_id)); // Ensure it's a string
-                        } else {
-                            console.error("Failed to get AI user ID from backend.");
-                        }
-                    })
-                    .catch(error => console.error("Error fetching AI user ID:", error));
-
-                return () => unsubscribeAuth();
-            }, []); // Run only once on component mount
-
-            // Listen for messages once Firebase and AI user ID are ready
-            useEffect(() => {
-                if (db && currentFirebaseUser && aiUserId && currentUserId) {
-                    const chatCollectionPath = `artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/conversations/${aiUserId}/messages`;
-                    const messagesRef = collection(db, chatCollectionPath);
-                    const q = query(messagesRef, orderBy('timestamp', 'asc'), limit(50)); // Limit messages to 50
-
-                    const unsubscribe = onSnapshot(q, (snapshot) => {
-                        const loadedMessages = snapshot.docs.map(doc => ({
-                            id: doc.id,
-                            ...doc.data(),
-                            timestamp: doc.data().timestamp ? doc.data().timestamp.toDate() : new Date() // Convert Firestore Timestamp to JS Date
-                        }));
-                        setMessages(loadedMessages);
-                        setIsLoading(false); // Stop loading after messages are fetched
-                    }, (error) => {
-                        console.error("Error fetching messages:", error);
-                        setIsLoading(false);
-                    });
-
-                    return () => unsubscribe(); // Clean up listener on unmount
-                }
-            }, [db, currentFirebaseUser, aiUserId, currentUserId, canvasAppId]);
-
-            // Scroll to bottom on new messages
-            useEffect(() => {
-                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }, [messages]);
-
-            const handleSendMessage = async () => {
-                if (inputMessage.trim() === '' || !currentFirebaseUser || !aiUserId || !db) {
-                    return;
-                }
-
-                setIsLoading(true); // Show loading indicator
-
-                try {
-                    // Send message to Flask backend API
-                    const response = await fetch('/api/send_ai_message', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest' // Flask expects this for AJAX
-                        },
-                        body: JSON.stringify({
-                            message: inputMessage,
-                            humanUserId: currentUserId // Pass the Flask user ID
-                        })
-                    });
-
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.error || 'Failed to get AI response');
-                    }
-
-                    // No need to manually add message to state here; onSnapshot will handle it
-                    setInputMessage(''); // Clear input
-                } catch (error) {
-                    console.error("Error sending message to AI:", error);
-                    alert(`Error: ${error.message}`); // Use alert for now, consider custom modal later
-                    setIsLoading(false); // Hide loading indicator on error
-                }
-            };
-
-            const handleKeyDown = (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault(); // Prevent newline in textarea
-                    handleSendMessage();
-                }
-            };
-
-            return (
-                <div className="d-flex flex-column h-100">
-                    <div className="message-container flex-grow-1">
-                        {messages.length === 0 && !isLoading && (
-                            <p className="text-center text-muted">Start a conversation with Admin AI!</p>
-                        )}
-                        {messages.map((msg) => (
-                            <div key={msg.id} className={`message ${msg.isAI ? 'ai-message' : 'user-message'}`}>
-                                {msg.message}
-                                <div className="message-timestamp">
-                                    {moment(msg.timestamp).format('MMM D, h:mm A')}
-                                </div>
-                            </div>
-                        ))}
-                        {isLoading && (
-                            <div className="loading-indicator">Admin AI is typing...</div>
-                        )}
-                        <div ref={messagesEndRef} /> {/* Scroll target */}
-                    </div>
-                    <div className="modal-footer">
-                        <div className="input-group">
-                            <textarea
-                                className="form-control"
-                                placeholder="Type your message..."
-                                value={inputMessage}
-                                onChange={(e) => setInputMessage(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                rows="1"
-                                style="resize: none;"
-                            ></textarea>
-                            <button className="btn btn-primary" onClick={handleSendMessage} disabled={isLoading}>
-                                <i className="fas fa-paper-plane"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // Render the React component into the modal body
-        const aiChatModalElement = document.getElementById('aiChatModal');
-        if (aiChatModalElement) {
-            aiChatModalElement.addEventListener('shown.bs.modal', () => {
-                // Render React app when the modal is shown
-                ReactDOM.render(<AIChatApp />, document.getElementById('ai-chat-root'));
-            });
-            aiChatModalElement.addEventListener('hidden.bs.modal', () => {
-                // Unmount React app when the modal is hidden to clean up
-                ReactDOM.unmountComponentAtNode(document.getElementById('ai-chat-root'));
-            });
-        }
     </script>
 </body>
 </html>
-
-
-
