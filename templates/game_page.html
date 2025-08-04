@@ -3,61 +3,73 @@
 {% block title %}Game Library{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
+<div class="container mx-auto px-4 py-8 max-w-7xl">
+    <!-- Main header section with a home button -->
     <div class="text-center mb-12 relative">
-        <!-- Home Button -->
-        <a href="{{ url_for('home') }}" class="home-button">
-            <i class="fas fa-home"></i> Home
+        <a href="{{ url_for('home') }}" class="absolute top-0 left-0 bg-gray-700 text-white font-semibold py-2 px-4 rounded-xl shadow-lg transition duration-300 hover:bg-gray-600">
+            <i class="fas fa-home mr-2"></i> Home
         </a>
         <h1 class="text-5xl font-extrabold text-blue-500 tracking-tight mb-2">Game Library</h1>
-        <p class="text-lg text-gray-400">Choose a game to play with friends</p>
+        <p class="text-lg text-gray-400">Choose a game to play with friends or solo.</p>
     </div>
 
-    <div class="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+    <!-- Grid of game cards -->
+    <div class="grid gap-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+
         <!-- Racing Game Card -->
-        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
-            <div class="relative h-5 overflow-hidden">
-                <!-- Placeholder for Racing Game Image -->
-                <img src="https://placehold.co/800x400/1e293b/fff?text=Racing+Game" alt="Racing Game" class="w-full h-full object-cover">
+        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl flex flex-col">
+            <!-- Placeholder for Racing Game Icon -->
+            <div class="relative h-48 overflow-hidden bg-gray-900 flex items-center justify-center">
+                <i class="fas fa-car-side text-8xl text-red-500"></i>
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
-                <div class="absolute bottom-1 left-2 text-white text-lg font-bold">Racing Game</div>
             </div>
-            <div class="p-6">
-                <p class="text-gray-400 mb-4">Challenge your friends to a thrilling race or practice your skills in single-player mode. A game of speed and precision.</p>
-                <div class="flex flex-col sm:flex-row gap-4">
-                    <a href="#" class="w-full sm:w-1/2 bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Single Player</a>
-                    <a href="#" class="w-full sm:w-1/2 bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Multiplayer</a>
+            <div class="p-6 flex flex-col flex-grow">
+                <h3 class="text-3xl font-bold text-white mb-2">Racing Game</h3>
+                <p class="text-gray-400 mb-4 flex-grow">Challenge your friends to a thrilling race or practice your skills in single-player mode. A game of speed and precision.</p>
+                <div class="flex flex-col sm:flex-row gap-4 mt-auto">
+                    <!-- Links to the game routes -->
+                    <a href="{{ url_for('play_game', game_name='racing', mode='solo') }}" class="w-full sm:w-1/2 bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Single Player</a>
+                    <a href="{{ url_for('invite_game', game_name='racing') }}" class="w-full sm:w-1/2 bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Invite a Friend</a>
                 </div>
             </div>
         </div>
 
         <!-- Chess Game Card -->
-        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
-            <div class="relative h-20 overflow-hidden">
-                <!-- Placeholder for Chess Game Image -->
-                <img src="https://placehold.co/800x400/1e293b/fff?text=Chess+Game" alt="Chess Game" class="w-full h-full object-cover">
+        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl flex flex-col">
+            <!-- Placeholder for Chess Game Icon -->
+            <div class="relative h-48 overflow-hidden bg-gray-900 flex items-center justify-center">
+                <i class="fas fa-chess-knight text-8xl text-purple-400"></i>
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
-                <div class="absolute bottom-1 left-2 text-white text-lg font-bold">Chess</div>
             </div>
-            <div class="p-6">
-                <p class="text-gray-400 mb-4">A timeless game of strategy and tactics. Compete against a friend or the computer to checkmate your opponent's king.</p>
-                <a href="#" class="block w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-indigo-700">Play Chess</a>
+            <div class="p-6 flex flex-col flex-grow">
+                <h3 class="text-3xl font-bold text-white mb-2">Chess</h3>
+                <p class="text-gray-400 mb-4 flex-grow">A timeless game of strategy and tactics. Compete against a friend or the computer to checkmate your opponent's king.</p>
+                <div class="flex flex-col sm:flex-row gap-4 mt-auto">
+                    <!-- Links to the game routes -->
+                    <a href="{{ url_for('play_game', game_name='chess', mode='solo') }}" class="w-full sm:w-1/2 bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Single Player</a>
+                    <a href="{{ url_for('invite_game', game_name='chess') }}" class="w-full sm:w-1/2 bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Invite a Friend</a>
+                </div>
             </div>
         </div>
 
         <!-- Board Games Card -->
-        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
-            <div class="relative h-20 overflow-hidden">
-                <!-- Placeholder for Board Games Image -->
-                <img src="https://placehold.co/800x400/1e293b/fff?text=Board+Games" alt="Board Games" class="w-full h-full object-cover">
+        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl flex flex-col">
+            <!-- Placeholder for Board Games Icon -->
+            <div class="relative h-48 overflow-hidden bg-gray-900 flex items-center justify-center">
+                <i class="fas fa-dice text-8xl text-yellow-500"></i>
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
-                <div class="absolute bottom-1 left-2 text-white text-lg font-bold">Board Games</div>
             </div>
-            <div class="p-6">
-                <p class="text-gray-400 mb-4">A collection of various classic and modern board games for you and your family to enjoy together.</p>
-                <a href="#" class="block w-full bg-green-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-green-700">Browse Games</a>
+            <div class="p-6 flex flex-col flex-grow">
+                <h3 class="text-3xl font-bold text-white mb-2">Board Games</h3>
+                <p class="text-gray-400 mb-4 flex-grow">A collection of various classic and modern board games for you and your family to enjoy together.</p>
+                <div class="flex flex-col sm:flex-row gap-4 mt-auto">
+                    <!-- Links to the game routes -->
+                    <a href="{{ url_for('play_game', game_name='board_games', mode='solo') }}" class="w-full sm:w-1/2 bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Single Player</a>
+                    <a href="{{ url_for('invite_game', game_name='board_games') }}" class="w-full sm:w-1/2 bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Invite a Friend</a>
+                </div>
             </div>
         </div>
+
     </div>
 </div>
 {% endblock %}
