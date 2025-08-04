@@ -430,7 +430,7 @@
     {% block footer %} {# <--- ADDED THIS BLOCK TAG #}
     <footer class="footer">
         <div class="container">
-            <span>&copy; {{ now.year }} Family Tree App. All rights reserved.</span>
+            <span>&copy; {{ now.year }} SocioFam23. All rights reserved.</span>
         </div>
     </footer>
     {% endblock %} {# <--- ADDED THIS BLOCK TAG #}
@@ -450,26 +450,6 @@
                 }, 5000);
             });
 
-          // Theme Switch Logic (removed from here, will be in settings page)
-            // const themeSwitch = document.getElementById('themeSwitch');
-            // if (themeSwitch) {
-            //     const initialTheme = "{{ g.user_theme if g.user_theme else 'light' }}";
-            //     document.body.className = initialTheme + '-theme';
-            //     themeSwitch.checked = (initialTheme === 'dark');
-
-            //     themeSwitch.addEventListener('change', function() {
-            //         const theme = this.checked ? 'dark' : 'light';
-            //         document.body.className = theme + '-theme';
-            //         fetch('/update-theme-preference', {
-            //             method: 'POST',
-            //             headers: { 'Content-Type': 'application/json' },
-            //             body: JSON.stringify({ theme: theme })
-            //         })
-            //         .then(response => response.json())
-            //         .then(data => { console.log('Theme updated:', data.message); })
-            //         .catch(error => { console.error('Error updating theme:', error); });
-            //     });
-            // }
         });
     </script>
 
@@ -694,5 +674,6 @@
     </script>
 </body>
 </html>
+
 
 
