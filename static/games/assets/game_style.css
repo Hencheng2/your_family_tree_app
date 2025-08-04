@@ -101,6 +101,32 @@ footer {
     z-index: 10; /* Ensure footer is above game canvas if needed */
 }
 
+/* New Home Button Styling */
+.home-button {
+    position: fixed; /* Position fixed to stay on screen even if there's scroll */
+    top: 20px;
+    right: 20px;
+    background-color: #00bcd4; /* Accent color to match the theme */
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: bold;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    z-index: 20; /* Ensure it's on top of other elements */
+}
+
+.home-button:hover {
+    background-color: #0097a7; /* Darker shade on hover */
+    transform: translateY(-2px); /* Slight lift effect */
+}
+
+.home-button i {
+    margin-right: 8px;
+}
+
+
 /* Basic responsiveness for smaller screens (optional but good practice) */
 @media (max-width: 768px) {
     header h1 {
