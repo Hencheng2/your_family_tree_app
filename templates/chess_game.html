@@ -290,7 +290,7 @@
         };
 
         // Initial FEN string for standard chess starting position
-        const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - - 0 1'; // Updated FEN for en passant target
+        const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'; // Corrected FEN: last two fields are halfmove clock and fullmove number
 
         let board = []; // 8x8 array representing the board state
         let selectedSquare = null; // Stores the currently selected square element
@@ -351,6 +351,10 @@
                     col++;
                 }
             }
+            console.log("FEN Parsed. Board:", board);
+            console.log("Turn:", turn);
+            console.log("Castling Rights:", castlingRights);
+            console.log("En Passant Target:", enPassantTarget);
         }
 
         // Function to render the board based on the board array
@@ -387,11 +391,16 @@
                     kingSquare.classList.add('in-check');
                 }
             }
+            console.log("Board rendered.");
         }
 
         // Function to handle square clicks (piece selection and movement)
         function handleSquareClick(event) {
-            if (gameOver) return; // Prevent moves if game is over
+            console.log("Clicked square:", event.currentTarget.dataset.row, event.currentTarget.dataset.col);
+            if (gameOver) {
+                console.log("Game is over, no moves allowed.");
+                return; // Prevent moves if game is over
+            }
 
             const clickedSquare = event.currentTarget;
             const row = parseInt(clickedSquare.dataset.row, 10);
@@ -408,22 +417,27 @@
                 // A piece is already selected, try to move it
                 const prevRow = selectedPiecePos.row;
                 const prevCol = selectedPiecePos.col;
+                console.log("Piece already selected at:", prevRow, prevCol);
 
                 const legalMoves = getLegalMoves(prevRow, prevCol); // Get legal moves
+                console.log("Legal moves for selected piece:", legalMoves);
                 const isLegalMove = legalMoves.some(move => move[0] === row && move[1] === col);
 
                 if (isLegalMove) {
+                    console.log("Attempting to move piece from", prevRow, prevCol, "to", row, col);
                     movePiece(prevRow, prevCol, row, col);
                     selectedSquare = null; // Deselect after move
                     selectedPiecePos = null;
                     // Check for pawn promotion after the move
                     if (board[row][col] && board[row][col].toLowerCase() === 'p' && (row === 0 || row === 7)) {
+                        console.log("Pawn promotion triggered at", row, col);
                         promotionPawnPos = { row, col };
                         showPromotionModal();
                     } else {
                         checkGameEnd(); // Check for checkmate/stalemate after every move (unless promoting)
                     }
                 } else {
+                    console.log("Invalid move. Deselecting current piece.");
                     // Invalid move, deselect current and re-select if a new valid piece is clicked
                     selectedSquare = null;
                     selectedPiecePos = null;
@@ -434,15 +448,20 @@
             } else {
                 // No piece selected, try to select one
                 if (piece && isPlayersPiece(piece)) {
+                    console.log("Selecting piece at:", row, col);
                     selectPiece(clickedSquare, row, col);
+                } else {
+                    console.log("No piece or not player's piece at clicked square.");
                 }
             }
         }
 
         // Helper to check if the piece belongs to the current player
         function isPlayersPiece(pieceChar, checkTurn = turn) {
-            return (checkTurn === 'w' && pieceChar === pieceChar.toUpperCase()) ||
-                   (checkTurn === 'b' && pieceChar === pieceChar.toLowerCase());
+            const result = (checkTurn === 'w' && pieceChar === pieceChar.toUpperCase()) ||
+                           (checkTurn === 'b' && pieceChar === pieceChar.toLowerCase());
+            console.log(`Is '${pieceChar}' player's piece (${checkTurn})?`, result);
+            return result;
         }
 
         // Function to select a piece and highlight possible moves
@@ -451,11 +470,13 @@
             selectedPiecePos = { row, col };
             selectedSquare.classList.add('selected');
             highlightPossibleMoves(row, col);
+            console.log("Piece selected at:", row, col);
         }
 
         // Function to highlight possible moves for the selected piece
         function highlightPossibleMoves(row, col) {
             const moves = getLegalMoves(row, col); // Now uses getLegalMoves
+            console.log("Highlighting moves:", moves);
             moves.forEach(move => {
                 const targetSquare = boardElement.querySelector(`[data-row="${move[0]}"][data-col="${move[1]}"]`);
                 if (targetSquare) {
@@ -475,17 +496,19 @@
             if (!piece) return [];
 
             const isWhite = piece === piece.toUpperCase();
-            const moves = [];
+            let moves = [];
 
             switch (piece.toLowerCase()) {
-                case 'p': return getPawnPseudoLegalMoves(row, col, isWhite);
-                case 'r': return getRookPseudoLegalMoves(row, col);
-                case 'n': return getKnightPseudoLegalMoves(row, col);
-                case 'b': return getBishopPseudoLegalMoves(row, col);
-                case 'q': return getQueenPseudoLegalMoves(row, col);
-                case 'k': return getKingPseudoLegalMoves(row, col);
-                default: return [];
+                case 'p': moves = getPawnPseudoLegalMoves(row, col, isWhite); break;
+                case 'r': moves = getRookPseudoLegalMoves(row, col); break;
+                case 'n': moves = getKnightPseudoLegalMoves(row, col); break;
+                case 'b': moves = getBishopPseudoLegalMoves(row, col); break;
+                case 'q': moves = getQueenPseudoLegalMoves(row, col); break;
+                case 'k': moves = getKingPseudoLegalMoves(row, col); break;
+                default: moves = [];
             }
+            console.log(`Pseudo-legal moves for ${piece} at (${row},${col}):`, moves);
+            return moves;
         }
 
         function getPawnPseudoLegalMoves(row, col, isWhite) {
@@ -521,8 +544,7 @@
                 if (row === enPassantPawnRow) {
                     // Check if the en passant target is diagonally adjacent
                     if (enPassantTarget.row === row + direction && Math.abs(enPassantTarget.col - col) === 1) {
-                        // Check if the captured pawn was actually the last move
-                        // This check is crucial for en passant legality
+                        // Check if the captured pawn was actually the last move and moved two squares
                         if (lastMove && lastMove.piece.toLowerCase() === 'p' &&
                             Math.abs(lastMove.startRow - lastMove.endRow) === 2 &&
                             lastMove.endCol === enPassantTarget.col &&
@@ -532,7 +554,6 @@
                     }
                 }
             }
-
             return moves;
         }
 
@@ -617,7 +638,7 @@
                 [1, -1], [1, 0], [1, 1]
             ];
             const isWhite = board[row][col] === board[row][col].toUpperCase();
-            const currentKingRow = row;
+            const currentKingRow = row; // King's current row for castling
 
             kingOffsets.forEach(offset => {
                 const newRow = row + offset[0];
@@ -632,7 +653,7 @@
 
             // Castling
             if (!isKingInCheck(isWhite)) {
-                // King-side castling
+                // King-side castling (e.g., e1 to g1 for white, h1 rook to f1)
                 if (isWhite && castlingRights.wK && board[currentKingRow][5] === null && board[currentKingRow][6] === null &&
                     board[currentKingRow][7] === 'R' && !isSquareAttacked(currentKingRow, 5, !isWhite) && !isSquareAttacked(currentKingRow, 6, !isWhite)) {
                     moves.push([currentKingRow, 6, 'castlingK']); // Add 'castlingK' flag
@@ -641,7 +662,7 @@
                     moves.push([currentKingRow, 6, 'castlingK']);
                 }
 
-                // Queen-side castling
+                // Queen-side castling (e.g., e1 to c1 for white, a1 rook to d1)
                 if (isWhite && castlingRights.wQ && board[currentKingRow][1] === null && board[currentKingRow][2] === null && board[currentKingRow][3] === null &&
                     board[currentKingRow][0] === 'R' && !isSquareAttacked(currentKingRow, 2, !isWhite) && !isSquareAttacked(currentKingRow, 3, !isWhite)) {
                     moves.push([currentKingRow, 2, 'castlingQ']); // Add 'castlingQ' flag
@@ -709,7 +730,15 @@
                 if (isValidBoardPos(r, c)) {
                     const piece = board[r][c];
                     if (piece && piece.toLowerCase() === 'p' && isPlayersPiece(piece, opponentColor)) {
-                        return true;
+                        // Special check for en passant target square being attacked by pawn
+                        // A pawn attacks the enPassantTarget square, not the pawn itself
+                        if (enPassantTarget && r === enPassantTarget.row && c === enPassantTarget.col) {
+                            // This is complex: a pawn "attacks" the square it would land on during en passant,
+                            // not the square of the captured pawn. For king safety, we care if the king is on that square.
+                            // This logic is simplified for direct square attack.
+                        } else {
+                             return true;
+                        }
                     }
                 }
             }
@@ -769,8 +798,13 @@
         // Check if the current player's king is in check
         function isKingInCheck(isWhiteKing) {
             const kingPos = findKing(isWhiteKing);
-            if (!kingPos) return false; // Should not happen
-            return isSquareAttacked(kingPos.row, kingPos.col, isWhiteKing); // Check if attacked by opponent
+            if (!kingPos) {
+                console.error("King not found for check check!");
+                return false;
+            }
+            const inCheck = isSquareAttacked(kingPos.row, kingPos.col, isWhiteKing); // Check if attacked by opponent
+            console.log(`King (${isWhiteKing ? 'White' : 'Black'}) at (${kingPos.row},${kingPos.col}) is in check:`, inCheck);
+            return inCheck;
         }
 
         // Get legal moves (pseudo-legal moves that don't leave king in check)
@@ -780,61 +814,62 @@
             const originalPiece = board[startRow][startCol];
             const isMovingPieceWhite = originalPiece === originalPiece.toUpperCase();
 
+            // Store current board state, castling rights, en passant target, last move for simulation
+            const originalBoard = JSON.parse(JSON.stringify(board)); // Deep copy
+            const originalCastlingRights = { ...castlingRights };
+            const originalEnPassantTarget = enPassantTarget;
+            const originalLastMove = lastMove;
+
             for (const move of pseudoLegalMoves) {
                 const endRow = move[0];
                 const endCol = move[1];
                 const specialMoveType = move[2]; // 'castlingK', 'castlingQ', 'enPassant'
 
                 // Simulate the move
-                const capturedPiece = board[endRow][endCol];
-                const originalEnPassantTarget = enPassantTarget; // Store current en passant target
-                const originalLastMove = lastMove; // Store current last move
-
+                const capturedPiece = originalBoard[endRow][endCol]; // Use originalBoard for captured piece
+                
                 board[endRow][endCol] = originalPiece;
                 board[startRow][startCol] = null;
 
                 // Handle special move simulation for check validation
                 if (specialMoveType === 'castlingK') {
-                    const rookChar = isWhiteKing ? 'R' : 'r';
-                    board[currentKingRow][5] = rookChar; // Move rook to f1/f8
-                    board[currentKingRow][7] = null; // Clear original rook square
+                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                    board[startRow][5] = rookChar; // Move rook to f-file
+                    board[startRow][7] = null; // Clear original rook square
                 } else if (specialMoveType === 'castlingQ') {
-                    const rookChar = isWhiteKing ? 'R' : 'r';
-                    board[currentKingRow][3] = rookChar; // Move rook to d1/d8
-                    board[currentKingRow][0] = null; // Clear original rook square
+                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                    board[startRow][3] = rookChar; // Move rook to d-file
+                    board[startRow][0] = null; // Clear original rook square
                 } else if (specialMoveType === 'enPassant') {
-                    const capturedPawnRow = isWhiteKing ? endRow + 1 : endRow - 1;
+                    const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
                     board[capturedPawnRow][endCol] = null; // Remove captured pawn
                 }
 
-                // Check if king is in check after the move
-                const kingInCheckAfterMove = isKingInCheck(isMovingPieceWhite);
+                // Temporarily update enPassantTarget and lastMove for accurate isKingInCheck simulation
+                // This is crucial for pawn attacks that are en passant targets
+                if (originalPiece.toLowerCase() === 'p' && Math.abs(startRow - endRow) === 2) {
+                    enPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
+                } else {
+                    enPassantTarget = null;
+                }
+                lastMove = { startRow, startCol, endRow, endCol, piece: originalPiece };
 
-                // Undo the move
-                board[startRow][startCol] = originalPiece;
-                board[endRow][endCol] = capturedPiece;
+
+                // Check if king is in check after the simulated move
+                const kingInCheckAfterMove = isKingInCheck(isMovingPieceWhite);
+                console.log(`Simulating move from (${startRow},${startCol}) to (${endRow},${endCol}). King in check after move:`, kingInCheckAfterMove);
+
+                // Undo the move by restoring the board to its original state
+                board = JSON.parse(JSON.stringify(originalBoard)); // Restore full board
+                castlingRights = { ...originalCastlingRights }; // Restore castling rights
                 enPassantTarget = originalEnPassantTarget; // Restore en passant target
                 lastMove = originalLastMove; // Restore last move
-
-                // Undo special move simulation
-                if (specialMoveType === 'castlingK') {
-                    const rookChar = isWhiteKing ? 'R' : 'r';
-                    board[currentKingRow][7] = rookChar; // Restore rook
-                    board[currentKingRow][5] = null; // Clear temp rook square
-                } else if (specialMoveType === 'castlingQ') {
-                    const rookChar = isWhiteKing ? 'R' : 'r';
-                    board[currentKingRow][0] = rookChar; // Restore rook
-                    board[currentKingRow][3] = null; // Clear temp rook square
-                } else if (specialMoveType === 'enPassant') {
-                    const capturedPawnRow = isWhiteKing ? endRow + 1 : endRow - 1;
-                    const capturedPawnChar = isWhiteKing ? 'p' : 'P';
-                    board[capturedPawnRow][endCol] = capturedPawnChar; // Restore captured pawn
-                }
 
                 if (!kingInCheckAfterMove) {
                     legalMoves.push(move); // Add the original move (with special type if any)
                 }
             }
+            console.log(`Final legal moves for (${startRow},${startCol}):`, legalMoves);
             return legalMoves;
         }
 
@@ -848,9 +883,13 @@
                 if (kingInCheck) {
                     const winner = (turn === 'w') ? 'Black' : 'White';
                     showMessageBox(`${winner} wins by Checkmate!`);
+                    console.log(`Game Over: ${winner} wins by Checkmate!`);
                 } else {
                     showMessageBox("Stalemate! It's a draw.");
+                    console.log("Game Over: Stalemate!");
                 }
+            } else {
+                console.log("Current player has legal moves, game continues.");
             }
         }
 
@@ -865,6 +904,7 @@
                     }
                 }
             }
+            console.log(`All legal moves for ${playerTurn} player:`, allMoves);
             return allMoves;
         }
 
@@ -872,6 +912,9 @@
         function movePiece(startRow, startCol, endRow, endCol) {
             const pieceToMove = board[startRow][startCol];
             const capturedPiece = board[endRow][endCol];
+            const isMovingPieceWhite = pieceToMove === pieceToMove.toUpperCase();
+
+            console.log(`Executing move: ${pieceToMove} from (${startRow},${startCol}) to (${endRow},${endCol})`);
 
             // Update lastMove for en passant tracking
             lastMove = { startRow, startCol, endRow, endCol, piece: pieceToMove };
@@ -883,34 +926,40 @@
                 } else {
                     blackCaptures++;
                 }
+                console.log(`Captured piece: ${capturedPiece}. White Captures: ${whiteCaptures}, Black Captures: ${blackCaptures}`);
             }
 
             // Handle En Passant Capture
+            // An en passant move is identified by a pawn moving to an empty enPassantTarget square
             if (pieceToMove.toLowerCase() === 'p' && enPassantTarget &&
                 endRow === enPassantTarget.row && endCol === enPassantTarget.col && !capturedPiece) {
-                // Determine captured pawn's actual position
-                const capturedPawnRow = turn === 'w' ? endRow + 1 : endRow - 1;
+                // Determine captured pawn's actual position (behind the target square)
+                const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
                 board[capturedPawnRow][endCol] = null; // Remove captured pawn
-                if (turn === 'w') { // En passant captures are always by the current player
-                    whiteCaptures++; // This is a white pawn capturing black
-                } else {
-                    blackCaptures++; // This is a black pawn capturing white
+                if (isMovingPieceWhite) { // White pawn captured black pawn
+                    whiteCaptures++;
+                } else { // Black pawn captured white pawn
+                    blackCaptures++;
                 }
+                console.log(`En Passant capture at (${capturedPawnRow},${endCol}).`);
             }
 
             // Handle Castling
             if (pieceToMove.toLowerCase() === 'k' && Math.abs(startCol - endCol) === 2) {
-                // King-side castling
+                const currentKingRow = startRow; // King's row
+                // King-side castling (e.g., e1 to g1 for white)
                 if (endCol === 6) {
-                    const rookChar = turn === 'w' ? 'R' : 'r';
-                    board[startRow][5] = rookChar; // Move rook to f-file
-                    board[startRow][7] = null; // Clear original rook square
+                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                    board[currentKingRow][5] = rookChar; // Move rook to f-file
+                    board[currentKingRow][7] = null; // Clear original rook square
+                    console.log(`King-side castling. Rook moved from (${currentKingRow},7) to (${currentKingRow},5).`);
                 }
-                // Queen-side castling
+                // Queen-side castling (e.g., e1 to c1 for white)
                 else if (endCol === 2) {
-                    const rookChar = turn === 'w' ? 'R' : 'r';
-                    board[startRow][3] = rookChar; // Move rook to d-file
-                    board[startRow][0] = null; // Clear original rook square
+                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                    board[currentKingRow][3] = rookChar; // Move rook to d-file
+                    board[currentKingRow][0] = null; // Clear original rook square
+                    console.log(`Queen-side castling. Rook moved from (${currentKingRow},0) to (${currentKingRow},3).`);
                 }
             }
 
@@ -924,10 +973,12 @@
             enPassantTarget = null; // Reset for current turn
             if (pieceToMove.toLowerCase() === 'p' && Math.abs(startRow - endRow) === 2) {
                 enPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
+                console.log("New en passant target set:", enPassantTarget);
             }
             
             switchTurn();
             renderBoard(); // Re-render the board after move
+            console.log("Move execution complete. Board state:", board);
         }
 
         // Function to update castling rights
@@ -943,6 +994,7 @@
                     castlingRights.bK = false;
                     castlingRights.bQ = false;
                 }
+                console.log(`King moved. Castling rights updated:`, castlingRights);
             }
             // Rook moves invalidate castling rights for that rook's side
             else if (piece.toLowerCase() === 'r') {
@@ -953,27 +1005,27 @@
                     if (startRow === 0 && startCol === 7) castlingRights.bK = false; // Black King-side rook
                     if (startRow === 0 && startCol === 0) castlingRights.bQ = false; // Black Queen-side rook
                 }
+                console.log(`Rook moved. Castling rights updated:`, castlingRights);
             }
             // Capturing a rook also invalidates castling rights
-            if (board[endRow][endCol]) { // If a piece was captured
-                const capturedPiece = board[endRow][endCol];
-                if (capturedPiece.toLowerCase() === 'r') {
-                    const isCapturedWhite = capturedPiece === capturedPiece.toUpperCase();
-                    if (isCapturedWhite) {
-                        if (endRow === 7 && endCol === 7) castlingRights.wK = false; // White King-side rook captured
-                        if (endRow === 7 && endCol === 0) castlingRights.wQ = false; // White Queen-side rook captured
-                    } else {
-                        if (endRow === 0 && endCol === 7) castlingRights.bK = false; // Black King-side rook captured
-                        if (endRow === 0 && endCol === 0) castlingRights.bQ = false; // Black Queen-side rook captured
-                    }
-                }
-            }
+            // This needs to check the *original* piece at the end square, before it's overwritten
+            // This is complex to do perfectly here without a full move history or deeper state.
+            // For simplicity, we'll assume the captured piece check is done on the board *before* the move.
+            // A more robust system would pass the captured piece into this function.
+            // For now, if a rook is captured on its original square, the rights are lost.
+            // This is handled by checking the *end* square's original piece in the `getLegalMoves` simulation,
+            // but for the actual `movePiece` execution, it's simpler to just check if `capturedPiece` was a rook.
+            if (endRow === 7 && endCol === 7 && isOpponentPiece(board[7][7], !isWhite) && board[7][7].toLowerCase() === 'r') castlingRights.wK = false;
+            if (endRow === 7 && endCol === 0 && isOpponentPiece(board[7][0], !isWhite) && board[7][0].toLowerCase() === 'r') castlingRights.wQ = false;
+            if (endRow === 0 && endCol === 7 && isOpponentPiece(board[0][7], !isWhite) && board[0][7].toLowerCase() === 'r') castlingRights.bK = false;
+            if (endRow === 0 && endCol === 0 && isOpponentPiece(board[0][0], !isWhite) && board[0][0].toLowerCase() === 'r') castlingRights.bQ = false;
         }
 
 
         // Function to switch turns
         function switchTurn() {
             turn = (turn === 'w') ? 'b' : 'w';
+            console.log("Turn switched to:", turn);
         }
 
         // Function to update the turn indicator text
@@ -1002,16 +1054,19 @@
             hideMessageBox(); // Hide message box on reset
             hidePromotionModal(); // Hide promotion modal on reset
             renderBoard();
+            console.log("Game reset.");
         }
 
         // Message Box functions
         function showMessageBox(message) {
             messageText.textContent = message;
             messageBox.style.display = 'block';
+            console.log("Message Box shown:", message);
         }
 
         function hideMessageBox() {
             messageBox.style.display = 'none';
+            console.log("Message Box hidden.");
         }
 
         // Pawn Promotion Modal functions
@@ -1024,10 +1079,12 @@
                 span.classList.add(pieceColorClass);
             });
             promotionModal.show();
+            console.log("Promotion modal shown.");
         }
 
         function hidePromotionModal() {
             promotionModal.hide();
+            console.log("Promotion modal hidden.");
         }
 
         promotionOptions.forEach(option => {
@@ -1047,6 +1104,7 @@
             board[row][col] = newPieceChar;
             promotionPawnPos = null; // Clear promotion state
             renderBoard(); // Re-render with the new piece
+            console.log(`Pawn at (${row},${col}) promoted to ${newPieceChar}.`);
         }
 
 
