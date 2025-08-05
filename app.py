@@ -84,7 +84,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 originalName TEXT NOT NULL,
-                relationshipToRaphael TEXT NOT NULL,
+                relationshipToRaphael TEXT, -- CHANGED: Removed NOT NULL
                 password_hash TEXT NOT NULL,
                 is_admin INTEGER DEFAULT 0,
                 theme_preference TEXT DEFAULT 'light',
@@ -557,6 +557,7 @@ def create_ai_user_and_member():
 
     if not ai_user_data:
         ai_password_hash = generate_password_hash(config.AI_USER_PASSWORD)
+        # Provide a default value for relationshipToRaphael when creating AdminAI
         db_conn.execute(
             'INSERT INTO users (username, password_hash, originalName, relationshipToRaphael, is_admin, unique_key) VALUES (?, ?, ?, ?, ?, ?)',
             (ai_username, ai_password_hash, ai_original_name, 'AI Assistant', 0, ai_unique_key)
@@ -862,7 +863,7 @@ def register():
         username = request.form.get('username')
         original_name = request.form.get('originalName')
         gender = request.form.get('gender') # <--- NEW: Get gender from form
-        relationship_to_raphael = request.form.get('relationshipToRaphael')
+        # relationship_to_raphael is no longer taken from form for users table
         password = request.form.get('password')
         confirm_password = request.form.get('confirmPassword')
 
@@ -870,7 +871,7 @@ def register():
             'username': username,
             'originalName': original_name,
             'gender': gender, # <--- NEW: Add gender to form_data
-            'relationshipToRaphael': relationship_to_raphael
+            # 'relationshipToRaphael': relationship_to_raphael # REMOVED from form_data for users table
         }
 
         if not original_name or not gender: # <--- NEW: Validate gender
@@ -891,9 +892,10 @@ def register():
         password_hash = generate_password_hash(password)
 
         try:
+            # Insert into users table. relationshipToRaphael is now NULLable.
             db.execute(
                 'INSERT INTO users (username, originalName, relationshipToRaphael, password_hash, theme_preference, chat_background_image_path, unique_key, password_reset_pending, reset_request_timestamp, last_login_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (username, original_name, relationship_to_raphael, password_hash, 'light', None, unique_key, 0, None, datetime.utcnow(), datetime.utcnow())
+                (username, original_name, None, password_hash, 'light', None, unique_key, 0, None, datetime.utcnow(), datetime.utcnow()) # Passed None for relationshipToRaphael
             )
             db.commit()
 
@@ -905,10 +907,10 @@ def register():
                 db.commit()
 
             # Create a basic member profile for the new user, with can_message enabled
-            # <--- NEW: Pass gender to members table insertion
+            # For personalRelationshipDescription in members table, provide an empty string or default
             db.execute(
-                'INSERT INTO members (fullName, association, gender, user_id, can_message, added_by_user_id, needs_details_update) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                (original_name, relationship_to_raphael, gender, new_user_id, 1, new_user_id, 1) # needs_details_update = 1 to prompt user to fill more details
+                'INSERT INTO members (fullName, association, gender, user_id, can_message, added_by_user_id, needs_details_update, personalRelationshipDescription) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (original_name, 'New Member', gender, new_user_id, 1, new_user_id, 1, '') # Provided empty string for personalRelationshipDescription
             )
             db.commit()
 
@@ -1377,7 +1379,7 @@ def chat_room(room_id):
     room_members_data = db.execute('SELECT user_id FROM chat_room_members WHERE chat_room_id = ?', (room.id,)).fetchall()
     member_user_ids = [m['user_id'] for m in room_members_data]
     placeholders = ','.join('?' * len(member_user_ids)) if member_user_ids else 'NULL'
-    users_in_room_data = db.execute(f'SELECT id, username, originalName FROM users WHERE id IN ({placeholders})', member_user_ids).fetchall()
+    users_in_room_data = db.execute(f'SELECT id, username, originalName FROM users WHERE id IN ({placeholders})', users_list_for_query(member_user_ids)).fetchall() # Fixed query
     users_dict = {}
     for u_data in users_in_room_data:
         users_dict[u_data['id']] = User(
@@ -1388,6 +1390,9 @@ def chat_room(room_id):
         )
     return render_template('chat_room.html', room=room, messages=messages, users_dict=users_dict)
 
+# Helper function to handle empty list for IN clause
+def users_list_for_query(ids):
+    return ids if ids else [-1] # Return a non-empty list for the query
 
 @app.route('/delete_chat_message/<int:message_id>', methods=['POST']) # From v17
 @login_required
@@ -1842,9 +1847,15 @@ def play_game(game_name):
     # This route will render the specific game.
     # For now, it will just show a placeholder.
     # In a real scenario, you'd render a specific template for each game
-    # e.g., if game_name == 'chess': return render_template('chess_game.html')
-    # You might also pass a game_session_id if it's a multiplayer game
-    return render_template('game_placeholder.html', game_name=game_name)
+    if game_name == 'chess':
+        return render_template('chess_game.html')
+    elif game_name == 'racing':
+        return render_template('game_placeholder.html', game_name='racing')
+    elif game_name == 'board_games':
+        return render_template('game_placeholder.html', game_name='board_games')
+    else:
+        # Fallback for any other undefined game names
+        return render_template('game_placeholder.html', game_name=game_name)
 
 
 # NEW ROUTE: For inviting a user to a game (triggered from members_list)
@@ -2084,7 +2095,7 @@ def add_my_details():
                             form_data['profilePhoto'] = ''
                         return render_template('add_my_details.html', user=current_user, form_data=form_data)
 
-        association = current_user.relationshipToRaphael
+        association = current_user.relationshipToRaphael # This will be None now from registration
 
         if not full_name or not gender:
             flash('Full Name and Gender are required.', 'danger')
@@ -2104,7 +2115,7 @@ def add_my_details():
                 profile_photo_path = os.path.join(app.config['UPLOAD_FOLDER'], filename).replace('\\', '/')
 
         try:
-            is_raphael_descendant = 1 if association.lower() in ['son of raphael nyanga', 'daughter of raphael nyanga', 'grandchild of raphael nyanga', 'great-grandchild of raphael nyanga'] else 0
+            is_raphael_descendant = 1 if association and association.lower() in ['son of raphael nyanga', 'daughter of raphael nyanga', 'grandchild of raphael nyanga', 'great-grandchild of raphael nyanga'] else 0
 
             # Use 'can_message' instead of 'has_login_access' as per v17 schema
             db.execute(
@@ -2115,8 +2126,9 @@ def add_my_details():
             db.commit()
 
             # Update the user's originalName and relationshipToRaphael
+            # Ensure relationshipToRaphael is updated here from the form input
             db.execute('UPDATE users SET originalName = ?, relationshipToRaphael = ? WHERE id = ?',
-                       (full_name, association, current_user.id))
+                       (full_name, personal_relationship_description, current_user.id)) # Use personal_relationship_description here
             db.commit()
 
             flash('Your personal details have been added successfully!', 'success')
@@ -2139,7 +2151,7 @@ def add_my_details():
 
     form_data = {
         'fullName': current_user.originalName,
-        'association': current_user.relationshipToRaphael,
+        'association': current_user.relationshipToRaphael if current_user.relationshipToRaphael else '', # Handle potential None
         'maritalStatus': 'Single',
         'personalRelationshipDescription': ''
     }
@@ -2167,7 +2179,6 @@ def add_member_form():
         spouse_names = request.form.get('spouseNames', '')
         # girlfriend_names removed, merged into spouse_names if marital_status is Engaged
         children_names = request.form.get('childrenNames', '')
-        school_name = request.form.get('schoolName', '')
         personal_relationship_description = request.form.get('personalRelationshipDescription', '')
         can_message = 1 if request.form.get('can_message') else 0 # From new.py
 
@@ -3023,7 +3034,7 @@ def edit_member(member_id):
             # If the member is linked to a user, update the user's originalName and relationshipToRaphael
             if member.user_id:
                 db.execute('UPDATE users SET originalName = ?, relationshipToRaphael = ? WHERE id = ?',
-                           (member.fullName, member.association, member.user_id))
+                           (member.fullName, member.association, member.user_id)) # Use member.association here
                 db.commit()
 
             flash('Member details updated successfully!', 'success')
