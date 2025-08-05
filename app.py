@@ -70,6 +70,7 @@ def init_db():
             -- schema.sql
 
             -- Drop existing tables (order matters due to foreign keys)
+            DROP TABLE IF EXISTS game_invitations; -- NEW TABLE
             DROP TABLE IF EXISTS chat_messages;
             DROP TABLE IF EXISTS chat_room_members;
             DROP TABLE IF EXISTS chat_rooms;
@@ -175,6 +176,18 @@ def init_db():
                 is_ai_message INTEGER DEFAULT 0,
                 FOREIGN KEY (chat_room_id) REFERENCES chat_rooms(id) ON DELETE CASCADE,
                 FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            -- NEW TABLE FOR GAME INVITATIONS
+            CREATE TABLE game_invitations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id INTEGER NOT NULL,
+                recipient_id INTEGER NOT NULL,
+                game_name TEXT NOT NULL,
+                status TEXT DEFAULT 'pending', -- 'pending', 'accepted', 'declined'
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
             );
         """
         db.executescript(schema_sql_content)
@@ -303,6 +316,24 @@ class ChatMessage:
         self.timestamp = timestamp
         self.media_path = media_path
         self.media_type = media_type
+
+# NEW CLASS for Game Invitation
+class GameInvitation:
+    def __init__(self, id, sender_id, recipient_id, game_name, status, timestamp):
+        self.id = id
+        self.sender_id = sender_id
+        self.recipient_id = recipient_id
+        self.game_name = game_name
+        self.status = status
+        self.timestamp = timestamp
+
+    @property
+    def sender(self):
+        return User.get(self.sender_id)
+
+    @property
+    def recipient(self):
+        return User.get(self.recipient_id)
 
 
 # --- Flask-Login Setup ---
@@ -442,6 +473,25 @@ def get_unread_messages_count():
             return 0
     return 0
 
+# NEW HELPER FUNCTION: Get unread game invitations count
+def get_unread_game_invite_count():
+    if current_user.is_authenticated:
+        try:
+            db = get_db()
+            count_invites = db.execute(
+                'SELECT COUNT(*) FROM game_invitations WHERE recipient_id = ? AND status = ?',
+                (current_user.id, 'pending')
+            ).fetchone()[0]
+            return count_invites
+        except sqlite3.OperationalError:
+            print("Skipping unread game invite count due to missing 'game_invitations' table.")
+            return 0
+        except Exception as e:
+            print(f"Error getting unread game invite count: {e}")
+            return 0
+    return 0
+
+
 def cleanup_expired_videos():
     db = get_db()
     now = datetime.utcnow()
@@ -549,6 +599,8 @@ with app.app_context():
             # Attempt to access a table/column that would be missing if schema is old
             db_conn.execute("SELECT id FROM statuses LIMIT 1")
             db_conn.execute("SELECT recipient_id, content FROM messages LIMIT 1")
+            # NEW: Check for game_invitations table
+            db_conn.execute("SELECT id FROM game_invitations LIMIT 1")
             print("Database file exists and schema appears up-to-date.")
         except sqlite3.OperationalError as e:
             print(f"WARNING: Database schema might be outdated or incomplete ({e}).")
@@ -567,20 +619,33 @@ def inject_global_template_vars():
     initial_auth_token = getattr(g, 'initial_auth_token', '')
 
     unread_messages_count = 0
+    unread_game_invite_count = 0 # Initialize for game invites
+
     if current_user.is_authenticated:
         try:
             db = get_db()
-            unread_count_data = db.execute(
+            # Existing unread messages count
+            unread_msg_data = db.execute(
                 'SELECT COUNT(id) FROM messages WHERE recipient_id = ? AND is_read = 0',
                 (current_user.id,)
             ).fetchone()
-            unread_messages_count = unread_count_data[0] if unread_count_data else 0
+            unread_messages_count = unread_msg_data[0] if unread_msg_data else 0
+
+            # NEW: Unread game invitations count
+            unread_invite_data = db.execute(
+                'SELECT COUNT(id) FROM game_invitations WHERE recipient_id = ? AND status = ?',
+                (current_user.id, 'pending')
+            ).fetchone()
+            unread_game_invite_count = unread_invite_data[0] if unread_invite_data else 0
+
         except sqlite3.OperationalError:
-            print("Skipping unread message count due to missing 'messages' table during context processing.")
+            print("Skipping unread counts due to missing tables during context processing.")
             unread_messages_count = 0
+            unread_game_invite_count = 0
         except Exception as e:
-            print(f"Error getting unread messages count: {e}")
+            print(f"Error getting unread counts: {e}")
             unread_messages_count = 0
+            unread_game_invite_count = 0
 
 
     return {
@@ -590,6 +655,7 @@ def inject_global_template_vars():
         'initial_auth_token': initial_auth_token,
         'current_user': current_user,
         'unread_messages_count': unread_messages_count,
+        'unread_game_invite_count': unread_game_invite_count, # NEW: Pass game invite count
         'canvas_app_id': config.CANVAS_APP_ID
     }
 
@@ -600,6 +666,7 @@ def before_request_hook():
 
     g.user_member = get_current_user_member_profile()
     g.unread_messages_count = get_unread_messages_count()
+    g.unread_game_invite_count = get_unread_game_invite_count() # NEW: Fetch game invite count
     cleanup_expired_videos()
     cleanup_expired_chat_media()
 
@@ -700,7 +767,8 @@ def home():
     return render_template('index.html',
                            background_image=background_image,
                            member=g.user_member,
-                           unread_messages_count=g.unread_messages_count)
+                           unread_messages_count=g.unread_messages_count,
+                           unread_game_invite_count=g.unread_game_invite_count) # Pass game invite count
 
 # --- User Authentication Routes ---
 @app.route('/login', methods=['GET', 'POST'])
@@ -1101,6 +1169,8 @@ def delete_member(member_id):
             # Delete user's chat room memberships and messages in chat_messages table
             db.execute('DELETE FROM chat_room_members WHERE user_id = ?', (linked_user_id,))
             db.execute('DELETE FROM chat_messages WHERE sender_id = ?', (linked_user_id,))
+            # NEW: Delete game invitations where this user is sender or recipient
+            db.execute('DELETE FROM game_invitations WHERE sender_id = ? OR recipient_id = ?', (linked_user_id, linked_user_id))
 
             db.execute('DELETE FROM users WHERE id = ?', (linked_user_id,))
 
@@ -1765,10 +1835,150 @@ def status_feed():
 def games_hub(): # Renamed function for clarity
     return render_template('game_page.html')
 
-@app.route('/play_game') # You can choose a more specific URL like '/play_my_awesome_game'
+# NEW ROUTE: For playing a game (single player or accepted multiplayer)
+@app.route('/play_game/<game_name>', methods=['GET'])
 @login_required
-def play_my_game():
-    return render_template('game_page.html')
+def play_game(game_name):
+    # This route will render the specific game.
+    # For now, it will just show a placeholder.
+    # In a real scenario, you'd render a specific template for each game
+    # e.g., if game_name == 'chess': return render_template('chess_game.html')
+    # You might also pass a game_session_id if it's a multiplayer game
+    return render_template('game_placeholder.html', game_name=game_name)
+
+
+# NEW ROUTE: For inviting a user to a game (triggered from members_list)
+@app.route('/invite_game/<game_name>/<int:recipient_id>', methods=['POST'])
+@login_required
+def invite_game(game_name, recipient_id):
+    db = get_db()
+    sender_id = current_user.id
+
+    # Prevent inviting self
+    if sender_id == recipient_id:
+        flash("You cannot invite yourself to a game.", "danger")
+        return redirect(url_for('list_members'))
+
+    # Check if a pending invitation already exists for this game between these users
+    existing_invite = db.execute(
+        'SELECT id FROM game_invitations WHERE sender_id = ? AND recipient_id = ? AND game_name = ? AND status = ?',
+        (sender_id, recipient_id, game_name, 'pending')
+    ).fetchone()
+
+    if existing_invite:
+        flash(f"You already have a pending invitation for {game_name} with this user.", "warning")
+        return redirect(url_for('list_members'))
+
+    try:
+        db.execute(
+            'INSERT INTO game_invitations (sender_id, recipient_id, game_name, status, timestamp) VALUES (?, ?, ?, ?, ?)',
+            (sender_id, recipient_id, game_name, 'pending', datetime.utcnow())
+        )
+        db.commit()
+        flash(f"Invitation to play {game_name.capitalize()} sent successfully!", 'success')
+    except sqlite3.Error as e:
+        flash(f"Error sending invitation: {e}", 'danger')
+    except Exception as e:
+        flash(f"An unexpected error occurred: {e}", 'danger')
+
+    return redirect(url_for('list_members'))
+
+
+# NEW ROUTE: For accepting a game invitation
+@app.route('/accept_game_invite/<int:invitation_id>', methods=['POST'])
+@login_required
+def accept_game_invite(invitation_id):
+    db = get_db()
+    
+    # Fetch the invitation
+    invite_data = db.execute(
+        'SELECT sender_id, recipient_id, game_name, status FROM game_invitations WHERE id = ?',
+        (invitation_id,)
+    ).fetchone()
+
+    if not invite_data:
+        flash("Game invitation not found.", "danger")
+        return redirect(url_for('inbox'))
+
+    if invite_data['recipient_id'] != current_user.id:
+        flash("You are not authorized to accept this invitation.", "danger")
+        return redirect(url_for('inbox'))
+
+    if invite_data['status'] != 'pending':
+        flash("This invitation is no longer pending.", "warning")
+        return redirect(url_for('inbox'))
+
+    try:
+        # Update invitation status to accepted
+        db.execute('UPDATE game_invitations SET status = ? WHERE id = ?', ('accepted', invitation_id))
+        db.commit()
+
+        # You might want to create a unique game session ID here and store it
+        # For now, we'll just redirect to the game page.
+        # In a real multiplayer setup, this would set up a shared game state.
+        game_name = invite_data['game_name']
+        
+        # Flash a message to both players (sender and recipient)
+        sender_user = User.get(invite_data['sender_id'])
+        flash(f"You accepted the invitation to play {game_name.capitalize()} with {sender_user.username}!", 'success')
+        # You might send a message back to the sender here via the messaging system
+        # db.execute('INSERT INTO messages ...')
+
+        return redirect(url_for('play_game', game_name=game_name, mode='multiplayer')) # Redirect to the specific game page
+    except sqlite3.Error as e:
+        flash(f"Error accepting invitation: {e}", 'danger')
+    except Exception as e:
+        flash(f"An unexpected error occurred: {e}", 'danger')
+
+    return redirect(url_for('inbox'))
+
+
+# NEW ROUTE: For declining a game invitation
+@app.route('/decline_game_invite/<int:invitation_id>', methods=['POST'])
+@login_required
+def decline_game_invite(invitation_id):
+    db = get_db()
+    
+    # Fetch the invitation
+    invite_data = db.execute(
+        'SELECT sender_id, recipient_id, game_name, status FROM game_invitations WHERE id = ?',
+        (invitation_id,)
+    ).fetchone()
+
+    if not invite_data:
+        flash("Game invitation not found.", "danger")
+        return redirect(url_for('inbox'))
+
+    if invite_data['recipient_id'] != current_user.id:
+        flash("You are not authorized to decline this invitation.", "danger")
+        return redirect(url_for('inbox'))
+
+    if invite_data['status'] != 'pending':
+        flash("This invitation is no longer pending.", "warning")
+        return redirect(url_for('inbox'))
+
+    try:
+        # Update invitation status to declined
+        db.execute('UPDATE game_invitations SET status = ? WHERE id = ?', ('declined', invitation_id))
+        db.commit()
+
+        # Optionally, notify the sender that their invitation was declined
+        sender_user = User.get(invite_data['sender_id'])
+        if sender_user:
+            message_content = f"Your invitation to play {invite_data['game_name'].capitalize()} with {current_user.username} was declined."
+            db.execute(
+                'INSERT INTO messages (sender_id, recipient_id, content, timestamp, is_read, is_admin_message) VALUES (?, ?, ?, ?, ?, ?)',
+                (current_user.id, sender_user.id, message_content, datetime.utcnow(), 0, 0)
+            )
+            db.commit()
+
+        flash(f"Game invitation for {invite_data['game_name'].capitalize()} declined.", 'info')
+    except sqlite3.Error as e:
+        flash(f"Error declining invitation: {e}", 'danger')
+    except Exception as e:
+        flash(f"An unexpected error occurred: {e}", 'danger')
+
+    return redirect(url_for('inbox'))
 
 
 @app.route('/message-member')
@@ -2216,7 +2426,28 @@ def inbox():
             'is_unread': is_unread
         })
 
-    return render_template('inbox.html', conversations=inbox_conversations, ai_user_id=ai_user_id)
+    # NEW: Fetch pending game invitations for the current user
+    game_invitations_raw = db.execute('''
+        SELECT gi.id, gi.game_name, gi.timestamp, u.username, u.originalName
+        FROM game_invitations gi
+        JOIN users u ON gi.sender_id = u.id
+        WHERE gi.recipient_id = ? AND gi.status = 'pending'
+        ORDER BY gi.timestamp DESC
+    ''', (current_user.id,)).fetchall()
+
+    game_invitations_for_template = []
+    for invite_data in game_invitations_raw:
+        game_invitations_for_template.append({
+            'id': invite_data['id'],
+            'game_name': invite_data['game_name'],
+            'timestamp': invite_data['timestamp'],
+            'sender': {'username': invite_data['username'], 'originalName': invite_data['originalName']}
+        })
+
+    return render_template('inbox.html',
+                           conversations=inbox_conversations,
+                           ai_user_id=ai_user_id,
+                           game_invitations=game_invitations_for_template) # NEW: Pass game invitations
 
 
 @app.route('/messages/<int:other_user_id>', methods=['GET', 'POST'])
@@ -2580,6 +2811,8 @@ def admin_manage_users():
                 db.execute('DELETE FROM chat_messages WHERE sender_id = ?', (user_id_to_delete,)) # For group chat messages
                 db.execute('DELETE FROM chat_room_members WHERE user_id = ?', (user_id_to_delete,)) # For group chat memberships
                 db.execute('DELETE FROM statuses WHERE uploader_user_id = ?', (user_id_to_delete,)) # Adapted to statuses table
+                # NEW: Delete game invitations where this user is sender or recipient
+                db.execute('DELETE FROM game_invitations WHERE sender_id = ? OR recipient_id = ?', (user_id_to_delete, user_id_to_delete))
 
                 # Finally, delete the user
                 db.execute('DELETE FROM users WHERE id = ?', (user_id_to_delete,))
