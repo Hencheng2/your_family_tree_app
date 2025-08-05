@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 import random
 import string
 import json
+import uuid # Import uuid for generating unique game IDs
+
 import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, initialize_app, firestore
@@ -178,7 +180,7 @@ def init_db():
                 FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
-            -- NEW TABLE FOR GAME INVITATIONS
+            -- NEW TABLE FOR GAME INVITATIONS (Kept for other games, but Chess will use Firestore)
             CREATE TABLE game_invitations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sender_id INTEGER NOT NULL,
@@ -317,7 +319,7 @@ class ChatMessage:
         self.media_path = media_path
         self.media_type = media_type
 
-# NEW CLASS for Game Invitation
+# NEW CLASS for Game Invitation (SQLite, will be used for non-Firestore games)
 class GameInvitation:
     def __init__(self, id, sender_id, recipient_id, game_name, status, timestamp):
         self.id = id
@@ -473,21 +475,27 @@ def get_unread_messages_count():
             return 0
     return 0
 
-# NEW HELPER FUNCTION: Get unread game invitations count
+# NEW HELPER FUNCTION: Get unread game invitations count from Firestore
 def get_unread_game_invite_count():
-    if current_user.is_authenticated:
+    if current_user.is_authenticated and firestore_db:
         try:
-            db = get_db()
-            count_invites = db.execute(
-                'SELECT COUNT(*) FROM game_invitations WHERE recipient_id = ? AND status = ?',
-                (current_user.id, 'pending')
-            ).fetchone()[0]
-            return count_invites
-        except sqlite3.OperationalError:
-            print("Skipping unread game invite count due to missing 'game_invitations' table.")
-            return 0
+            # Query Firestore for games where current user is a player, game is not over, and it's human vs human
+            games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games')
+            
+            # Check for games where current user is playerWhiteId
+            invites_as_white_query = games_ref.where('playerWhiteId', '==', str(current_user.id)).where('gameOver', '==', False).where('gameType', '==', 'human_vs_human')
+            invites_as_white_docs = invites_as_white_query.stream()
+            count_as_white = sum(1 for doc in invites_as_white_docs)
+
+            # Check for games where current user is playerBlackId
+            invites_as_black_query = games_ref.where('playerBlackId', '==', str(current_user.id)).where('gameOver', '==', False).where('gameType', '==', 'human_vs_human')
+            invites_as_black_docs = invites_as_black_query.stream()
+            count_as_black = sum(1 for doc in invites_as_black_docs)
+
+            # Total unread invites are the sum of games where they are a participant and it's not over
+            return count_as_white + count_as_black
         except Exception as e:
-            print(f"Error getting unread game invite count: {e}")
+            print(f"Error getting unread game invite count from Firestore: {e}")
             return 0
     return 0
 
@@ -600,7 +608,7 @@ with app.app_context():
             # Attempt to access a table/column that would be missing if schema is old
             db_conn.execute("SELECT id FROM statuses LIMIT 1")
             db_conn.execute("SELECT recipient_id, content FROM messages LIMIT 1")
-            # NEW: Check for game_invitations table
+            # NEW: Check for game_invitations table (even if not used for Chess, it's part of schema)
             db_conn.execute("SELECT id FROM game_invitations LIMIT 1")
             print("Database file exists and schema appears up-to-date.")
         except sqlite3.OperationalError as e:
@@ -625,19 +633,15 @@ def inject_global_template_vars():
     if current_user.is_authenticated:
         try:
             db = get_db()
-            # Existing unread messages count
+            # Existing unread messages count (from SQLite 'messages' table)
             unread_msg_data = db.execute(
                 'SELECT COUNT(id) FROM messages WHERE recipient_id = ? AND is_read = 0',
                 (current_user.id,)
             ).fetchone()
             unread_messages_count = unread_msg_data[0] if unread_msg_data else 0
 
-            # NEW: Unread game invitations count
-            unread_invite_data = db.execute(
-                'SELECT COUNT(id) FROM game_invitations WHERE recipient_id = ? AND status = ?',
-                (current_user.id, 'pending')
-            ).fetchone()
-            unread_game_invite_count = unread_invite_data[0] if unread_invite_data else 0
+            # NEW: Unread game invitations count (from Firestore)
+            unread_game_invite_count = get_unread_game_invite_count()
 
         except sqlite3.OperationalError:
             print("Skipping unread counts due to missing tables during context processing.")
@@ -1171,8 +1175,24 @@ def delete_member(member_id):
             # Delete user's chat room memberships and messages in chat_messages table
             db.execute('DELETE FROM chat_room_members WHERE user_id = ?', (linked_user_id,))
             db.execute('DELETE FROM chat_messages WHERE sender_id = ?', (linked_user_id,))
-            # NEW: Delete game invitations where this user is sender or recipient
+            # NEW: Delete game invitations where this user is sender or recipient (from SQLite)
             db.execute('DELETE FROM game_invitations WHERE sender_id = ? OR recipient_id = ?', (linked_user_id, linked_user_id))
+
+            # Delete game documents from Firestore where this user is playerWhiteId or playerBlackId
+            if firestore_db:
+                games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games')
+                # Query for games where user is playerWhiteId
+                games_as_white = games_ref.where('playerWhiteId', '==', str(linked_user_id)).stream()
+                for game_doc in games_as_white:
+                    game_doc.reference.delete()
+                    print(f"Deleted Firestore game {game_doc.id} (user was white).")
+                
+                # Query for games where user is playerBlackId
+                games_as_black = games_ref.where('playerBlackId', '==', str(linked_user_id)).stream()
+                for game_doc in games_as_black:
+                    game_doc.reference.delete()
+                    print(f"Deleted Firestore game {game_doc.id} (user was black).")
+
 
             db.execute('DELETE FROM users WHERE id = ?', (linked_user_id,))
 
@@ -1762,7 +1782,9 @@ def member_detail(member_id):
         try:
             upload_time_dt = latest_status_data['upload_time']
             if isinstance(upload_time_dt, str):
-                upload_time_dt = datetime.strptime(upload_time_dt, '%Y-%m-%d %H:%M:%S.%f')
+                upload_time_dt = datetime.strptime(upload_time_dt, '%Y-%m-%d %H:%M:%S.%f').replace(tzinfo=timezone.utc)
+            elif upload_time_dt.tzinfo is None:
+                upload_time_dt = upload_time_dt.replace(tzinfo=timezone.utc)
 
             expires_at_dt = upload_time_dt + timedelta(hours=12)
             is_active_status = (datetime.now(timezone.utc) < expires_at_dt)
@@ -1783,7 +1805,7 @@ def member_detail(member_id):
         member=member_profile,
         age=age,
         can_message_member=can_message_member,
-        temp_video=temp_video_data_for_template
+        temp_video=temp_video_data_for_video
     )
 
 
@@ -1845,10 +1867,10 @@ def games_hub(): # Renamed function for clarity
 @login_required
 def play_game(game_name):
     # This route will render the specific game.
-    # For now, it will just show a placeholder.
-    # In a real scenario, you'd render a specific template for each game
+    # It can take a gameId query parameter for multiplayer games.
+    game_id = request.args.get('gameId') # Get gameId from query parameters
     if game_name == 'chess':
-        return render_template('chess_game.html')
+        return render_template('chess_game.html', game_id=game_id) # Pass game_id to template
     elif game_name == 'racing':
         return render_template('game_placeholder.html', game_name='racing')
     elif game_name == 'board_games':
@@ -1862,134 +1884,111 @@ def play_game(game_name):
 @app.route('/invite_game/<game_name>/<int:recipient_id>', methods=['POST'])
 @login_required
 def invite_game(game_name, recipient_id):
-    db = get_db()
-    sender_id = current_user.id
+    db_sqlite = get_db() # Use db_sqlite to avoid confusion with firestore_db
+    sender_id = str(current_user.id) # Convert to string for Firestore consistency
+    recipient_id_str = str(recipient_id) # Convert to string for Firestore consistency
 
     # Prevent inviting self
-    if sender_id == recipient_id:
+    if sender_id == recipient_id_str:
         flash("You cannot invite yourself to a game.", "danger")
         return redirect(url_for('list_members'))
 
-    # Check if a pending invitation already exists for this game between these users
-    existing_invite = db.execute(
-        'SELECT id FROM game_invitations WHERE sender_id = ? AND recipient_id = ? AND game_name = ? AND status = ?',
-        (sender_id, recipient_id, game_name, 'pending')
-    ).fetchone()
+    # If it's a Chess game, use Firestore for game state
+    if game_name == 'chess':
+        if not firestore_db:
+            flash('Game services not initialized. Please try again later.', 'danger')
+            return redirect(url_for('list_members'))
 
-    if existing_invite:
-        flash(f"You already have a pending invitation for {game_name} with this user.", "warning")
+        try:
+            # Generate a unique game ID for this match
+            game_id = f"chess_{uuid.uuid4().hex}"
+            
+            # Determine players' roles (e.g., inviter is white, recipient is black)
+            # For simplicity, inviter is always white, recipient is black.
+            player_white_id = sender_id
+            player_black_id = recipient_id_str
+
+            # Reference to the Firestore game document
+            game_doc_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games').document(game_id)
+
+            # Initial Chess board state
+            initial_board_state = [
+                ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+                ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+                [None, None, None, None, None, None, None, None],
+                [None, None, None, None, None, None, None, None],
+                [None, None, None, None, None, None, None, None],
+                [None, None, None, None, None, None, None, None],
+                ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+                ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+            ]
+
+            game_data = {
+                'boardFen': json.dumps(initial_board_state), # Store as JSON string
+                'turn': 'w',
+                'whiteCaptures': 0,
+                'blackCaptures': 0,
+                'castlingRights': {'wK': True, 'wQ': True, 'bK': True, 'bQ': True},
+                'enPassantTarget': None,
+                'lastMove': None,
+                'gameOver': False,
+                'winner': None,
+                'createdAt': firestore.SERVER_TIMESTAMP,
+                'lastUpdated': firestore.SERVER_TIMESTAMP,
+                'playerWhiteId': player_white_id,
+                'playerBlackId': player_black_id,
+                'gameType': 'human_vs_human', # Explicitly human vs human for invites
+                'gameName': game_name # e.g., 'chess'
+            }
+            
+            game_doc_ref.set(game_data)
+            print(f"Created new Firestore game document: {game_id} for {player_white_id} vs {player_black_id}")
+
+            # Flash message for the inviter
+            recipient_member = db_sqlite.execute("SELECT fullName FROM members WHERE user_id = ?", (recipient_id,)).fetchone()
+            recipient_name = recipient_member['fullName'] if recipient_member else "their friend"
+            flash(f'You invited {recipient_name} to a {game_name} game! They can join by navigating to their inbox or directly to the game page.', 'success')
+
+            # Redirect the inviter to the game page with the game ID
+            return redirect(url_for('play_game', game_name=game_name, gameId=game_id))
+
+        except Exception as e:
+            print(f"Error inviting to Chess game via Firestore: {e}")
+            flash('Failed to send Chess game invitation. Please try again.', 'danger')
+            return redirect(url_for('list_members'))
+    
+    # For other games (racing, board_games), continue using SQLite game_invitations table
+    else:
+        # Check if a pending invitation already exists for this game between these users (SQLite)
+        existing_invite = db_sqlite.execute(
+            'SELECT id FROM game_invitations WHERE sender_id = ? AND recipient_id = ? AND game_name = ? AND status = ?',
+            (sender_id, recipient_id, game_name, 'pending')
+        ).fetchone()
+
+        if existing_invite:
+            flash(f"You already have a pending invitation for {game_name} with this user.", "warning")
+            return redirect(url_for('list_members'))
+
+        try:
+            db_sqlite.execute(
+                'INSERT INTO game_invitations (sender_id, recipient_id, game_name, status, timestamp) VALUES (?, ?, ?, ?, ?)',
+                (sender_id, recipient_id, game_name, 'pending', datetime.utcnow())
+            )
+            db_sqlite.commit()
+            recipient_member = db_sqlite.execute("SELECT fullName FROM members WHERE user_id = ?", (recipient_id,)).fetchone()
+            recipient_name = recipient_member['fullName'] if recipient_member else "their friend"
+            flash(f"Invitation to play {game_name.capitalize()} sent successfully to {recipient_name}!", 'success')
+        except sqlite3.Error as e:
+            flash(f"Error sending invitation: {e}", 'danger')
+        except Exception as e:
+            flash(f"An unexpected error occurred: {e}", 'danger')
+
         return redirect(url_for('list_members'))
 
-    try:
-        db.execute(
-            'INSERT INTO game_invitations (sender_id, recipient_id, game_name, status, timestamp) VALUES (?, ?, ?, ?, ?)',
-            (sender_id, recipient_id, game_name, 'pending', datetime.utcnow())
-        )
-        db.commit()
-        flash(f"Invitation to play {game_name.capitalize()} sent successfully!", 'success')
-    except sqlite3.Error as e:
-        flash(f"Error sending invitation: {e}", 'danger')
-    except Exception as e:
-        flash(f"An unexpected error occurred: {e}", 'danger')
 
-    return redirect(url_for('list_members'))
-
-
-# NEW ROUTE: For accepting a game invitation
-@app.route('/accept_game_invite/<int:invitation_id>', methods=['POST'])
-@login_required
-def accept_game_invite(invitation_id):
-    db = get_db()
-    
-    # Fetch the invitation
-    invite_data = db.execute(
-        'SELECT sender_id, recipient_id, game_name, status FROM game_invitations WHERE id = ?',
-        (invitation_id,)
-    ).fetchone()
-
-    if not invite_data:
-        flash("Game invitation not found.", "danger")
-        return redirect(url_for('inbox'))
-
-    if invite_data['recipient_id'] != current_user.id:
-        flash("You are not authorized to accept this invitation.", "danger")
-        return redirect(url_for('inbox'))
-
-    if invite_data['status'] != 'pending':
-        flash("This invitation is no longer pending.", "warning")
-        return redirect(url_for('inbox'))
-
-    try:
-        # Update invitation status to accepted
-        db.execute('UPDATE game_invitations SET status = ? WHERE id = ?', ('accepted', invitation_id))
-        db.commit()
-
-        # You might want to create a unique game session ID here and store it
-        # For now, we'll just redirect to the game page.
-        # In a real multiplayer setup, this would set up a shared game state.
-        game_name = invite_data['game_name']
-        
-        # Flash a message to both players (sender and recipient)
-        sender_user = User.get(invite_data['sender_id'])
-        flash(f"You accepted the invitation to play {game_name.capitalize()} with {sender_user.username}!", 'success')
-        # You might send a message back to the sender here via the messaging system
-        # db.execute('INSERT INTO messages ...')
-
-        return redirect(url_for('play_game', game_name=game_name, mode='multiplayer')) # Redirect to the specific game page
-    except sqlite3.Error as e:
-        flash(f"Error accepting invitation: {e}", 'danger')
-    except Exception as e:
-        flash(f"An unexpected error occurred: {e}", 'danger')
-
-    return redirect(url_for('inbox'))
-
-
-# NEW ROUTE: For declining a game invitation
-@app.route('/decline_game_invite/<int:invitation_id>', methods=['POST'])
-@login_required
-def decline_game_invite(invitation_id):
-    db = get_db()
-    
-    # Fetch the invitation
-    invite_data = db.execute(
-        'SELECT sender_id, recipient_id, game_name, status FROM game_invitations WHERE id = ?',
-        (invitation_id,)
-    ).fetchone()
-
-    if not invite_data:
-        flash("Game invitation not found.", "danger")
-        return redirect(url_for('inbox'))
-
-    if invite_data['recipient_id'] != current_user.id:
-        flash("You are not authorized to decline this invitation.", "danger")
-        return redirect(url_for('inbox'))
-
-    if invite_data['status'] != 'pending':
-        flash("This invitation is no longer pending.", "warning")
-        return redirect(url_for('inbox'))
-
-    try:
-        # Update invitation status to declined
-        db.execute('UPDATE game_invitations SET status = ? WHERE id = ?', ('declined', invitation_id))
-        db.commit()
-
-        # Optionally, notify the sender that their invitation was declined
-        sender_user = User.get(invite_data['sender_id'])
-        if sender_user:
-            message_content = f"Your invitation to play {invite_data['game_name'].capitalize()} with {current_user.username} was declined."
-            db.execute(
-                'INSERT INTO messages (sender_id, recipient_id, content, timestamp, is_read, is_admin_message) VALUES (?, ?, ?, ?, ?, ?)',
-                (current_user.id, sender_user.id, message_content, datetime.utcnow(), 0, 0)
-            )
-            db.commit()
-
-        flash(f"Game invitation for {invite_data['game_name'].capitalize()} declined.", 'info')
-    except sqlite3.Error as e:
-        flash(f"Error declining invitation: {e}", 'danger')
-    except Exception as e:
-        flash(f"An unexpected error occurred: {e}", 'danger')
-
-    return redirect(url_for('inbox'))
+# Removed accept_game_invite and decline_game_invite routes
+# These are no longer necessary for Firestore-managed games as the game loads directly.
+# For SQLite-managed games, you would implement explicit acceptance/declining if needed.
 
 
 @app.route('/message-member')
@@ -2295,7 +2294,7 @@ def admin_show_user_status(member_id):
                                    upload_time=upload_time_dt,
                                    expires_at=expires_at_dt)
         except Exception as e:
-            print(f"Error processing status for admin_show_user_status: {e}")
+            print(f"Error loading status: {e}")
             flash(f"Error loading status: {e}", 'danger')
             return redirect(url_for('member_detail', member_id=member_id))
     else:
@@ -2437,23 +2436,43 @@ def inbox():
             'is_unread': is_unread
         })
 
-    # NEW: Fetch pending game invitations for the current user
-    game_invitations_raw = db.execute('''
-        SELECT gi.id, gi.game_name, gi.timestamp, u.username, u.originalName
-        FROM game_invitations gi
-        JOIN users u ON gi.sender_id = u.id
-        WHERE gi.recipient_id = ? AND gi.status = 'pending'
-        ORDER BY gi.timestamp DESC
-    ''', (current_user.id,)).fetchall()
-
+    # NEW: Fetch pending game invitations for the current user from Firestore
     game_invitations_for_template = []
-    for invite_data in game_invitations_raw:
-        game_invitations_for_template.append({
-            'id': invite_data['id'],
-            'game_name': invite_data['game_name'],
-            'timestamp': invite_data['timestamp'],
-            'sender': {'username': invite_data['username'], 'originalName': invite_data['originalName']}
-        })
+    if firestore_db and current_user.is_authenticated:
+        try:
+            games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games')
+            
+            # Query for games where current user is playerWhiteId or playerBlackId, game is not over, and it's human vs human
+            # This covers invitations where they are either white or black
+            pending_games_query = games_ref.where('gameType', '==', 'human_vs_human').where('gameOver', '==', False)
+            
+            # Filter client-side for games where current user is a player
+            all_pending_games = pending_games_query.stream()
+            
+            for game_doc in all_pending_games:
+                game_data = game_doc.to_dict()
+                if (game_data.get('playerWhiteId') == str(current_user.id) or 
+                    game_data.get('playerBlackId') == str(current_user.id)):
+                    
+                    # Determine who the sender is (the other player)
+                    sender_user_id = None
+                    if game_data.get('playerWhiteId') == str(current_user.id):
+                        sender_user_id = int(game_data.get('playerBlackId'))
+                    elif game_data.get('playerBlackId') == str(current_user.id):
+                        sender_user_id = int(game_data.get('playerWhiteId'))
+                    
+                    sender_user_data = db.execute('SELECT username, originalName FROM users WHERE id = ?', (sender_user_id,)).fetchone()
+                    sender_name = sender_user_data['originalName'] if sender_user_data and sender_user_data['originalName'] else sender_user_data['username'] if sender_user_data else "Unknown User"
+
+                    game_invitations_for_template.append({
+                        'id': game_doc.id, # Use Firestore document ID as the game ID
+                        'game_name': game_data.get('gameName', 'Chess'), # Default to Chess if not specified
+                        'timestamp': game_data.get('createdAt').isoformat() if game_data.get('createdAt') else datetime.utcnow().isoformat(),
+                        'sender': {'username': sender_name, 'originalName': sender_name} # Simplified sender info
+                    })
+        except Exception as e:
+            print(f"Error fetching game invitations from Firestore in inbox: {e}")
+
 
     return render_template('inbox.html',
                            conversations=inbox_conversations,
@@ -2822,8 +2841,24 @@ def admin_manage_users():
                 db.execute('DELETE FROM chat_messages WHERE sender_id = ?', (user_id_to_delete,)) # For group chat messages
                 db.execute('DELETE FROM chat_room_members WHERE user_id = ?', (user_id_to_delete,)) # For group chat memberships
                 db.execute('DELETE FROM statuses WHERE uploader_user_id = ?', (user_id_to_delete,)) # Adapted to statuses table
-                # NEW: Delete game invitations where this user is sender or recipient
+                # NEW: Delete game invitations where this user is sender or recipient (from SQLite)
                 db.execute('DELETE FROM game_invitations WHERE sender_id = ? OR recipient_id = ?', (user_id_to_delete, user_id_to_delete))
+
+                # Delete game documents from Firestore where this user is playerWhiteId or playerBlackId
+                if firestore_db:
+                    games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games')
+                    # Query for games where user is playerWhiteId
+                    games_as_white = games_ref.where('playerWhiteId', '==', user_id_to_delete).stream()
+                    for game_doc in games_as_white:
+                        game_doc.reference.delete()
+                        print(f"Deleted Firestore game {game_doc.id} (user was white).")
+                    
+                    # Query for games where user is playerBlackId
+                    games_as_black = games_ref.where('playerBlackId', '==', user_id_to_delete).stream()
+                    for game_doc in games_as_black:
+                        game_doc.reference.delete()
+                        print(f"Deleted Firestore game {game_doc.id} (user was black).")
+
 
                 # Finally, delete the user
                 db.execute('DELETE FROM users WHERE id = ?', (user_id_to_delete,))
@@ -3101,3 +3136,4 @@ def settings():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
