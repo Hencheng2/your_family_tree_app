@@ -1,1496 +1,418 @@
-{% extends 'base.html' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Game</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chess.js@1.0.0-beta.6/chess.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.css">
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
-{% block title %}Chess Game{% endblock %}
-
-{% block content %}
-<style>
-    body {
-        background-color: var(--background-color);
-        color: var(--text-color);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 100vh;
-        padding-top: 70px; /* Space for navbar */
-        padding-bottom: 60px; /* Space for footer */
-        box-sizing: border-box;
-        overflow-y: auto; /* Allow scrolling if content exceeds viewport */
-    }
-
-    .game-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 20px;
-        max-width: 90vw;
-        width: 100%;
-        padding: 20px;
-        background-color: var(--card-bg);
-        border-radius: 1rem;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-    }
-
-    .game-setup {
-        background-color: var(--card-bg);
-        padding: 25px;
-        border-radius: 1rem;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        text-align: center;
-        width: 100%;
-        max-width: 400px;
-    }
-
-    .game-setup h2 {
-        color: var(--text-color);
-        margin-bottom: 20px;
-    }
-
-    .game-setup .form-group {
-        margin-bottom: 15px;
-    }
-
-    .game-setup .form-check-label {
-        color: var(--text-color);
-        margin-left: 5px;
-    }
-
-    .game-setup .btn-start {
-        background-color: var(--primary-color);
-        color: white;
-        padding: 10px 25px;
-        border-radius: 0.5rem;
-        font-weight: bold;
-        transition: background-color 0.2s, transform 0.2s;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
-    .game-setup .btn-start:hover {
-        background-color: #368a3a;
-        transform: translateY(-2px);
-    }
-
-    .scoreboard {
-        display: flex;
-        justify-content: space-around;
-        width: 100%;
-        max-width: 500px;
-        padding: 15px;
-        background-color: var(--primary-color);
-        color: white;
-        border-radius: 0.75rem;
-        font-weight: bold;
-        font-size: 1.2em;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    }
-
-    .board-wrapper {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        width: 100%;
-        max-width: 600px; /* Max width for the board */
-        aspect-ratio: 1 / 1; /* Keep board square */
-        border: 4px solid var(--text-color);
-        box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
-        border-radius: 0.5rem;
-        overflow: hidden; /* Ensures rounded corners */
-    }
-
-    .chess-board {
-        display: grid;
-        grid-template-columns: repeat(8, 1fr);
-        grid-template-rows: repeat(8, 1fr);
-        width: 100%;
-        height: 100%;
-    }
-
-    .square {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 3.5vw; /* Responsive font size for pieces */
-        cursor: pointer;
-        user-select: none; /* Prevent text selection */
-        transition: background-color 0.1s ease-in-out;
-    }
-
-    /* Chess board colors */
-    .light { background-color: #f0d9b5; color: #b58863; } /* Light wood color */
-    .dark { background-color: #b58863; color: #f0d9b5; } /* Dark wood color */
-
-    /* Highlight colors */
-    .selected { background-color: #ffcc00 !important; } /* Yellow for selected piece */
-    .possible-move { background-color: #88ff88 !important; } /* Green for possible moves */
-    .capture-move { background-color: #ff8888 !important; } /* Red for capture moves */
-    .in-check { background-color: #ff4444 !important; } /* Red for king in check */
-
-
-    /* Piece styling */
-    .piece {
-        font-family: 'Arial Unicode MS', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif; /* Fallback for chess symbols */
-        font-size: 4.5vw; /* Larger for pieces */
-        line-height: 1;
-        text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
-    }
-    .white-piece { color: #fff; }
-    .black-piece { color: #000; }
-
-    /* Responsive font size for pieces */
-    @media (min-width: 768px) {
-        .square {
-            font-size: 2.5vw;
+        // Polyfill for crypto.randomUUID for older browsers/environments if needed
+        if (typeof crypto.randomUUID === 'undefined') {
+            crypto.randomUUID = () => {
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            };
         }
-        .piece {
-            font-size: 3.5vw;
-        }
-    }
-    @media (min-width: 1024px) {
-        .square {
-            font-size: 2vw;
-        }
-        .piece {
-            font-size: 2.5vw;
-        }
-    }
 
-    .game-controls {
-        display: flex;
-        gap: 15px;
-        margin-top: 20px;
-    }
-    .game-controls button {
-        padding: 10px 20px;
-        border-radius: 0.5rem;
-        font-weight: bold;
-        cursor: pointer;
-        transition: background-color 0.2s, transform 0.2s;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
-    .game-controls button:hover {
-        transform: translateY(-2px);
-    }
-    .btn-reset {
-        background-color: #dc3545;
-        color: white;
-    }
-    .btn-reset:hover {
-        background-color: #c82333;
-    }
-    .btn-back {
-        background-color: #6c757d;
-        color: white;
-    }
-    .btn-back:hover {
-        background-color: #5a6268;
-    }
+        let game = new Chess();
+        let board = null;
+        let auth = null;
+        let db = null;
+        let currentFirebaseUser = null;
+        let gameId = null;
+        let isMultiplayer = false;
+        let currentPlayerIsWhite = false;
+        let gameDocRef = null;
+        let unsubscribe = null; // To store the Firestore unsubscribe function
+        let isLoading = true;
 
-    /* Message box for game end */
-    .message-box {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background-color: var(--card-bg);
-        border: 2px solid var(--primary-color);
-        padding: 30px;
-        border-radius: 1rem;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
-        text-align: center;
-        z-index: 1001;
-        font-size: 1.5em;
-        font-weight: bold;
-        color: var(--text-color);
-        display: none; /* Hidden by default */
-    }
-    .message-box button {
-        margin-top: 20px;
-        padding: 10px 25px;
-        background-color: var(--primary-color);
-        color: white;
-        border: none;
-        border-radius: 0.5rem;
-        cursor: pointer;
-        font-size: 1em;
-        transition: background-color 0.2s, transform 0.2s;
-    }
-    .message-box button:hover {
-        background-color: #368a3a;
-        transform: translateY(-2px);
-    }
-
-    /* Pawn Promotion Modal */
-    .promotion-modal-content {
-        background-color: var(--card-bg);
-        color: var(--text-color);
-        border-radius: 1rem;
-        border: 2px solid var(--primary-color);
-    }
-    .promotion-modal-header {
-        border-bottom: 1px solid var(--card-border);
-    }
-    .promotion-option {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 15px;
-        margin: 5px;
-        border: 1px solid var(--card-border);
-        border-radius: 0.5rem;
-        cursor: pointer;
-        transition: background-color 0.2s, transform 0.2s;
-        font-size: 2em; /* Larger piece symbol */
-        font-weight: bold;
-    }
-    .promotion-option:hover {
-        background-color: var(--nav-link-hover-bg);
-        transform: translateY(-2px);
-    }
-    .promotion-option .piece {
-        font-size: 1.5em; /* Adjust piece size within option */
-    }
-
-    .loading-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.7);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        color: white;
-        font-size: 1.5em;
-        z-index: 2000;
-        flex-direction: column;
-        gap: 20px;
-    }
-    .spinner {
-        border: 4px solid rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        border-top: 4px solid #fff;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-</style>
-
-<div class="game-container">
-    <h1 class="text-4xl font-extrabold text-blue-500">Chess Game</h1>
-
-    <div id="gameSetup" class="game-setup">
-        <h2>Set Up Your Game</h2>
-        <div class="form-group mb-3">
-            <label class="d-block mb-2">Play as:</label>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="playerColor" id="playWhite" value="w" checked>
-                <label class="form-check-label" for="playWhite">White</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="playerColor" id="playBlack" value="b">
-                <label class="form-check-label" for="playBlack">Black</label>
-            </div>
-        </div>
-        <div class="form-group mb-4">
-            <label class="d-block mb-2">Opponent:</label>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="opponentType" id="opponentHuman" value="human" checked>
-                <label class="form-check-label" for="opponentHuman">Human (Local/Online)</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="opponentType" id="opponentAI" value="ai">
-                <label class="form-check-label" for="opponentAI">AI (Basic)</label>
-            </div>
-        </div>
-        <button id="startGameButton" class="btn-start">Start Game</button>
-    </div>
-
-    <div id="gameBoardArea" style="display: none;">
-        <div class="scoreboard">
-            <span id="whiteScore">White Captures: 0</span>
-            <span id="blackScore">Black Captures: 0</span>
-            <span id="turnIndicator">White's Turn</span>
-        </div>
-
-        <div class="board-wrapper">
-            <div id="chessBoard" class="chess-board">
-                <!-- Chess squares will be dynamically generated here -->
-            </div>
-        </div>
-
-        <div class="game-controls">
-            <button id="resetButton" class="btn-reset">Reset Game</button>
-            <button id="backToLibraryButton" class="btn-back" onclick="window.location.href='{{ url_for('games_hub') }}'">Back to Library</button>
-        </div>
-    </div>
-</div>
-
-<!-- Message Box for Checkmate/Stalemate -->
-<div id="messageBox" class="message-box">
-    <p id="messageText"></p>
-    <button id="messageBoxCloseButton">OK</button>
-</div>
-
-<!-- Pawn Promotion Modal -->
-<div class="modal fade" id="promotionModal" tabindex="-1" aria-labelledby="promotionModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content promotion-modal-content">
-      <div class="modal-header promotion-modal-header">
-        <h5 class="modal-title" id="promotionModalLabel">Pawn Promotion</h5>
-      </div>
-      <div class="modal-body">
-        <p class="text-center text-muted">Choose a piece to promote your pawn to:</p>
-        <div class="d-flex justify-content-around mt-3">
-          <div class="promotion-option" data-piece="Q">
-            <span class="piece white-piece">&#9813;</span> <!-- Queen -->
-          </div>
-          <div class="promotion-option" data-piece="R">
-            <span class="piece white-piece">&#9814;</span> <!-- Rook -->
-          </div>
-          <div class="promotion-option" data-piece="B">
-            <span class="piece white-piece">&#9815;</span> <!-- Bishop -->
-          </div>
-          <div class="promotion-option" data-piece="N">
-            <span class="piece white-piece">&#9816;</span> <!-- Knight -->
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Loading Overlay -->
-<div id="loadingOverlay" class="loading-overlay" style="display: none;">
-    <div class="spinner"></div>
-    <p id="loadingText">Loading game...</p>
-</div>
-
-<script type="module">
-    // Import the Firebase modules
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, onSnapshot, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-    document.addEventListener('DOMContentLoaded', function() {
-        const boardElement = document.getElementById('chessBoard');
-        const turnIndicator = document.getElementById('turnIndicator');
-        const resetButton = document.getElementById('resetButton');
-        const whiteScoreElement = document.getElementById('whiteScore');
-        const blackScoreElement = document.getElementById('blackScore');
-        const messageBox = document.getElementById('messageBox');
-        const messageText = document.getElementById('messageText');
-        const messageBoxCloseButton = document.getElementById('messageBoxCloseButton');
-        const promotionModalElement = document.getElementById('promotionModal');
-        const promotionModal = new bootstrap.Modal(promotionModalElement);
-        const promotionOptions = document.querySelectorAll('.promotion-option');
-        const gameSetupDiv = document.getElementById('gameSetup');
-        const gameBoardAreaDiv = document.getElementById('gameBoardArea');
-        const startGameButton = document.getElementById('startGameButton');
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        const loadingText = document.getElementById('loadingText');
-
-        // Firebase variables
-        let db;
-        let auth;
-        let currentFirebaseUser;
-        let gameDocRef;
-        let unsubscribeGameListener = null;
-
-        // Get config from Jinja context (passed by Flask's app.context_processor)
-        const firebaseConfig = JSON.parse('{{ firebase_config_json | tojson | safe }}');
+        // Get Flask-provided config and app ID
+        const firebaseConfig = JSON.parse('{{ firebase_config_json | safe }}');
         const initialAuthToken = '{{ initial_auth_token | safe }}';
         const canvasAppId = '{{ canvas_app_id | safe }}';
-        const currentFlaskUserId = '{{ current_user.id | safe }}'; // Flask-Login current_user.id
+        const flaskUserId = '{{ current_user.id | safe }}'; // Get Flask user ID
 
-        // Game state variables
-        let board = []; // 8x8 array representing the board state
-        let selectedSquare = null; // Stores the currently selected square element
-        let selectedPiecePos = null; // Stores {row, col} of selected piece
-        let turn = 'w'; // 'w' for white, 'b' for black
-        let whiteCaptures = 0;
-        let blackCaptures = 0;
-        let gameOver = false;
-        let castlingRights = { 'wK': true, 'wQ': true, 'bK': true, 'bQ': true };
-        let enPassantTarget = null;
-        let lastMove = null;
-        let promotionPawnPos = null;
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
 
-        let playerColor = 'w'; // 'w' or 'b' - what the human player chose
-        let opponentType = 'human'; // 'human' or 'ai'
-        let gameId = null; // Will be set for solo or multiplayer
+        // Function to update UI elements
+        function updateUI() {
+            document.getElementById('status').textContent = getGameStatus();
+            document.getElementById('turn').textContent = `Turn: ${game.turn() === 'w' ? 'White' : 'Black'}`;
+            document.getElementById('white-captures').textContent = `White Captures: ${getCapturedPieces('b').join(', ')}`;
+            document.getElementById('black-captures').textContent = `Black Captures: ${getCapturedPieces('w').join(', ')}`;
 
-        // Chess piece unicode characters
-        const PIECES = {
-            'K': '&#9812;', 'Q': '&#9813;', 'R': '&#9814;', 'B': '&#9815;', 'N': '&#9816;', 'P': '&#9817;', // White
-            'k': '&#9818;', 'q': '&#9819;', 'r': '&#9820;', 'b': '&#9821;', 'n': '&#9822;', 'p': '&#9823;'  // Black
-        };
+            const whitePlayerElem = document.getElementById('white-player');
+            const blackPlayerElem = document.getElementById('black-player');
 
-        const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+            if (isMultiplayer) {
+                whitePlayerElem.textContent = `White: ${gameData.playerWhiteName || gameData.playerWhiteId}`;
+                blackPlayerElem.textContent = `Black: ${gameData.playerBlackName || gameData.playerBlackId}`;
+            } else { // Solo AI game
+                whitePlayerElem.textContent = `White: You`;
+                blackPlayerElem.textContent = `Black: AI`;
+            }
 
-        // --- Firebase Initialization and Auth ---
-        function initializeFirebase() {
-            try {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        currentFirebaseUser = user;
-                        console.log("Firebase user signed in:", user.uid);
-                        // If a game ID is in the URL, try to load that game
-                        const urlParams = new URLSearchParams(window.location.search);
-                        const invitedGameId = urlParams.get('gameId');
-                        if (invitedGameId) {
-                            gameId = invitedGameId;
-                            loadingText.textContent = "Loading invited game...";
-                            showLoadingOverlay();
-                            await loadGameFromFirestore(gameId);
-                            gameSetupDiv.style.display = 'none';
-                            gameBoardAreaDiv.style.display = 'flex';
-                            hideLoadingOverlay();
-                        } else {
-                            // No game ID in URL, show setup
-                            gameSetupDiv.style.display = 'block';
-                            gameBoardAreaDiv.style.display = 'none';
-                            hideLoadingOverlay();
-                        }
-                    } else {
-                        // Sign in anonymously if no custom token or user logs out
-                        await signInAnonymously(auth);
-                    }
-                });
-            } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                alert("Failed to initialize game services. Please try again.");
-                hideLoadingOverlay();
+            // Show/hide loading spinner
+            const loadingSpinner = document.getElementById('loading-spinner');
+            if (isLoading) {
+                loadingSpinner.classList.remove('hidden');
+            } else {
+                loadingSpinner.classList.add('hidden');
             }
         }
 
-        // --- Game State Synchronization with Firestore ---
-        async function loadGameFromFirestore(id) {
-            gameDocRef = doc(db, `artifacts/${canvasAppId}/public/games`, id);
-            
-            if (unsubscribeGameListener) {
-                unsubscribeGameListener(); // Unsubscribe from previous listener if any
-            }
+        // Function to get captured pieces
+        function getCapturedPieces(color) {
+            const captured = {
+                'p': 0, 'n': 0, 'b': 0, 'r': 0, 'q': 0
+            };
+            const boardPieces = game.board().flat().filter(p => p); // Flatten board and remove nulls
 
-            unsubscribeGameListener = onSnapshot(gameDocRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    console.log("Game state updated from Firestore:", data);
-                    // Update local game state
-                    board = JSON.parse(data.boardFen); // Board is stored as JSON string
-                    turn = data.turn;
-                    whiteCaptures = data.whiteCaptures;
-                    blackCaptures = data.blackCaptures;
-                    castlingRights = data.castlingRights;
-                    enPassantTarget = data.enPassantTarget || null;
-                    lastMove = data.lastMove || null;
-                    gameOver = data.gameOver;
-                    playerColor = data.playerWhiteId === currentFlaskUserId ? 'w' : (data.playerBlackId === currentFlaskUserId ? 'b' : playerColor); // Determine player color based on Firestore
-                    opponentType = data.playerBlackId === "AI" || data.playerWhiteId === "AI" ? "ai" : "human"; // Determine opponent type
-
-                    renderBoard();
-                    if (gameOver) {
-                        showMessageBox(data.winner === 'w' ? 'White Wins!' : (data.winner === 'b' ? 'Black Wins!' : 'Draw!'));
-                    } else if (turn !== playerColor && opponentType === 'ai') {
-                        // It's AI's turn and we are in AI mode
-                        setTimeout(makeAIMove, 1000); // Give a slight delay for AI move
-                    }
-                } else {
-                    console.warn("Game document does not exist:", id);
-                    // This might happen if an invited game is deleted or invalid ID
-                    alert("Game not found or ended. Starting a new solo game.");
-                    startGame('w', 'ai'); // Fallback to starting a new solo AI game
+            // Count pieces of the opposite color (captured by 'color')
+            boardPieces.forEach(piece => {
+                if (piece.color !== color) {
+                    captured[piece.type.toLowerCase()]++;
                 }
-                hideLoadingOverlay();
-            }, (error) => {
-                console.error("Error listening to game state:", error);
-                alert("Error loading game. Please try again.");
-                hideLoadingOverlay();
             });
+
+            // Count all pieces on the board
+            const initialPieces = {
+                'p': 8, 'n': 2, 'b': 2, 'r': 2, 'q': 1
+            };
+
+            const capturedList = [];
+            for (const type in initialPieces) {
+                const currentCount = captured[type];
+                const initialCount = initialPieces[type];
+                const diff = initialCount - currentCount;
+                for (let i = 0; i < diff; i++) {
+                    capturedList.push(type.toUpperCase()); // Use uppercase for captured pieces
+                }
+            }
+            return capturedList;
         }
 
-        async function saveGameToFirestore() {
-            if (!gameDocRef) {
-                console.error("No game document reference to save to.");
+        // Function to get game status
+        function getGameStatus() {
+            if (game.inCheckmate()) {
+                return `Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins!`;
+            } else if (game.inDraw()) {
+                return 'Draw!';
+            } else if (game.inStalemate()) {
+                return 'Stalemate!';
+            } else if (game.inThreefoldRepetition()) {
+                return 'Draw by threefold repetition!';
+            } else if (game.insufficientMaterial()) {
+                return 'Draw by insufficient material!';
+            }
+            return 'Game in progress.';
+        }
+
+        // Function to make AI move (simple random move)
+        function makeAIMove() {
+            const possibleMoves = game.moves({ verbose: true });
+            if (game.gameOver() || possibleMoves.length === 0) {
                 return;
             }
-            try {
-                await setDoc(gameDocRef, {
-                    boardFen: JSON.stringify(board), // Store board as JSON string
-                    turn: turn,
-                    whiteCaptures: whiteCaptures,
-                    blackCaptures: blackCaptures,
-                    castlingRights: castlingRights,
-                    enPassantTarget: enPassantTarget,
-                    lastMove: lastMove,
-                    gameOver: gameOver,
-                    winner: gameOver ? (turn === 'w' ? 'b' : 'w') : null, // Winner is the one whose turn it ISN'T
-                    lastUpdated: serverTimestamp(),
-                    // Player IDs are set at game creation and don't change
-                    playerWhiteId: gameId.startsWith('solo_') && playerColor === 'w' ? currentFlaskUserId : (gameId.startsWith('solo_') && opponentType === 'ai' && playerColor === 'b' ? "AI" : (gameId.startsWith('solo_') ? currentFlaskUserId : (playerColor === 'w' ? currentFlaskUserId : null))),
-                    playerBlackId: gameId.startsWith('solo_') && playerColor === 'b' ? currentFlaskUserId : (gameId.startsWith('solo_') && opponentType === 'ai' && playerColor === 'w' ? "AI" : (gameId.startsWith('solo_') ? currentFlaskUserId : (playerColor === 'b' ? currentFlaskUserId : null))),
-                    gameType: opponentType === 'ai' ? 'human_vs_ai' : 'human_vs_human',
-                    createdAt: serverTimestamp(), // Only set on initial creation
-                }, { merge: true }); // Use merge to only update specified fields
-                console.log("Game state saved to Firestore.");
-            } catch (e) {
-                console.error("Error writing document: ", e);
-                alert("Error saving game state.");
+
+            const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+            game.move(randomMove);
+            board.position(game.fen());
+            updateGameInFirestore();
+        }
+
+        // Function to handle piece drop
+        function onDrop(source, target) {
+            // Check if it's a multiplayer game and it's not the current player's turn
+            if (isMultiplayer && game.turn() === 'w' && !currentPlayerIsWhite) {
+                return 'snapback'; // Snap back if it's white's turn but current player is black
+            }
+            if (isMultiplayer && game.turn() === 'b' && currentPlayerIsWhite) {
+                return 'snapback'; // Snap back if it's black's turn but current player is white
+            }
+
+            const move = game.move({
+                from: source,
+                to: target,
+                promotion: 'q' // Always promote to queen for simplicity
+            });
+
+            if (move === null) return 'snapback'; // Invalid move
+
+            updateGameInFirestore();
+
+            // If it's a solo AI game and the human just moved, make AI move
+            if (!isMultiplayer && !game.gameOver()) {
+                setTimeout(makeAIMove, 500); // AI moves after a short delay
             }
         }
 
-        // --- Game Setup and Start ---
-        startGameButton.addEventListener('click', async () => {
-            playerColor = document.querySelector('input[name="playerColor"]:checked').value;
-            opponentType = document.querySelector('input[name="opponentType"]:checked').value;
+        // Function to update game state in Firestore
+        async function updateGameInFirestore() {
+            if (!gameDocRef) return;
 
-            // Generate a new game ID for solo play
-            if (opponentType === 'ai' || opponentType === 'human' && !gameId) { // If solo AI or local human, or no gameId from invite
-                gameId = `solo_chess_${currentFlaskUserId}_${Date.now()}`;
-            }
-            // If gameId already exists (from URL for multiplayer), use it
+            const boardFen = game.fen();
+            const turn = game.turn();
+            const gameOver = game.gameOver();
+            const winner = gameOver ? (game.turn() === 'w' ? 'Black' : 'White') : null; // Winner is the one who delivered checkmate
 
-            loadingText.textContent = "Starting new game...";
-            showLoadingOverlay();
-
-            // Create or update the game document in Firestore
-            gameDocRef = doc(db, `artifacts/${canvasAppId}/public/games`, gameId);
             try {
+                await runTransaction(db, async (transaction) => {
+                    const sfDoc = await transaction.get(gameDocRef);
+                    if (!sfDoc.exists) {
+                        throw "Document does not exist!";
+                    }
+
+                    // Update the document with new game state
+                    transaction.update(gameDocRef, {
+                        boardFen: boardFen,
+                        turn: turn,
+                        gameOver: gameOver,
+                        winner: winner,
+                        lastUpdated: serverTimestamp(),
+                        // Add other game state variables if you track them (e.g., captured pieces, move history)
+                    });
+                });
+                console.log("Game state updated in Firestore.");
+                updateUI(); // Update UI immediately after local move
+            } catch (e) {
+                console.error("Transaction failed: ", e);
+                // Revert local game state if transaction fails
+                board.position(game.fen());
+                updateUI();
+                alert("Failed to update game state. Please try again.");
+            }
+        }
+
+        // Function to initialize the board
+        function initBoard() {
+            const config = {
+                draggable: true,
+                position: 'start',
+                onDrop: onDrop,
+                onSnapEnd: () => board.position(game.fen()) // Snap back if invalid move
+            };
+            board = Chessboard('board', config);
+        }
+
+        // Main game initialization function
+        async function initializeGame() {
+            isLoading = true;
+            updateUI(); // Show loading spinner
+
+            const urlParams = new URLSearchParams(window.location.search);
+            gameId = urlParams.get('gameId');
+
+            await new Promise(resolve => {
+                onAuthStateChanged(auth, user => {
+                    if (user) {
+                        currentFirebaseUser = user;
+                        console.log("Firebase user authenticated:", user.uid);
+                    } else {
+                        // Sign in anonymously if no user is logged in (for Canvas environment)
+                        signInAnonymously(auth).then(anonUser => {
+                            currentFirebaseUser = anonUser.user;
+                            console.log("Signed in anonymously:", currentFirebaseUser.uid);
+                        }).catch(error => {
+                            console.error("Anonymous sign-in failed:", error);
+                            alert("Failed to authenticate with game services. Please refresh the page.");
+                        });
+                    }
+                    resolve();
+                });
+            });
+
+            if (!currentFirebaseUser) {
+                alert("Authentication failed. Cannot initialize game.");
+                isLoading = false;
+                updateUI();
+                return;
+            }
+
+            if (gameId) {
+                // Multiplayer game
+                isMultiplayer = true;
+                // Corrected Firestore path
+                gameDocRef = doc(db, `artifacts/${canvasAppId}/games`, gameId);
+                console.log("Attempting to load multiplayer game:", gameId);
+
+                unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        game.load(data.boardFen);
+                        board.position(game.fen());
+                        currentPlayerIsWhite = (data.playerWhiteId === flaskUserId); // Check if current Flask user is white
+                        console.log("Game state updated from Firestore:", data);
+                        isLoading = false;
+                        updateUI();
+                    } else {
+                        alert("Game not found or has ended.");
+                        isLoading = false;
+                        updateUI();
+                        // Optionally redirect back to game hub
+                        window.location.href = '/games';
+                    }
+                }, (error) => {
+                    console.error("Error listening to game updates:", error);
+                    alert("Error synchronizing game. Please refresh.");
+                    isLoading = false;
+                    updateUI();
+                });
+
+            } else {
+                // Solo AI game
+                isMultiplayer = false;
+                gameId = `solo_ai_${crypto.randomUUID()}`; // Generate unique ID for solo game
+                gameDocRef = doc(db, `artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/solo_games`, gameId);
+                currentPlayerIsWhite = true; // Human is always white in solo play
+
+                console.log("Starting new solo AI game:", gameId);
+
+                // Check if a solo game with this ID already exists (e.g., from a previous session)
+                const docSnap = await getDoc(gameDocRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    game.load(data.boardFen);
+                    console.log("Loaded existing solo AI game:", data);
+                } else {
+                    // Initialize new solo game state in Firestore
+                    const initialBoardState = game.fen();
+                    await setDoc(gameDocRef, {
+                        boardFen: initialBoardState,
+                        turn: 'w',
+                        whiteCaptures: 0,
+                        blackCaptures: 0,
+                        gameOver: false,
+                        winner: null,
+                        createdAt: serverTimestamp(),
+                        lastUpdated: serverTimestamp(),
+                        playerWhiteId: flaskUserId, // Store Flask user ID
+                        playerBlackId: 'AI', // Indicate AI opponent
+                        gameType: 'solo_ai',
+                        gameName: 'chess'
+                    });
+                    console.log("Created new solo AI game in Firestore.");
+                }
+                board.position(game.fen());
+                isLoading = false;
+                updateUI();
+
+                // Set up a listener for solo games too, to keep UI in sync if AI moves
+                unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        game.load(data.boardFen);
+                        board.position(game.fen());
+                        updateUI();
+                        // If it's AI's turn and game is not over, make AI move
+                        if (game.turn() === 'b' && !game.gameOver()) {
+                            setTimeout(makeAIMove, 500);
+                        }
+                    }
+                }, (error) => {
+                    console.error("Error listening to solo game updates:", error);
+                    alert("Error synchronizing solo game. Please refresh.");
+                });
+            }
+        }
+
+        // Initialize board when the DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            initBoard();
+            initializeGame();
+
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', () => {
+                if (unsubscribe) {
+                    unsubscribe(); // Unsubscribe from Firestore listener
+                    console.log("Unsubscribed from Firestore game updates.");
+                }
+            });
+        });
+
+        // Reset game button (for solo play or to start new multiplayer)
+        document.getElementById('reset-game').addEventListener('click', async () => {
+            if (!isMultiplayer) { // Only allow reset for solo games
+                game.reset();
+                board.position('start');
                 await setDoc(gameDocRef, {
-                    boardFen: JSON.stringify(Array(8).fill(null).map(() => Array(8).fill(null))), // Placeholder for initial board
+                    boardFen: game.fen(),
                     turn: 'w',
                     whiteCaptures: 0,
                     blackCaptures: 0,
-                    castlingRights: { 'wK': true, 'wQ': true, 'bK': true, 'bQ': true },
-                    enPassantTarget: null,
-                    lastMove: null,
                     gameOver: false,
                     winner: null,
                     createdAt: serverTimestamp(),
-                    playerWhiteId: playerColor === 'w' ? currentFlaskUserId : (opponentType === 'ai' ? "AI" : null),
-                    playerBlackId: playerColor === 'b' ? currentFlaskUserId : (opponentType === 'ai' ? "AI" : null),
-                    gameType: opponentType === 'ai' ? 'human_vs_ai' : 'human_vs_human',
                     lastUpdated: serverTimestamp(),
+                    playerWhiteId: flaskUserId,
+                    playerBlackId: 'AI',
+                    gameType: 'solo_ai',
+                    gameName: 'chess'
                 });
-                console.log("New game document created/initialized in Firestore.");
-                // Now load and listen to this game
-                await loadGameFromFirestore(gameId);
-                gameSetupDiv.style.display = 'none';
-                gameBoardAreaDiv.style.display = 'flex';
-                resetGame(); // Reset local state to starting position
-                await saveGameToFirestore(); // Save initial state to Firestore
-                hideLoadingOverlay();
-            } catch (e) {
-                console.error("Error creating/initializing game document:", e);
-                alert("Failed to start game. Please try again.");
-                hideLoadingOverlay();
+                updateUI();
+                alert("Solo game reset!");
+            } else {
+                alert("You can only reset solo games. For multiplayer, start a new invitation.");
             }
         });
-
-        // --- Game Logic Functions (mostly unchanged from previous version) ---
-
-        function parseFEN(fen) {
-            board = Array(8).fill(null).map(() => Array(8).fill(null));
-            const parts = fen.split(' ');
-            const boardString = parts[0];
-            turn = parts[1];
-            
-            const castlingString = parts[2];
-            castlingRights = {
-                'wK': castlingString.includes('K'),
-                'wQ': castlingString.includes('Q'),
-                'bK': castlingString.includes('k'),
-                'bQ': castlingString.includes('q')
-            };
-
-            const enPassantString = parts[3];
-            if (enPassantString !== '-') {
-                const colChar = enPassantString.charCodeAt(0) - 'a'.charCodeAt(0);
-                const rowNum = parseInt(enPassantString[1], 10);
-                enPassantTarget = { row: 8 - rowNum, col: colChar };
-            } else {
-                enPassantTarget = null;
-            }
-
-            let row = 0;
-            let col = 0;
-            for (let i = 0; i < boardString.length; i++) {
-                const char = boardString[i];
-                if (char === '/') {
-                    row++;
-                    col = 0;
-                } else if (/\d/.test(char)) {
-                    col += parseInt(char, 10);
-                } else {
-                    board[row][col] = char;
-                    col++;
-                }
-            }
-        }
-
-        function renderBoard() {
-            boardElement.innerHTML = '';
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    const square = document.createElement('div');
-                    square.classList.add('square');
-                    square.classList.add((r + c) % 2 === 0 ? 'light' : 'dark');
-                    square.dataset.row = r;
-                    square.dataset.col = c;
-
-                    const pieceChar = board[r][c];
-                    if (pieceChar) {
-                        const pieceElement = document.createElement('span');
-                        pieceElement.classList.add('piece');
-                        pieceElement.classList.add(pieceChar === pieceChar.toUpperCase() ? 'white-piece' : 'black-piece');
-                        pieceElement.innerHTML = PIECES[pieceChar];
-                        square.appendChild(pieceElement);
-                    }
-                    square.addEventListener('click', handleSquareClick);
-                    boardElement.appendChild(square);
-                }
-            }
-            updateTurnIndicator();
-            updateScoreboard();
-
-            const kingPos = findKing(turn === 'w');
-            if (kingPos && isKingInCheck(turn === 'w')) {
-                const kingSquare = boardElement.querySelector(`[data-row="${kingPos.row}"][data-col="${kingPos.col}"]`);
-                if (kingSquare) {
-                    kingSquare.classList.add('in-check');
-                }
-            }
-        }
-
-        async function handleSquareClick(event) {
-            if (gameOver) return;
-
-            // Check if it's the human player's turn based on selected color and current turn
-            const isHumanTurn = (playerColor === 'w' && turn === 'w') || (playerColor === 'b' && turn === 'b');
-            if (!isHumanTurn) {
-                console.log("Not human player's turn.");
-                return;
-            }
-
-            const clickedSquare = event.currentTarget;
-            const row = parseInt(clickedSquare.dataset.row, 10);
-            const col = parseInt(clickedSquare.dataset.col, 10);
-            const piece = board[row][col];
-
-            document.querySelectorAll('.selected, .possible-move, .capture-move, .in-check').forEach(s => {
-                s.classList.remove('selected', 'possible-move', 'capture-move', 'in-check');
-            });
-            renderBoard();
-
-            if (selectedPiecePos) {
-                const prevRow = selectedPiecePos.row;
-                const prevCol = selectedPiecePos.col;
-
-                const legalMoves = getLegalMoves(prevRow, prevCol);
-                const isLegalMove = legalMoves.some(move => move[0] === row && move[1] === col);
-
-                if (isLegalMove) {
-                    await runTransaction(db, async (transaction) => {
-                        const gameDoc = await transaction.get(gameDocRef);
-                        if (!gameDoc.exists) {
-                            throw "Game does not exist!";
-                        }
-                        const currentGameState = gameDoc.data();
-                        
-                        // Apply move to a temporary board derived from currentGameState.boardFen
-                        let tempBoard = JSON.parse(currentGameState.boardFen);
-                        let tempTurn = currentGameState.turn;
-                        let tempWhiteCaptures = currentGameState.whiteCaptures;
-                        let tempBlackCaptures = currentGameState.blackCaptures;
-                        let tempCastlingRights = currentGameState.castlingRights;
-                        let tempEnPassantTarget = currentGameState.enPassantTarget || null;
-                        let tempLastMove = currentGameState.lastMove || null;
-
-                        // Simulate move on temp board to get new state
-                        const pieceToMove = tempBoard[prevRow][prevCol];
-                        const capturedPiece = tempBoard[row][col];
-                        const isMovingPieceWhite = pieceToMove === pieceToMove.toUpperCase();
-
-                        // Update lastMove for en passant tracking during simulation
-                        tempLastMove = { startRow: prevRow, startCol: prevCol, endRow: row, endCol: col, piece: pieceToMove };
-
-                        // Handle captures for scoreboard (temp)
-                        if (capturedPiece) {
-                            if (tempTurn === 'w') {
-                                tempWhiteCaptures++;
-                            } else {
-                                tempBlackCaptures++;
-                            }
-                        }
-
-                        // Handle En Passant Capture (temp)
-                        if (pieceToMove.toLowerCase() === 'p' && tempEnPassantTarget &&
-                            row === tempEnPassantTarget.row && col === tempEnPassantTarget.col && !capturedPiece) {
-                            const capturedPawnRow = isMovingPieceWhite ? row + 1 : row - 1;
-                            tempBoard[capturedPawnRow][col] = null;
-                            if (isMovingPieceWhite) {
-                                tempWhiteCaptures++;
-                            } else {
-                                tempBlackCaptures++;
-                            }
-                        }
-
-                        // Handle Castling (temp)
-                        if (pieceToMove.toLowerCase() === 'k' && Math.abs(prevCol - col) === 2) {
-                            const currentKingRow = prevRow;
-                            if (col === 6) { // King-side castling
-                                const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                                tempBoard[currentKingRow][5] = rookChar;
-                                tempBoard[currentKingRow][7] = null;
-                            } else if (col === 2) { // Queen-side castling
-                                const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                                tempBoard[currentKingRow][3] = rookChar;
-                                tempBoard[currentKingRow][0] = null;
-                            }
-                        }
-                        
-                        tempBoard[row][col] = pieceToMove;
-                        tempBoard[prevRow][prevCol] = null;
-
-                        // Update castling rights (temp)
-                        if (pieceToMove.toLowerCase() === 'k') {
-                            if (isMovingPieceWhite) { tempCastlingRights.wK = false; tempCastlingRights.wQ = false; }
-                            else { tempCastlingRights.bK = false; tempCastlingRights.bQ = false; }
-                        } else if (pieceToMove.toLowerCase() === 'r') {
-                            if (isMovingPieceWhite) {
-                                if (prevRow === 7 && prevCol === 7) tempCastlingRights.wK = false;
-                                if (prevRow === 7 && prevCol === 0) tempCastlingRights.wQ = false;
-                            } else {
-                                if (prevRow === 0 && prevCol === 7) tempCastlingRights.bK = false;
-                                if (prevRow === 0 && prevCol === 0) tempCastlingRights.bQ = false;
-                            }
-                        }
-                        // If a rook is captured on its original square, the opponent's castling rights are lost
-                        if (row === 7 && col === 7 && isOpponentPiece(capturedPiece, !isMovingPieceWhite) && capturedPiece.toLowerCase() === 'r') tempCastlingRights.wK = false;
-                        if (row === 7 && col === 0 && isOpponentPiece(capturedPiece, !isMovingPieceWhite) && capturedPiece.toLowerCase() === 'r') tempCastlingRights.wQ = false;
-                        if (row === 0 && col === 7 && isOpponentPiece(capturedPiece, !isMovingPieceWhite) && capturedPiece.toLowerCase() === 'r') tempCastlingRights.bK = false;
-                        if (row === 0 && col === 0 && isOpponentPiece(capturedPiece, !isMovingPieceWhite) && capturedPiece.toLowerCase() === 'r') tempCastlingRights.bQ = false;
-
-
-                        // Set en passant target for next turn if pawn moved two squares (temp)
-                        tempEnPassantTarget = null;
-                        if (pieceToMove.toLowerCase() === 'p' && Math.abs(prevRow - row) === 2) {
-                            tempEnPassantTarget = { row: (prevRow + row) / 2, col: col };
-                        }
-
-                        tempTurn = (tempTurn === 'w') ? 'b' : 'w'; // Switch turn
-
-                        // Check for game end after the move
-                        let tempGameOver = false;
-                        let tempWinner = null;
-                        const nextPlayerHasLegalMoves = getAllLegalMovesForPlayer(tempTurn, tempBoard, tempCastlingRights, tempEnPassantTarget, tempLastMove).length > 0;
-                        const nextKingInCheck = isKingInCheck(tempTurn === 'w', tempBoard, tempCastlingRights, tempEnPassantTarget, tempLastMove);
-
-                        if (!nextPlayerHasLegalMoves) {
-                            tempGameOver = true;
-                            if (nextKingInCheck) {
-                                tempWinner = (tempTurn === 'w') ? 'b' : 'w'; // Winner is the one whose turn it ISN'T
-                            } else {
-                                tempWinner = 'draw';
-                            }
-                        }
-
-                        // Update Firestore document with new state
-                        transaction.update(gameDocRef, {
-                            boardFen: JSON.stringify(tempBoard),
-                            turn: tempTurn,
-                            whiteCaptures: tempWhiteCaptures,
-                            blackCaptures: tempBlackCaptures,
-                            castlingRights: tempCastlingRights,
-                            enPassantTarget: tempEnPassantTarget,
-                            lastMove: tempLastMove,
-                            gameOver: tempGameOver,
-                            winner: tempWinner,
-                            lastUpdated: serverTimestamp(),
-                        });
-                    });
-                    
-                    selectedSquare = null;
-                    selectedPiecePos = null;
-
-                } else {
-                    selectedSquare = null;
-                    selectedPiecePos = null;
-                    if (piece && isPlayersPiece(piece)) {
-                        selectPiece(clickedSquare, row, col);
-                    }
-                }
-            } else {
-                if (piece && isPlayersPiece(piece)) {
-                    selectPiece(clickedSquare, row, col);
-                }
-            }
-        }
-
-        function isPlayersPiece(pieceChar, checkTurn = turn) {
-            return (checkTurn === 'w' && pieceChar === pieceChar.toUpperCase()) ||
-                   (checkTurn === 'b' && pieceChar === pieceChar.toLowerCase());
-        }
-
-        function isOpponentPiece(targetPieceChar, isMovingPieceWhite) {
-            return (isMovingPieceWhite && targetPieceChar === targetPieceChar.toLowerCase()) ||
-                   (!isMovingPieceWhite && targetPieceChar === targetPieceChar.toUpperCase());
-        }
-
-        function selectPiece(squareElement, row, col) {
-            selectedSquare = squareElement;
-            selectedPiecePos = { row, col };
-            selectedSquare.classList.add('selected');
-            highlightPossibleMoves(row, col);
-        }
-
-        function highlightPossibleMoves(row, col) {
-            const moves = getLegalMoves(row, col);
-            moves.forEach(move => {
-                const targetSquare = boardElement.querySelector(`[data-row="${move[0]}"][data-col="${move[1]}"]`);
-                if (targetSquare) {
-                    if (board[move[0]][move[1]]) {
-                        targetSquare.classList.add('capture-move');
-                    } else {
-                        targetSquare.classList.add('possible-move');
-                    }
-                }
-            });
-        }
-
-        function getPseudoLegalMoves(row, col, currentBoard = board, currentCastlingRights = castlingRights, currentEnPassantTarget = enPassantTarget, currentLastMove = lastMove) {
-            const piece = currentBoard[row][col];
-            if (!piece) return [];
-
-            const isWhite = piece === piece.toUpperCase();
-            let moves = [];
-
-            switch (piece.toLowerCase()) {
-                case 'p': moves = getPawnPseudoLegalMoves(row, col, isWhite, currentBoard, currentEnPassantTarget, currentLastMove); break;
-                case 'r': moves = getRookPseudoLegalMoves(row, col, isWhite, currentBoard); break;
-                case 'n': moves = getKnightPseudoLegalMoves(row, col, isWhite, currentBoard); break;
-                case 'b': moves = getBishopPseudoLegalMoves(row, col, isWhite, currentBoard); break;
-                case 'q': moves = getQueenPseudoLegalMoves(row, col, isWhite, currentBoard); break;
-                case 'k': moves = getKingPseudoLegalMoves(row, col, isWhite, currentBoard, currentCastlingRights); break;
-                default: moves = [];
-            }
-            return moves;
-        }
-
-        function getPawnPseudoLegalMoves(row, col, isWhite, currentBoard, currentEnPassantTarget, currentLastMove) {
-            const moves = [];
-            const direction = isWhite ? -1 : 1;
-            const startRow = isWhite ? 6 : 1;
-
-            if (isValidBoardPos(row + direction, col) && !currentBoard[row + direction][col]) {
-                moves.push([row + direction, col]);
-            }
-
-            if (row === startRow && isValidBoardPos(row + 2 * direction, col) && !currentBoard[row + 2 * direction][col] && !currentBoard[row + direction][col]) {
-                moves.push([row + 2 * direction, col]);
-            }
-
-            const captureCols = [col - 1, col + 1];
-            captureCols.forEach(c => {
-                if (isValidBoardPos(row + direction, c)) {
-                    const targetPiece = currentBoard[row + direction][c];
-                    if (targetPiece && isOpponentPiece(targetPiece, isWhite)) {
-                        moves.push([row + direction, c]);
-                    }
-                }
-            });
-
-            // En Passant
-            if (currentEnPassantTarget) {
-                const enPassantPawnRow = isWhite ? 3 : 4;
-                if (row === enPassantPawnRow) {
-                    if (currentEnPassantTarget.row === row + direction && Math.abs(currentEnPassantTarget.col - col) === 1) {
-                        if (currentLastMove && currentLastMove.piece.toLowerCase() === 'p' &&
-                            Math.abs(currentLastMove.startRow - currentLastMove.endRow) === 2 &&
-                            currentLastMove.endCol === currentEnPassantTarget.col &&
-                            currentLastMove.endRow === row) {
-                            moves.push([currentEnPassantTarget.row, currentEnPassantTarget.col, 'enPassant']);
-                        }
-                    }
-                }
-            }
-            return moves;
-        }
-
-        function getRookPseudoLegalMoves(row, col, isWhite, currentBoard) {
-            const moves = [];
-            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-
-            directions.forEach(dir => {
-                for (let i = 1; i < 8; i++) {
-                    const newRow = row + i * dir[0];
-                    const newCol = col + i * dir[1];
-                    if (!isValidBoardPos(newRow, newCol)) break;
-
-                    const targetPiece = currentBoard[newRow][newCol];
-                    if (targetPiece) {
-                        if (isOpponentPiece(targetPiece, isWhite)) {
-                            moves.push([newRow, newCol]);
-                        }
-                        break;
-                    }
-                    moves.push([newRow, newCol]);
-                }
-            });
-            return moves;
-        }
-
-        function getKnightPseudoLegalMoves(row, col, isWhite, currentBoard) {
-            const moves = [];
-            const knightOffsets = [
-                [-2, -1], [-2, 1], [-1, -2], [-1, 2],
-                [1, -2], [1, 2], [2, -1], [2, 1]
-            ];
-
-            knightOffsets.forEach(offset => {
-                const newRow = row + offset[0];
-                const newCol = col + offset[1];
-                if (isValidBoardPos(newRow, newCol)) {
-                    const targetPiece = currentBoard[newRow][newCol];
-                    if (!targetPiece || isOpponentPiece(targetPiece, isWhite)) {
-                        moves.push([newRow, newCol]);
-                    }
-                }
-            });
-            return moves;
-        }
-
-        function getBishopPseudoLegalMoves(row, col, isWhite, currentBoard) {
-            const moves = [];
-            const directions = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
-
-            directions.forEach(dir => {
-                for (let i = 1; i < 8; i++) {
-                    const newRow = row + i * dir[0];
-                    const newCol = col + i * dir[1];
-                    if (!isValidBoardPos(newRow, newCol)) break;
-
-                    const targetPiece = currentBoard[newRow][newCol];
-                    if (targetPiece) {
-                        if (isOpponentPiece(targetPiece, isWhite)) {
-                            moves.push([newRow, newCol]);
-                        }
-                        break;
-                    }
-                    moves.push([newRow, newCol]);
-                }
-            });
-            return moves;
-        }
-
-        function getQueenPseudoLegalMoves(row, col, isWhite, currentBoard) {
-            return getRookPseudoLegalMoves(row, col, isWhite, currentBoard).concat(getBishopPseudoLegalMoves(row, col, isWhite, currentBoard));
-        }
-
-        function getKingPseudoLegalMoves(row, col, isWhite, currentBoard, currentCastlingRights) {
-            const moves = [];
-            const kingOffsets = [
-                [-1, -1], [-1, 0], [-1, 1],
-                [0, -1],           [0, 1],
-                [1, -1], [1, 0], [1, 1]
-            ];
-            const currentKingRow = row;
-
-            kingOffsets.forEach(offset => {
-                const newRow = row + offset[0];
-                const newCol = col + offset[1];
-                if (isValidBoardPos(newRow, newCol)) {
-                    const targetPiece = currentBoard[newRow][newCol];
-                    if (!targetPiece || isOpponentPiece(targetPiece, isWhite)) {
-                        moves.push([newRow, newCol]);
-                    }
-                }
-            });
-
-            // Castling
-            if (!isKingInCheck(isWhite, currentBoard, currentCastlingRights, currentEnPassantTarget, currentLastMove)) {
-                // King-side castling
-                if (isWhite && currentCastlingRights.wK && currentBoard[currentKingRow][5] === null && currentBoard[currentKingRow][6] === null &&
-                    currentBoard[currentKingRow][7] === 'R' && !isSquareAttacked(currentKingRow, 5, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 6, !isWhite, currentBoard)) {
-                    moves.push([currentKingRow, 6, 'castlingK']);
-                } else if (!isWhite && currentCastlingRights.bK && currentBoard[currentKingRow][5] === null && currentBoard[currentKingRow][6] === null &&
-                           currentBoard[currentKingRow][7] === 'r' && !isSquareAttacked(currentKingRow, 5, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 6, !isWhite, currentBoard)) {
-                    moves.push([currentKingRow, 6, 'castlingK']);
-                }
-
-                // Queen-side castling
-                if (isWhite && currentCastlingRights.wQ && currentBoard[currentKingRow][1] === null && currentBoard[currentKingRow][2] === null && currentBoard[currentKingRow][3] === null &&
-                    currentBoard[currentKingRow][0] === 'R' && !isSquareAttacked(currentKingRow, 2, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 3, !isWhite, currentBoard)) {
-                    moves.push([currentKingRow, 2, 'castlingQ']);
-                } else if (!isWhite && currentCastlingRights.bQ && currentBoard[currentKingRow][1] === null && currentBoard[currentKingRow][2] === null && currentBoard[currentKingRow][3] === null &&
-                           currentBoard[currentKingRow][0] === 'r' && !isSquareAttacked(currentKingRow, 2, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 3, !isWhite, currentBoard)) {
-                    moves.push([currentKingRow, 2, 'castlingQ']);
-                }
-            }
-            return moves;
-        }
-
-        function isValidBoardPos(row, col) {
-            return row >= 0 && row < 8 && col >= 0 && col < 8;
-        }
-
-        function findKing(isWhite, currentBoard = board) {
-            const kingChar = isWhite ? 'K' : 'k';
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    if (currentBoard[r][c] === kingChar) {
-                        return { row: r, col: c };
-                    }
-                }
-            }
-            return null;
-        }
-
-        function isSquareAttacked(targetRow, targetCol, checkByWhitePieces, currentBoard = board) {
-            const attackingColor = checkByWhitePieces ? 'w' : 'b';
-
-            function checkSlidingAttack(r, c, dRow, dCol, pieceTypes) {
-                for (let i = 1; i < 8; i++) {
-                    const currR = r + i * dRow;
-                    const currC = c + i * dCol;
-                    if (!isValidBoardPos(currR, currC)) break;
-                    const piece = currentBoard[currR][currC]; // Use currentBoard
-                    if (piece) {
-                        if (isPlayersPiece(piece, attackingColor) && pieceTypes.includes(piece.toLowerCase())) {
-                            return true;
-                        }
-                        break;
-                    }
-                }
-                return false;
-            }
-
-            const pawnDirection = attackingColor === 'w' ? -1 : 1;
-            const pawnAttackOffsets = [[pawnDirection, -1], [pawnDirection, 1]];
-            for (const offset of pawnAttackOffsets) {
-                const r = targetRow + offset[0];
-                const c = targetCol + offset[1];
-                if (isValidBoardPos(r, c)) {
-                    const piece = currentBoard[r][c]; // Use currentBoard
-                    if (piece && piece.toLowerCase() === 'p' && isPlayersPiece(piece, attackingColor)) {
-                        return true;
-                    }
-                }
-            }
-
-            const knightOffsets = [
-                [-2, -1], [-2, 1], [-1, -2], [-1, 2],
-                [1, -2], [1, 2], [2, -1], [2, 1]
-            ];
-            for (const offset of knightOffsets) {
-                const r = targetRow + offset[0];
-                const c = targetCol + offset[1];
-                if (isValidBoardPos(r, c)) {
-                    const piece = currentBoard[r][c]; // Use currentBoard
-                    if (piece && piece.toLowerCase() === 'n' && isPlayersPiece(piece, attackingColor)) {
-                        return true;
-                    }
-                }
-            }
-
-            const rookQueenDirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-            for (const dir of rookQueenDirs) {
-                if (checkSlidingAttack(targetRow, targetCol, dir[0], dir[1], ['r', 'q'])) return true;
-            }
-
-            const bishopQueenDirs = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
-            for (const dir of bishopQueenDirs) {
-                if (checkSlidingAttack(targetRow, targetCol, dir[0], dir[1], ['b', 'q'])) return true;
-            }
-
-            const kingOffsets = [
-                [-1, -1], [-1, 0], [-1, 1],
-                [0, -1],           [0, 1],
-                [1, -1], [1, 0], [1, 1]
-            ];
-            for (const offset of kingOffsets) {
-                const r = targetRow + offset[0];
-                const c = targetCol + offset[1];
-                if (isValidBoardPos(r, c)) {
-                    const piece = currentBoard[r][c]; // Use currentBoard
-                    if (piece && piece.toLowerCase() === 'k' && isPlayersPiece(piece, attackingColor)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        function isKingInCheck(isWhiteKing, currentBoard = board, currentCastlingRights = castlingRights, currentEnPassantTarget = enPassantTarget, currentLastMove = lastMove) {
-            const kingPos = findKing(isWhiteKing, currentBoard);
-            if (!kingPos) {
-                console.error("King not found for check check!");
-                return false;
-            }
-            const inCheck = isSquareAttacked(kingPos.row, kingPos.col, !isWhiteKing, currentBoard);
-            return inCheck;
-        }
-
-        function getLegalMoves(startRow, startCol, currentBoard = board, currentCastlingRights = castlingRights, currentEnPassantTarget = enPassantTarget, currentLastMove = lastMove) {
-            const pseudoLegalMoves = getPseudoLegalMoves(startRow, startCol, currentBoard, currentCastlingRights, currentEnPassantTarget, currentLastMove);
-            const legalMoves = [];
-            const originalPiece = currentBoard[startRow][startCol];
-            const isMovingPieceWhite = originalPiece === originalPiece.toUpperCase();
-
-            for (const move of pseudoLegalMoves) {
-                const endRow = move[0];
-                const endCol = move[1];
-                const specialMoveType = move[2];
-
-                // Simulate the move on a deep copy of the board
-                const simulatedBoard = JSON.parse(JSON.stringify(currentBoard));
-                const simulatedCastlingRights = JSON.parse(JSON.stringify(currentCastlingRights));
-                let simulatedEnPassantTarget = currentEnPassantTarget ? { ...currentEnPassantTarget } : null;
-                let simulatedLastMove = currentLastMove ? { ...currentLastMove } : null;
-
-                const capturedPiece = simulatedBoard[endRow][endCol];
-                
-                simulatedBoard[endRow][endCol] = originalPiece;
-                simulatedBoard[startRow][startCol] = null;
-
-                if (specialMoveType === 'castlingK') {
-                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                    simulatedBoard[startRow][5] = rookChar;
-                    simulatedBoard[startRow][7] = null;
-                } else if (specialMoveType === 'castlingQ') {
-                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                    simulatedBoard[startRow][3] = rookChar;
-                    simulatedBoard[startRow][0] = null;
-                } else if (specialMoveType === 'enPassant') {
-                    const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
-                    simulatedBoard[capturedPawnRow][endCol] = null;
-                }
-
-                if (originalPiece.toLowerCase() === 'p' && Math.abs(startRow - endRow) === 2) {
-                    simulatedEnPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
-                } else {
-                    simulatedEnPassantTarget = null;
-                }
-                simulatedLastMove = { startRow, startCol, endRow, endCol, piece: originalPiece };
-
-
-                const kingInCheckAfterMove = isKingInCheck(isMovingPieceWhite, simulatedBoard, simulatedCastlingRights, simulatedEnPassantTarget, simulatedLastMove);
-
-                if (!kingInCheckAfterMove) {
-                    legalMoves.push(move);
-                }
-            }
-            return legalMoves;
-        }
-
-        function checkGameEnd(currentBoard = board, currentTurn = turn, currentCastlingRights = castlingRights, currentEnPassantTarget = enPassantTarget, currentLastMove = lastMove) {
-            const currentPlayerHasLegalMoves = getAllLegalMovesForPlayer(currentTurn, currentBoard, currentCastlingRights, currentEnPassantTarget, currentLastMove).length > 0;
-            const kingInCheck = isKingInCheck(currentTurn === 'w', currentBoard, currentCastlingRights, currentEnPassantTarget, currentLastMove);
-
-            if (!currentPlayerHasLegalMoves) {
-                gameOver = true;
-                if (kingInCheck) {
-                    const winner = (currentTurn === 'w') ? 'Black' : 'White';
-                    showMessageBox(`${winner} wins by Checkmate!`);
-                } else {
-                    showMessageBox("Stalemate! It's a draw.");
-                }
-                return true; // Game ended
-            }
-            return false; // Game continues
-        }
-
-        function getAllLegalMovesForPlayer(playerTurn, currentBoard = board, currentCastlingRights = castlingRights, currentEnPassantTarget = enPassantTarget, currentLastMove = lastMove) {
-            const allMoves = [];
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    const piece = currentBoard[r][c];
-                    if (piece && isPlayersPiece(piece, playerTurn)) {
-                        allMoves.push(...getLegalMoves(r, c, currentBoard, currentCastlingRights, currentEnPassantTarget, currentLastMove));
-                    }
-                }
-            }
-            return allMoves;
-        }
-
-        async function makeAIMove() {
-            loadingText.textContent = "AI is thinking...";
-            showLoadingOverlay();
-
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate thinking time
-
-            const aiMoves = getAllLegalMovesForPlayer(turn);
-            if (aiMoves.length > 0) {
-                const randomMove = aiMoves[Math.floor(Math.random() * aiMoves.length)];
-                const startRow = randomMove[0];
-                const startCol = randomMove[1];
-                const endRow = randomMove[2];
-                const endCol = randomMove[3];
-                const specialMoveType = randomMove[4]; // If present
-
-                await runTransaction(db, async (transaction) => {
-                    const gameDoc = await transaction.get(gameDocRef);
-                    if (!gameDoc.exists) {
-                        throw "Game does not exist for AI move!";
-                    }
-                    const currentGameState = gameDoc.data();
-                    
-                    let tempBoard = JSON.parse(currentGameState.boardFen);
-                    let tempTurn = currentGameState.turn;
-                    let tempWhiteCaptures = currentGameState.whiteCaptures;
-                    let tempBlackCaptures = currentGameState.blackCaptures;
-                    let tempCastlingRights = currentGameState.castlingRights;
-                    let tempEnPassantTarget = currentGameState.enPassantTarget || null;
-                    let tempLastMove = currentGameState.lastMove || null;
-
-                    const pieceToMove = tempBoard[startRow][startCol];
-                    const capturedPiece = tempBoard[endRow][endCol];
-                    const isMovingPieceWhite = pieceToMove === pieceToMove.toUpperCase();
-
-                    tempLastMove = { startRow, startCol, endRow, endCol, piece: pieceToMove };
-
-                    if (capturedPiece) {
-                        if (tempTurn === 'w') { tempWhiteCaptures++; } else { tempBlackCaptures++; }
-                    }
-
-                    if (pieceToMove.toLowerCase() === 'p' && tempEnPassantTarget &&
-                        endRow === tempEnPassantTarget.row && endCol === tempEnPassantTarget.col && !capturedPiece) {
-                        const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
-                        tempBoard[capturedPawnRow][endCol] = null;
-                        if (isMovingPieceWhite) { tempWhiteCaptures++; } else { tempBlackCaptures++; }
-                    }
-
-                    if (pieceToMove.toLowerCase() === 'k' && Math.abs(startCol - endCol) === 2) {
-                        const currentKingRow = startRow;
-                        if (endCol === 6) {
-                            const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                            tempBoard[currentKingRow][5] = rookChar;
-                            tempBoard[currentKingRow][7] = null;
-                        } else if (endCol === 2) {
-                            const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                            tempBoard[currentKingRow][3] = rookChar;
-                            tempBoard[currentKingRow][0] = null;
-                        }
-                    }
-                    
-                    tempBoard[endRow][endCol] = pieceToMove;
-                    tempBoard[startRow][startCol] = null;
-
-                    if (pieceToMove.toLowerCase() === 'k') {
-                        if (isMovingPieceWhite) { tempCastlingRights.wK = false; tempCastlingRights.wQ = false; }
-                        else { tempCastlingRights.bK = false; tempCastlingRights.bQ = false; }
-                    } else if (pieceToMove.toLowerCase() === 'r') {
-                        if (isMovingPieceWhite) {
-                            if (startRow === 7 && startCol === 7) tempCastlingRights.wK = false;
-                            if (startRow === 7 && startCol === 0) tempCastlingRights.wQ = false;
-                        } else {
-                            if (startRow === 0 && startCol === 7) tempCastlingRights.bK = false;
-                            if (startRow === 0 && startCol === 0) tempCastlingRights.bQ = false;
-                        }
-                    }
-                    if (endRow === 7 && endCol === 7 && isOpponentPiece(capturedPiece, !isMovingPieceWhite) && capturedPiece.toLowerCase() === 'r') tempCastlingRights.wK = false;
-                    if (endRow === 7 && endCol === 0 && isOpponentPiece(capturedPiece, !isMovingPieceWhite) && capturedPiece.toLowerCase() === 'r') tempCastlingRights.wQ = false;
-                    if (endRow === 0 && endCol === 7 && isOpponentPiece(capturedPiece, !isMovingPieceWhite) && capturedPiece.toLowerCase() === 'r') tempCastlingRights.bK = false;
-                    if (endRow === 0 && endCol === 0 && isOpponentPiece(capturedPiece, !isMovingPieceWhite) && capturedPiece.toLowerCase() === 'r') tempCastlingRights.bQ = false;
-
-
-                    tempEnPassantTarget = null;
-                    if (pieceToMove.toLowerCase() === 'p' && Math.abs(startRow - endRow) === 2) {
-                        tempEnPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
-                    }
-                    
-                    // Pawn promotion for AI (always promote to Queen)
-                    if (pieceToMove.toLowerCase() === 'p' && (row === 0 || row === 7)) {
-                        tempBoard[endRow][endCol] = isMovingPieceWhite ? 'Q' : 'q';
-                    }
-
-                    tempTurn = (tempTurn === 'w') ? 'b' : 'w';
-
-                    let tempGameOver = false;
-                    let tempWinner = null;
-                    const nextPlayerHasLegalMoves = getAllLegalMovesForPlayer(tempTurn, tempBoard, tempCastlingRights, tempEnPassantTarget, tempLastMove).length > 0;
-                    const nextKingInCheck = isKingInCheck(tempTurn === 'w', tempBoard, tempCastlingRights, tempEnPassantTarget, tempLastMove);
-
-                    if (!nextPlayerHasLegalMoves) {
-                        tempGameOver = true;
-                        if (nextKingInCheck) {
-                            tempWinner = (tempTurn === 'w') ? 'b' : 'w';
-                        } else {
-                            tempWinner = 'draw';
-                        }
-                    }
-
-                    transaction.update(gameDocRef, {
-                        boardFen: JSON.stringify(tempBoard),
-                        turn: tempTurn,
-                        whiteCaptures: tempWhiteCaptures,
-                        blackCaptures: tempBlackCaptures,
-                        castlingRights: tempCastlingRights,
-                        enPassantTarget: tempEnPassantTarget,
-                        lastMove: tempLastMove,
-                        gameOver: tempGameOver,
-                        winner: tempWinner,
-                        lastUpdated: serverTimestamp(),
-                    });
-                });
-            } else {
-                console.log("AI has no legal moves.");
-                // This scenario should be handled by checkGameEnd, but good to log here too.
-            }
-            hideLoadingOverlay();
-        }
-
-        async function promotePawn(promotedToPiece) {
-            if (!promotionPawnPos) return;
-
-            const { row, col } = promotionPawnPos;
-            const newPieceChar = turn === 'w' ? promotedToPiece.toUpperCase() : promotedToPiece.toLowerCase();
-            
-            await runTransaction(db, async (transaction) => {
-                const gameDoc = await transaction.get(gameDocRef);
-                if (!gameDoc.exists) throw "Game does not exist for promotion!";
-                const currentGameState = gameDoc.data();
-                let tempBoard = JSON.parse(currentGameState.boardFen);
-                tempBoard[row][col] = newPieceChar;
-
-                let tempGameOver = false;
-                let tempWinner = null;
-                const nextPlayerTurn = (currentGameState.turn === 'w') ? 'b' : 'w';
-                const nextPlayerHasLegalMoves = getAllLegalMovesForPlayer(nextPlayerTurn, tempBoard, currentGameState.castlingRights, currentGameState.enPassantTarget, currentGameState.lastMove).length > 0;
-                const nextKingInCheck = isKingInCheck(nextPlayerTurn === 'w', tempBoard, currentGameState.castlingRights, currentGameState.enPassantTarget, currentGameState.lastMove);
-
-                if (!nextPlayerHasLegalMoves) {
-                    tempGameOver = true;
-                    if (nextKingInCheck) {
-                        tempWinner = (nextPlayerTurn === 'w') ? 'b' : 'w';
-                    } else {
-                        tempWinner = 'draw';
-                    }
-                }
-
-                transaction.update(gameDocRef, {
-                    boardFen: JSON.stringify(tempBoard),
-                    gameOver: tempGameOver,
-                    winner: tempWinner,
-                    lastUpdated: serverTimestamp(),
-                });
-            });
-            promotionPawnPos = null;
-            hidePromotionModal();
-        }
-
-
-        // Function to reset the game (resets local state and updates Firestore)
-        async function resetGame() {
-            hideMessageBox();
-            hidePromotionModal();
-            gameOver = false;
-            selectedSquare = null;
-            selectedPiecePos = null;
-
-            // Update Firestore with initial state
-            try {
-                await setDoc(gameDocRef, {
-                    boardFen: JSON.stringify(boardFromFen(STARTING_FEN)), // Convert FEN to board array
-                    turn: 'w',
-                    whiteCaptures: 0,
-                    blackCaptures: 0,
-                    castlingRights: { 'wK': true, 'wQ': true, 'bK': true, 'bQ': true },
-                    enPassantTarget: null,
-                    lastMove: null,
-                    gameOver: false,
-                    winner: null,
-                    lastUpdated: serverTimestamp(),
-                    // Player IDs are preserved from initial game creation
-                }, { merge: true });
-                console.log("Game state reset in Firestore.");
-            } catch (e) {
-                console.error("Error resetting game state in Firestore:", e);
-                alert("Failed to reset game. Please try again.");
-            }
-        }
-
-        // Helper to convert FEN board string to 2D array
-        function boardFromFen(fen) {
-            const boardArr = Array(8).fill(null).map(() => Array(8).fill(null));
-            const boardString = fen.split(' ')[0];
-            let row = 0;
-            let col = 0;
-            for (let i = 0; i < boardString.length; i++) {
-                const char = boardString[i];
-                if (char === '/') {
-                    row++;
-                    col = 0;
-                } else if (/\d/.test(char)) {
-                    col += parseInt(char, 10);
-                } else {
-                    boardArr[row][col] = char;
-                    col++;
-                }
-            }
-            return boardArr;
-        }
-
-        // Message Box functions
-        function showMessageBox(message) {
-            messageText.textContent = message;
-            messageBox.style.display = 'block';
-        }
-
-        function hideMessageBox() {
-            messageBox.style.display = 'none';
-        }
-
-        // Pawn Promotion Modal functions
-        function showPromotionModal() {
-            const pieceColorClass = turn === 'w' ? 'white-piece' : 'black-piece';
-            promotionOptions.forEach(option => {
-                const span = option.querySelector('.piece');
-                span.classList.remove('white-piece', 'black-piece');
-                span.classList.add(pieceColorClass);
-                // Update piece symbols based on promotion color
-                const pieceType = option.dataset.piece;
-                const pieceChar = turn === 'w' ? pieceType.toUpperCase() : pieceType.toLowerCase();
-                span.innerHTML = PIECES[pieceChar];
-            });
-            promotionModal.show();
-        }
-
-        function hidePromotionModal() {
-            promotionModal.hide();
-        }
-
-        function showLoadingOverlay(message = "Loading...") {
-            loadingText.textContent = message;
-            loadingOverlay.style.display = 'flex';
-        }
-
-        function hideLoadingOverlay() {
-            loadingOverlay.style.display = 'none';
-        }
-
-        // Event Listeners
-        resetButton.addEventListener('click', resetGame);
-        messageBoxCloseButton.addEventListener('click', hideMessageBox);
-        promotionOptions.forEach(option => {
-            option.addEventListener('click', function() {
-                const promotedTo = this.dataset.piece;
-                promotePawn(promotedTo);
-            });
-        });
-
-        // Initial setup on page load
-        showLoadingOverlay("Initializing game services...");
-        initializeFirebase();
-    });
-</script>
-{% endblock %}
+    </script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+
+    <div class="container mx-auto p-6 bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full relative">
+        <!-- Home Button -->
+        <a href="{{ url_for('home') }}" class="absolute top-4 left-4 text-blue-400 hover:text-blue-200 transition duration-300">
+            <i class="fas fa-home text-2xl"></i>
+        </a>
+
+        <h1 class="text-4xl font-extrabold text-center mb-6 text-blue-500">Chess Game</h1>
+
+        <div id="loading-spinner" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-50 rounded-xl">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+            <p class="ml-4 text-xl">Loading game...</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Game Info / Status Column -->
+            <div class="md:col-span-1 flex flex-col space-y-4">
+                <div class="bg-gray-700 p-4 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-semibold mb-2 text-blue-400">Game Status</h2>
+                    <p id="status" class="text-lg mb-1">Loading...</p>
+                    <p id="turn" class="text-lg mb-1">Turn: Loading...</p>
+                    <p id="white-player" class="text-md text-gray-300">White: Loading...</p>
+                    <p id="black-player" class="text-md text-gray-300">Black: Loading...</p>
+                </div>
+
+                <div class="bg-gray-700 p-4 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-semibold mb-2 text-blue-400">Captured Pieces</h2>
+                    <p id="white-captures" class="text-lg">White Captures: </p>
+                    <p id="black-captures" class="text-lg">Black Captures: </p>
+                </div>
+
+                <button id="reset-game" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 transform hover:scale-105">
+                    Reset Solo Game
+                </button>
+            </div>
+
+            <!-- Chessboard Column -->
+            <div class="md:col-span-2 flex justify-center items-center bg-gray-700 rounded-lg shadow-md p-4">
+                <div id="board" class="w-full max-w-md aspect-square"></div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
