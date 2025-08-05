@@ -702,27 +702,29 @@
 
         // Check if a specific square is attacked by opponent's pieces
         function isSquareAttacked(targetRow, targetCol, byWhite) {
-            const opponentColor = byWhite ? 'w' : 'b'; // Pieces of this color are attacking
+            const opponentColor = byWhite ? 'b' : 'w'; // Pieces of this color are attacking the target square
+            console.log(`Checking if (${targetRow},${targetCol}) is attacked by ${opponentColor === 'w' ? 'White' : 'Black'} pieces.`);
 
             // Helper to check for sliding pieces (Rook, Bishop, Queen)
             function checkSlidingAttack(r, c, dRow, dCol, pieceTypes) {
                 for (let i = 1; i < 8; i++) {
                     const currR = r + i * dRow;
-                    const currC = c + i * dCol;
+                    const currC = c + i * dir[1];
                     if (!isValidBoardPos(currR, currC)) break;
                     const piece = board[currR][currC];
                     if (piece) {
                         if (isPlayersPiece(piece, opponentColor) && pieceTypes.includes(piece.toLowerCase())) {
+                            console.log(`  Attacked by ${piece} at (${currR},${currC}) (sliding).`);
                             return true;
                         }
-                        break; // Blocked by any piece
+                        break; // Blocked by any piece (own or opponent)
                     }
                 }
                 return false;
             }
 
             // Check for pawn attacks
-            const pawnDirection = byWhite ? 1 : -1; // Pawns attack "down" for white, "up" for black
+            const pawnDirection = byWhite ? 1 : -1; // Pawns attack "down" for white, "up" for black (relative to board rows)
             const pawnAttackOffsets = [[pawnDirection, -1], [pawnDirection, 1]];
             for (const offset of pawnAttackOffsets) {
                 const r = targetRow + offset[0];
@@ -730,15 +732,8 @@
                 if (isValidBoardPos(r, c)) {
                     const piece = board[r][c];
                     if (piece && piece.toLowerCase() === 'p' && isPlayersPiece(piece, opponentColor)) {
-                        // Special check for en passant target square being attacked by pawn
-                        // A pawn attacks the enPassantTarget square, not the pawn itself
-                        if (enPassantTarget && r === enPassantTarget.row && c === enPassantTarget.col) {
-                            // This is complex: a pawn "attacks" the square it would land on during en passant,
-                            // not the square of the captured pawn. For king safety, we care if the king is on that square.
-                            // This logic is simplified for direct square attack.
-                        } else {
-                             return true;
-                        }
+                        console.log(`  Attacked by pawn ${piece} at (${r},${c}).`);
+                        return true;
                     }
                 }
             }
@@ -754,25 +749,24 @@
                 if (isValidBoardPos(r, c)) {
                     const piece = board[r][c];
                     if (piece && piece.toLowerCase() === 'n' && isPlayersPiece(piece, opponentColor)) {
+                        console.log(`  Attacked by knight ${piece} at (${r},${c}).`);
                         return true;
                     }
                 }
             }
 
             // Check for rook/queen (horizontal/vertical) attacks
-            if (checkSlidingAttack(targetRow, targetCol, 0, 1, ['r', 'q']) ||
-                checkSlidingAttack(targetRow, targetCol, 0, -1, ['r', 'q']) ||
-                checkSlidingAttack(targetRow, targetCol, 1, 0, ['r', 'q']) ||
-                checkSlidingAttack(targetRow, targetCol, -1, 0, ['r', 'q'])) {
-                return true;
+            // Directions: Right, Left, Down, Up
+            const rookQueenDirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            for (const dir of rookQueenDirs) {
+                if (checkSlidingAttack(targetRow, targetCol, dir[0], dir[1], ['r', 'q'])) return true;
             }
 
             // Check for bishop/queen (diagonal) attacks
-            if (checkSlidingAttack(targetRow, targetCol, 1, 1, ['b', 'q']) ||
-                checkSlidingAttack(targetRow, targetCol, 1, -1, ['b', 'q']) ||
-                checkSlidingAttack(targetRow, targetCol, -1, 1, ['b', 'q']) ||
-                checkSlidingAttack(targetRow, targetCol, -1, -1, ['b', 'q'])) {
-                return true;
+            // Directions: Down-Right, Down-Left, Up-Right, Up-Left
+            const bishopQueenDirs = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+            for (const dir of bishopQueenDirs) {
+                if (checkSlidingAttack(targetRow, targetCol, dir[0], dir[1], ['b', 'q'])) return true;
             }
 
             // Check for king attacks (adjacent squares)
@@ -786,12 +780,16 @@
                 const c = targetCol + offset[1];
                 if (isValidBoardPos(r, c)) {
                     const piece = board[r][c];
+                    // King can only attack if it's an opponent's king.
+                    // This check is mainly for king-to-king proximity, not capturing.
                     if (piece && piece.toLowerCase() === 'k' && isPlayersPiece(piece, opponentColor)) {
+                        console.log(`  Attacked by opponent king ${piece} at (${r},${c}).`);
                         return true;
                     }
                 }
             }
 
+            console.log(`(${targetRow},${targetCol}) is NOT attacked by ${opponentColor === 'w' ? 'White' : 'Black'} pieces.`);
             return false;
         }
 
@@ -802,7 +800,9 @@
                 console.error("King not found for check check!");
                 return false;
             }
-            const inCheck = isSquareAttacked(kingPos.row, kingPos.col, isWhiteKing); // Check if attacked by opponent
+            // A white king is in check if it's attacked by black pieces.
+            // A black king is in check if it's attacked by white pieces.
+            const inCheck = isSquareAttacked(kingPos.row, kingPos.col, !isWhiteKing); // Check if attacked by opponent
             console.log(`King (${isWhiteKing ? 'White' : 'Black'}) at (${kingPos.row},${kingPos.col}) is in check:`, inCheck);
             return inCheck;
         }
