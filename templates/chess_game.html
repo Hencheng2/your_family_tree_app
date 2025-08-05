@@ -6,8 +6,8 @@
     <title>Chess Game</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- Keep this script tag for chess.js - it makes Chess available globally -->
-    <script src="https://cdn.jsdelivr.net/npm/chess.js@1.0.0-beta.6/chess.min.js"></script>
+    <!-- Use a stable version of chess.js that exposes Chess globally as a constructor -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.css">
     <style>
@@ -49,7 +49,7 @@
             };
         }
 
-        let game = new Chess();
+        let game = null; // Initialize as null, will be new Chess() after DOMContentLoaded
         let board = null;
         let auth = null;
         let db = null;
@@ -104,10 +104,18 @@
 
         // Function to update UI elements
         function updateUI() {
-            document.getElementById('status').textContent = getGameStatus();
-            document.getElementById('turn').textContent = `Turn: ${game.turn() === 'w' ? 'White' : 'Black'}`;
-            document.getElementById('white-captures').textContent = `White Captures: ${getCapturedPieces('b').join(', ')}`;
-            document.getElementById('black-captures').textContent = `Black Captures: ${getCapturedPieces('w').join(', ')}`;
+            if (!game) { // Check if game object is initialized
+                document.getElementById('status').textContent = "Game not initialized.";
+                document.getElementById('turn').textContent = "Turn: N/A";
+                document.getElementById('white-captures').textContent = "White Captures: N/A";
+                document.getElementById('black-captures').textContent = "Black Captures: N/A";
+            } else {
+                document.getElementById('status').textContent = getGameStatus();
+                document.getElementById('turn').textContent = `Turn: ${game.turn() === 'w' ? 'White' : 'Black'}`;
+                document.getElementById('white-captures').textContent = `White Captures: ${getCapturedPieces('b').join(', ')}`;
+                document.getElementById('black-captures').textContent = `Black Captures: ${getCapturedPieces('w').join(', ')}`;
+            }
+
 
             const whitePlayerElem = document.getElementById('white-player');
             const blackPlayerElem = document.getElementById('black-player');
@@ -201,6 +209,12 @@
 
         // Function to handle piece drop
         function onDrop(source, target) {
+            // Ensure game object is initialized before attempting moves
+            if (!game) {
+                console.error("Game object not initialized. Cannot make move.");
+                return 'snapback';
+            }
+
             // Determine whose turn it is in the game
             const turnColor = game.turn(); // 'w' or 'b'
 
@@ -254,6 +268,10 @@
                 console.error("gameDocRef is not defined. Cannot update Firestore.");
                 return;
             }
+            if (!game) {
+                console.error("Game object not initialized. Cannot update Firestore.");
+                return;
+            }
 
             const boardFen = game.fen();
             const turn = game.turn();
@@ -289,7 +307,9 @@
             } catch (e) {
                 console.error("Firestore transaction failed: ", e);
                 // Revert local game state if transaction fails
-                board.position(game.fen()); // Revert to previous valid state
+                if (game && board) { // Ensure game and board are initialized before attempting to revert
+                    board.position(game.fen()); // Revert to previous valid state
+                }
                 updateUI();
                 alert("Failed to update game state. Please try again.");
             }
@@ -301,7 +321,9 @@
                 draggable: true,
                 position: 'start',
                 onDrop: onDrop,
-                onSnapEnd: () => board.position(game.fen()) // Snap back if invalid move
+                onSnapEnd: () => {
+                    if (game) board.position(game.fen()); // Ensure game is initialized
+                }
             };
             board = Chessboard('board', config);
             console.log("Chessboard initialized.");
@@ -362,6 +384,11 @@
                 clearTimeout(loadingTimeout);
                 return;
             }
+
+            // Initialize game object here, after Chess is confirmed to be available
+            game = new Chess();
+            console.log("Chess game instance created.");
+
 
             if (gameId) {
                 // Multiplayer game
