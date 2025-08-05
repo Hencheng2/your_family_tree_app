@@ -68,30 +68,36 @@
         console.log("Canvas App ID:", canvasAppId);
         console.log("Flask User ID:", flaskUserId);
 
+        // Flag to indicate if initialization failed early
+        let initializationFailed = false;
+
         if (!firebaseConfig || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
             console.error("Firebase config is missing or invalid.");
             alert("Firebase configuration error. Game cannot load.");
             isLoading = false;
             updateUI();
-            return;
+            initializationFailed = true; // Set flag
+            // No return here, just set the flag and let the rest of the script run,
+            // but subsequent functions will check this flag.
         }
         if (!canvasAppId || canvasAppId === 'default-app-id') {
             console.warn("Canvas App ID is missing or default. Firestore paths might be incorrect.");
-            // This might not be a fatal error for local dev, but good to warn.
         }
 
         // Initialize Firebase
-        try {
-            const app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-            console.log("Firebase app initialized.");
-        } catch (e) {
-            console.error("Failed to initialize Firebase app:", e);
-            alert("Failed to initialize game services. Please refresh the page.");
-            isLoading = false;
-            updateUI();
-            return;
+        if (!initializationFailed) { // Only try to initialize if no early config error
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                console.log("Firebase app initialized.");
+            } catch (e) {
+                console.error("Failed to initialize Firebase app:", e);
+                alert("Failed to initialize game services. Please refresh the page.");
+                isLoading = false;
+                updateUI();
+                initializationFailed = true; // Set flag
+            }
         }
 
         // Function to update UI elements
@@ -152,11 +158,6 @@
 
                 // This logic is for pieces *remaining* on the board.
                 // To get *captured* pieces, we need to compare current board state to initial board state.
-                // A simpler way for Chess.js is to parse the PGN or maintain a separate list.
-                // For now, let's stick to a basic count of pieces that are *not* on the board.
-
-                // This is a placeholder and needs more sophisticated logic for actual captured pieces.
-                // For now, it will just show counts of pieces not currently on the board.
                 // A proper implementation would involve comparing current FEN with a base FEN or tracking moves.
             }
             // Returning a placeholder for now until proper captured piece logic is implemented.
@@ -278,6 +279,7 @@
                         gameOver: gameOver,
                         winner: winner,
                         lastUpdated: serverTimestamp(),
+                        // Add other game state variables if you track them (e.g., captured pieces, move history)
                     });
                 });
                 console.log("Game state updated in Firestore successfully.");
@@ -305,6 +307,11 @@
 
         // Main game initialization function
         async function initializeGame() {
+            if (initializationFailed) { // Check the flag before proceeding
+                console.error("Skipping game initialization due to prior errors.");
+                return;
+            }
+
             isLoading = true;
             updateUI(); // Show loading spinner
             clearTimeout(loadingTimeout); // Clear any previous timeout
@@ -314,7 +321,7 @@
                 if (isLoading) {
                     console.error("Game loading timed out.");
                     isLoading = false;
-                    document.getElementById('loading-message').textContent = "Game failed to load. Please check your internet connection or try again.";
+                    document.getElementById('loading-message').textContent = "Game failed to load. Please check your internet connection, Firebase setup, or try again.";
                     updateUI();
                 }
             }, 15000); // 15 seconds timeout
@@ -426,8 +433,8 @@
                             winner: null,
                             createdAt: serverTimestamp(),
                             lastUpdated: serverTimestamp(),
-                            playerWhiteId: flaskUserId, // Store Flask user ID
-                            playerBlackId: 'AI', // Indicate AI opponent
+                            playerWhiteId: flaskUserId,
+                            playerBlackId: 'AI',
                             gameType: 'solo_ai',
                             gameName: 'chess'
                         };
