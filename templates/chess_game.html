@@ -1074,7 +1074,9 @@
                 // Capturing a rook also invalidates castling rights
                 // This is a simplified check and might not cover all edge cases perfectly.
                 // A more robust system would track captured pieces more directly.
-                // For now, we'll check if the *target* square was a rook's initial position.
+                // For now, we'll check if the *target* square's piece was a rook at its initial square.
+                // NOTE: This check is not perfect as it relies on current board state, not original piece.
+                // A full FEN parser and history would be needed for perfect castling rights tracking.
                 if (endRow === 7 && endCol === 7 && getPieceColor(board[7][7]) === 'b' && board[7][7].toLowerCase() === 'r') castlingRights.wK = false;
                 if (endRow === 7 && endCol === 0 && getPieceColor(board[7][0]) === 'b' && board[7][0].toLowerCase() === 'r') castlingRights.wQ = false;
                 if (endRow === 0 && endCol === 7 && getPieceColor(board[0][7]) === 'w' && board[0][7].toLowerCase() === 'r') castlingRights.bK = false;
@@ -1216,12 +1218,18 @@
 
             // --- Firebase and Game Initialization ---
             async function initializeFirebaseAndGame() {
-                // Show loading only for Firebase operations
-                showLoading(); 
+                // No initial showLoading() here. Board renders instantly.
                 try {
-                    const app = initializeApp(firebaseConfig);
-                    auth = getAuth(app);
-                    db = getFirestore(app);
+                    // Check if firebaseConfig is valid before initializing
+                    if (!firebaseConfig || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
+                        console.error("Firebase config is missing or invalid. Game progress will not be saved/synced.");
+                        alert("Firebase configuration error. You can still play locally, but progress won't be saved.");
+                        return; // Exit if config is bad
+                    }
+
+                    auth = getAuth(initializeApp(firebaseConfig));
+                    db = getFirestore(initializeApp(firebaseConfig)); // Re-initialize db with the same app
+
                     console.log("Firebase app initialized.");
 
                     await new Promise(resolve => {
@@ -1236,7 +1244,6 @@
                                 }).catch(error => {
                                     console.error("Anonymous sign-in failed:", error);
                                     alert("Failed to authenticate with game services. You can still play locally, but progress won't be saved.");
-                                    hideLoading();
                                 });
                             }
                             resolve(); // Resolve the promise once auth state is determined
@@ -1245,7 +1252,6 @@
 
                     if (!currentFirebaseUser) {
                         console.error("Authentication failed. Cannot save/load game progress.");
-                        hideLoading();
                         return; // Continue playing locally without Firebase sync
                     }
 
@@ -1257,6 +1263,7 @@
                         isMultiplayerGame = true;
                         gameDocRef = doc(db, `artifacts/${canvasAppId}/games`, gameIdFromUrl);
                         console.log(`Loading multiplayer game: ${gameIdFromUrl} from artifacts/${canvasAppId}/games`);
+                        showLoading("Loading multiplayer game..."); // Show loading for network fetch
 
                         unsubscribeGameListener = onSnapshot(gameDocRef, (docSnap) => {
                             if (docSnap.exists()) {
@@ -1307,13 +1314,13 @@
                         });
 
                     } else {
-                        // Solo AI Game
+                        // Solo AI Game (initial state already rendered)
                         initializeSoloGame();
                     }
 
                 } catch (e) {
                     console.error("Failed to initialize Firebase or game:", e);
-                    alert("Failed to start game. Please check your internet connection or try again.");
+                    alert("Failed to start game services. You can still play locally, but progress won't be saved.");
                     hideLoading();
                 }
             }
@@ -1326,6 +1333,7 @@
                 console.log(`Loading solo AI game: ${soloGameId} from artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/solo_games`);
 
                 try {
+                    showLoading("Loading solo game progress..."); // Show loading for network fetch
                     const docSnap = await getDoc(gameDocRef);
                     if (docSnap.exists()) {
                         const data = docSnap.data();
@@ -1392,12 +1400,13 @@
 
             // Function to update game state in Firestore
             async function updateGameInFirestore(currentBoardState, currentTurn, currentGameOver, currentWinner) {
-                if (!gameDocRef || !db) {
-                    console.warn("Firestore not fully initialized. Game state will not be saved.");
-                    return; // Don't try to save if Firebase isn't ready
+                if (!gameDocRef || !db || !currentFirebaseUser) {
+                    console.warn("Firestore not fully initialized or user not authenticated. Game state will not be saved.");
+                    return; // Don't try to save if Firebase isn't ready or user not authenticated
                 }
 
                 try {
+                    showLoading("Saving game progress..."); // Show loading for network write
                     await runTransaction(db, async (transaction) => {
                         const sfDoc = await transaction.get(gameDocRef);
                         if (!sfDoc.exists) {
@@ -1437,9 +1446,11 @@
                             console.log("Game state updated in Firestore.");
                         }
                     });
+                    hideLoading();
                 } catch (e) {
                     console.error("Firestore transaction failed: ", e);
                     alert("Failed to save game state. You can continue playing, but progress might not be synced.");
+                    hideLoading();
                 }
             }
 
@@ -1489,7 +1500,7 @@
             });
 
             // Initial game setup on DOM ready
-            // 1. Render board instantly
+            // 1. Render board instantly with initial state
             resetGameLocalState(); 
             // 2. Then, initialize Firebase and sync game state in background
             initializeFirebaseAndGame();
