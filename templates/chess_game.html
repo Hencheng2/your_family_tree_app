@@ -325,7 +325,8 @@
                     if (game) board.position(game.fen()); // Ensure game is initialized
                 }
             };
-            board = Chessboard('board', config);
+            // Corrected: Access Chessboard from the global window object
+            board = window.Chessboard('board', config);
             console.log("Chessboard initialized.");
         }
 
