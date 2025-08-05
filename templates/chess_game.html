@@ -460,8 +460,14 @@
         function isPlayersPiece(pieceChar, checkTurn = turn) {
             const result = (checkTurn === 'w' && pieceChar === pieceChar.toUpperCase()) ||
                            (checkTurn === 'b' && pieceChar === pieceChar.toLowerCase());
-            console.log(`Is '${pieceChar}' player's piece (${checkTurn})?`, result);
+            // console.log(`Is '${pieceChar}' player's piece (${checkTurn})?`, result); // Removed for cleaner logs
             return result;
+        }
+
+        // Helper: Check if target piece is an opponent's piece
+        function isOpponentPiece(targetPieceChar, isMovingPieceWhite) {
+            return (isMovingPieceWhite && targetPieceChar === targetPieceChar.toLowerCase()) ||
+                   (!isMovingPieceWhite && targetPieceChar === targetPieceChar.toUpperCase());
         }
 
         // Function to select a piece and highlight possible moves
@@ -470,13 +476,13 @@
             selectedPiecePos = { row, col };
             selectedSquare.classList.add('selected');
             highlightPossibleMoves(row, col);
-            console.log("Piece selected at:", row, col);
+            // console.log("Piece selected at:", row, col); // Removed for cleaner logs
         }
 
         // Function to highlight possible moves for the selected piece
         function highlightPossibleMoves(row, col) {
             const moves = getLegalMoves(row, col); // Now uses getLegalMoves
-            console.log("Highlighting moves:", moves);
+            // console.log("Highlighting moves:", moves); // Removed for cleaner logs
             moves.forEach(move => {
                 const targetSquare = boardElement.querySelector(`[data-row="${move[0]}"][data-col="${move[1]}"]`);
                 if (targetSquare) {
@@ -507,7 +513,7 @@
                 case 'k': moves = getKingPseudoLegalMoves(row, col); break;
                 default: moves = [];
             }
-            console.log(`Pseudo-legal moves for ${piece} at (${row},${col}):`, moves);
+            // console.log(`Pseudo-legal moves for ${piece} at (${row},${col}):`, moves); // Removed for cleaner logs
             return moves;
         }
 
@@ -701,20 +707,21 @@
         }
 
         // Check if a specific square is attacked by opponent's pieces
-        function isSquareAttacked(targetRow, targetCol, byWhite) {
-            const opponentColor = byWhite ? 'b' : 'w'; // Pieces of this color are attacking the target square
-            console.log(`Checking if (${targetRow},${targetCol}) is attacked by ${opponentColor === 'w' ? 'White' : 'Black'} pieces.`);
+        function isSquareAttacked(targetRow, targetCol, checkByWhitePieces) {
+            const attackingColor = checkByWhitePieces ? 'w' : 'b'; // Color of pieces that would be attacking
+            // console.log(`Checking if (${targetRow},${targetCol}) is attacked by ${attackingColor === 'w' ? 'White' : 'Black'} pieces.`); // Removed for cleaner logs
 
             // Helper to check for sliding pieces (Rook, Bishop, Queen)
             function checkSlidingAttack(r, c, dRow, dCol, pieceTypes) {
                 for (let i = 1; i < 8; i++) {
                     const currR = r + i * dRow;
-                    const currC = c + i * dir[1];
+                    const currC = c + i * dCol;
                     if (!isValidBoardPos(currR, currC)) break;
                     const piece = board[currR][currC];
                     if (piece) {
-                        if (isPlayersPiece(piece, opponentColor) && pieceTypes.includes(piece.toLowerCase())) {
-                            console.log(`  Attacked by ${piece} at (${currR},${currC}) (sliding).`);
+                        // Check if the piece belongs to the attacking color
+                        if (isPlayersPiece(piece, attackingColor) && pieceTypes.includes(piece.toLowerCase())) {
+                            // console.log(`  Attacked by ${piece} at (${currR},${currC}) (sliding).`); // Removed for cleaner logs
                             return true;
                         }
                         break; // Blocked by any piece (own or opponent)
@@ -724,15 +731,15 @@
             }
 
             // Check for pawn attacks
-            const pawnDirection = byWhite ? 1 : -1; // Pawns attack "down" for white, "up" for black (relative to board rows)
+            const pawnDirection = attackingColor === 'w' ? -1 : 1; // White pawns attack "up" (row -1), Black pawns attack "down" (row +1)
             const pawnAttackOffsets = [[pawnDirection, -1], [pawnDirection, 1]];
             for (const offset of pawnAttackOffsets) {
                 const r = targetRow + offset[0];
                 const c = targetCol + offset[1];
                 if (isValidBoardPos(r, c)) {
                     const piece = board[r][c];
-                    if (piece && piece.toLowerCase() === 'p' && isPlayersPiece(piece, opponentColor)) {
-                        console.log(`  Attacked by pawn ${piece} at (${r},${c}).`);
+                    if (piece && piece.toLowerCase() === 'p' && isPlayersPiece(piece, attackingColor)) {
+                        // console.log(`  Attacked by pawn ${piece} at (${r},${c}).`); // Removed for cleaner logs
                         return true;
                     }
                 }
@@ -748,22 +755,20 @@
                 const c = targetCol + offset[1];
                 if (isValidBoardPos(r, c)) {
                     const piece = board[r][c];
-                    if (piece && piece.toLowerCase() === 'n' && isPlayersPiece(piece, opponentColor)) {
-                        console.log(`  Attacked by knight ${piece} at (${r},${c}).`);
+                    if (piece && piece.toLowerCase() === 'n' && isPlayersPiece(piece, attackingColor)) {
+                        // console.log(`  Attacked by knight ${piece} at (${r},${c}).`); // Removed for cleaner logs
                         return true;
                     }
                 }
             }
 
             // Check for rook/queen (horizontal/vertical) attacks
-            // Directions: Right, Left, Down, Up
             const rookQueenDirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
             for (const dir of rookQueenDirs) {
                 if (checkSlidingAttack(targetRow, targetCol, dir[0], dir[1], ['r', 'q'])) return true;
             }
 
             // Check for bishop/queen (diagonal) attacks
-            // Directions: Down-Right, Down-Left, Up-Right, Up-Left
             const bishopQueenDirs = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
             for (const dir of bishopQueenDirs) {
                 if (checkSlidingAttack(targetRow, targetCol, dir[0], dir[1], ['b', 'q'])) return true;
@@ -782,14 +787,14 @@
                     const piece = board[r][c];
                     // King can only attack if it's an opponent's king.
                     // This check is mainly for king-to-king proximity, not capturing.
-                    if (piece && piece.toLowerCase() === 'k' && isPlayersPiece(piece, opponentColor)) {
-                        console.log(`  Attacked by opponent king ${piece} at (${r},${c}).`);
+                    if (piece && piece.toLowerCase() === 'k' && isPlayersPiece(piece, attackingColor)) {
+                        // console.log(`  Attacked by opponent king ${piece} at (${r},${c}).`); // Removed for cleaner logs
                         return true;
                     }
                 }
             }
 
-            console.log(`(${targetRow},${targetCol}) is NOT attacked by ${opponentColor === 'w' ? 'White' : 'Black'} pieces.`);
+            // console.log(`(${targetRow},${targetCol}) is NOT attacked by ${attackingColor === 'w' ? 'White' : 'Black'} pieces.`); // Removed for cleaner logs
             return false;
         }
 
@@ -802,7 +807,7 @@
             }
             // A white king is in check if it's attacked by black pieces.
             // A black king is in check if it's attacked by white pieces.
-            const inCheck = isSquareAttacked(kingPos.row, kingPos.col, !isWhiteKing); // Check if attacked by opponent
+            const inCheck = isSquareAttacked(kingPos.row, kingPos.col, !isWhiteKing); // Check if attacked by opponent's color
             console.log(`King (${isWhiteKing ? 'White' : 'Black'}) at (${kingPos.row},${kingPos.col}) is in check:`, inCheck);
             return inCheck;
         }
@@ -857,7 +862,7 @@
 
                 // Check if king is in check after the simulated move
                 const kingInCheckAfterMove = isKingInCheck(isMovingPieceWhite);
-                console.log(`Simulating move from (${startRow},${startCol}) to (${endRow},${endCol}). King in check after move:`, kingInCheckAfterMove);
+                // console.log(`Simulating move from (${startRow},${startCol}) to (${endRow},${endCol}). King in check after move:`, kingInCheckAfterMove); // Removed for cleaner logs
 
                 // Undo the move by restoring the board to its original state
                 board = JSON.parse(JSON.stringify(originalBoard)); // Restore full board
