@@ -244,8 +244,8 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('inbox') }}">
                             <i class="fas fa-envelope"></i> Inbox
-                            {# The badge will only appear if there are any unread messages or game invitations #}
-                            {% set total_inbox_notifications = (unread_message_count | default(0)) + (unread_game_invite_count | default(0)) %}
+                            {# Calculate total notifications for the badge #}
+                            {% set total_inbox_notifications = (unread_messages_count | default(0)) + (unread_game_invite_count | default(0)) %}
                             {% if total_inbox_notifications > 0 %}
                                 <span class="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle">
                                     {{ total_inbox_notifications }}
@@ -294,8 +294,8 @@
         <a class="nav-link" href="{{ url_for('inbox') }}">
             <i class="fas fa-envelope"></i>
             <span class="d-block">Inbox</span>
-            {# The badge for mobile will only appear if there are any unread messages or game invitations #}
-            {% set total_inbox_notifications = (unread_message_count | default(0)) + (unread_game_invite_count | default(0)) %}
+            {# Calculate total notifications for the badge in mobile footer #}
+            {% set total_inbox_notifications = (unread_messages_count | default(0)) + (unread_game_invite_count | default(0)) %}
             {% if total_inbox_notifications > 0 %}
                 <span class="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle">
                     {{ total_inbox_notifications }}
