@@ -22,68 +22,26 @@
                         <a href="{{ url_for('my_profile') }}" class="btn btn-primary btn-sm">View My Profile</a>
                     </div>
                 {% else %}
-                    <p class="text-center">You haven't added your personal details yet.</p>
-                    <div class="text-center">
-                        <a href="{{ url_for('add_my_details') }}" class="btn btn-warning">Add My Details</a>
-                    </div>
+                    <p class="text-center">You haven't completed your profile yet. <a href="{{ url_for('add_my_details') }}">Add your details here</a>.</p>
                 {% endif %}
             </div>
-        </div>
-    </div>
 
-    <div class="row justify-content-center">
-        <div class="col-md-10">
+            <!-- NEW: Games Section -->
             <div class="card p-4 shadow mb-4">
-                <h3 class="card-title mb-3">Members I Added</h3>
-                {% if my_added_members %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Photo</th>
-                                    <th>Name</th>
-                                    <th>Association</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for member in my_added_members %}
-                                <tr>
-                                    <td>
-                                        {% if member.profilePhoto %}
-                                            <img src="/{{ member.profilePhoto }}" alt="{{ member.fullName }}" class="img-thumbnail rounded-circle" style="width: 50px; height: 50px; object-fit: cover;">
-                                        {% else %}
-                                            <img src="{{ url_for('static', filename='img/default_profile.png') }}" alt="Default" class="img-thumbnail rounded-circle" style="width: 50px; height: 50px; object-fit: cover;">
-                                        {% endif %}
-                                    </td>
-                                    <td>{{ member.fullName }}</td>
-                                    <td>{{ member.association }}</td>
-                                    <td>
-                                        <a href="{{ url_for('member_detail', member_id=member.id) }}" class="btn btn-sm btn-info me-2">View</a>
-                                        <a href="{{ url_for('edit_member', member_id=member.id) }}" class="btn btn-sm btn-warning">Edit</a>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <p class="text-center">You haven't added any other family members yet.</p>
-                {% endif %}
-                <div class="text-center mt-3">
-                    <a href="{{ url_for('add_member_form') }}" class="btn btn-success">Add New Member</a>
+                <h3 class="card-title text-center mb-3">Games</h3>
+                <p class="text-center text-muted">Ready for some fun? Explore our game library!</p>
+                <div class="text-center">
+                    <a href="{{ url_for('games_hub') }}" class="btn btn-warning btn-lg">
+                        <i class="fas fa-gamepad me-2"></i> Go to Game Library
+                    </a>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <div class="row justify-content-center">
-        <div class="col-md-10">
-            <div class="card p-4 shadow">
-                <h3 class="card-title mb-3">Other Family Members</h3>
+            <div class="card p-4 shadow mb-4">
+                <h3 class="card-title text-center mb-3">Other Family Members</h3>
                 {% if other_users_members %}
                     <div class="table-responsive">
-                        <table class="table table-hover">
+                        <table class="table table-hover table-striped text-center">
                             <thead>
                                 <tr>
                                     <th>Photo</th>
