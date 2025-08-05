@@ -1,6 +1,7 @@
 -- schema.sql
 
 -- Drop existing tables (order matters due to foreign keys)
+DROP TABLE IF EXISTS game_invitations; -- NEW TABLE: Added for game invitations
 DROP TABLE IF EXISTS chat_messages;
 DROP TABLE IF EXISTS chat_room_members;
 DROP TABLE IF EXISTS chat_rooms;
@@ -53,13 +54,13 @@ CREATE TABLE members (
 CREATE TABLE messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sender_id INTEGER NOT NULL,
-    receiver_id INTEGER NOT NULL, -- Consistent with schema (was recipient_id in app.py)
-    body TEXT NOT NULL, -- Consistent with schema (was content in app.py)
+    recipient_id INTEGER NOT NULL, -- Changed from receiver_id to recipient_id for consistency with app.py
+    content TEXT NOT NULL,          -- Changed from body to content for consistency with app.py
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_read INTEGER DEFAULT 0, -- 0 for unread, 1 for read
     is_admin_message INTEGER DEFAULT 0, -- 1 if message is from an admin (e.g., password reset notifications)
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Create statuses table (renamed from temporary_videos)
@@ -104,4 +105,16 @@ CREATE TABLE chat_messages (
     is_ai_message INTEGER DEFAULT 0, -- NEW: 1 if message is from AI, 0 otherwise
     FOREIGN KEY (chat_room_id) REFERENCES chat_rooms(id) ON DELETE CASCADE,
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- NEW TABLE FOR GAME INVITATIONS
+CREATE TABLE game_invitations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL,
+    recipient_id INTEGER NOT NULL,
+    game_name TEXT NOT NULL,
+    status TEXT DEFAULT 'pending', -- 'pending', 'accepted', 'declined'
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
 );
