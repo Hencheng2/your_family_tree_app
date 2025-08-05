@@ -6,10 +6,17 @@
     <title>Chess Game</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- Use a stable version of chess.js that exposes Chess globally as a constructor -->
+    <!-- Load Chess.js and Chessboard.js - they will attach to the global window object -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.css">
+
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX transformation in the browser (for development only) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
     <style>
         /* Custom styles for the chessboard to ensure it's visible and centered */
         #board {
@@ -30,532 +37,6 @@
             box-shadow: inset 0 0 3px 3px blue;
         }
     </style>
-    <script type="module">
-        // Access Chess from the global window object, as it's loaded by the script tag above
-        const Chess = window.Chess;
-
-        // Import Firebase modules
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-
-        // Polyfill for crypto.randomUUID for older browsers/environments if needed
-        if (typeof crypto.randomUUID === 'undefined') {
-            crypto.randomUUID = () => {
-                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                    return v.toString(16);
-                });
-            };
-        }
-
-        let game = null; // Initialize as null, will be new Chess() after DOMContentLoaded
-        let board = null;
-        let auth = null;
-        let db = null;
-        let currentFirebaseUser = null;
-        let gameId = null;
-        let isMultiplayer = false;
-        let currentPlayerIsWhite = false; // True if the current browser user is the white player
-        let gameDocRef = null;
-        let unsubscribe = null; // To store the Firestore unsubscribe function
-        let isLoading = true;
-        let loadingTimeout = null; // To store the timeout ID
-
-        // Get Flask-provided config and app ID
-        const firebaseConfig = JSON.parse('{{ firebase_config_json | safe }}');
-        const initialAuthToken = '{{ initial_auth_token | safe }}';
-        const canvasAppId = '{{ canvas_app_id | safe }}';
-        const flaskUserId = '{{ current_user.id | safe }}'; // Get Flask user ID
-
-        console.log("Firebase Config:", firebaseConfig);
-        console.log("Canvas App ID:", canvasAppId);
-        console.log("Flask User ID:", flaskUserId);
-
-        // Flag to indicate if initialization failed early
-        let initializationFailed = false;
-
-        if (!firebaseConfig || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
-            console.error("Firebase config is missing or invalid.");
-            alert("Firebase configuration error. Game cannot load.");
-            isLoading = false;
-            updateUI();
-            initializationFailed = true; // Set flag
-        }
-        if (!canvasAppId || canvasAppId === 'default-app-id') {
-            console.warn("Canvas App ID is missing or default. Firestore paths might be incorrect.");
-        }
-
-        // Initialize Firebase
-        if (!initializationFailed) { // Only try to initialize if no early config error
-            try {
-                const app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                console.log("Firebase app initialized.");
-            } catch (e) {
-                console.error("Failed to initialize Firebase app:", e);
-                alert("Failed to initialize game services. Please refresh the page.");
-                isLoading = false;
-                updateUI();
-                initializationFailed = true; // Set flag
-            }
-        }
-
-        // Function to update UI elements
-        function updateUI() {
-            if (!game) { // Check if game object is initialized
-                document.getElementById('status').textContent = "Game not initialized.";
-                document.getElementById('turn').textContent = "Turn: N/A";
-                document.getElementById('white-captures').textContent = "White Captures: N/A";
-                document.getElementById('black-captures').textContent = "Black Captures: N/A";
-            } else {
-                document.getElementById('status').textContent = getGameStatus();
-                document.getElementById('turn').textContent = `Turn: ${game.turn() === 'w' ? 'White' : 'Black'}`;
-                document.getElementById('white-captures').textContent = `White Captures: ${getCapturedPieces('b').join(', ')}`;
-                document.getElementById('black-captures').textContent = `Black Captures: ${getCapturedPieces('w').join(', ')}`;
-            }
-
-
-            const whitePlayerElem = document.getElementById('white-player');
-            const blackPlayerElem = document.getElementById('black-player');
-
-            if (isMultiplayer) {
-                // In multiplayer, playerWhiteId and playerBlackId are Flask user IDs
-                whitePlayerElem.textContent = `White: ${gameData.playerWhiteId === flaskUserId ? 'You' : (gameData.playerWhiteName || gameData.playerWhiteId)}`;
-                blackPlayerElem.textContent = `Black: ${gameData.playerBlackId === flaskUserId ? 'You' : (gameData.playerBlackName || gameData.playerBlackId)}`;
-            } else { // Solo AI game
-                whitePlayerElem.textContent = `White: You`;
-                blackPlayerElem.textContent = `Black: AI`;
-            }
-
-            // Show/hide loading spinner
-            const loadingSpinner = document.getElementById('loading-spinner');
-            const loadingMessage = document.getElementById('loading-message');
-            if (isLoading) {
-                loadingSpinner.classList.remove('hidden');
-                loadingMessage.textContent = "Loading game...";
-            } else {
-                loadingSpinner.classList.add('hidden');
-                loadingMessage.textContent = ""; // Clear message
-            }
-        }
-
-        // Function to get captured pieces
-        function getCapturedPieces(color) {
-            const initialPiecesCount = { 'p': 8, 'n': 2, 'b': 2, 'r': 2, 'q': 1 };
-            const currentPiecesCount = { 'p': 0, 'n': 0, 'b': 0, 'r': 0, 'q': 0 };
-
-            game.board().flat().filter(p => p).forEach(piece => {
-                currentPiecesCount[piece.type.toLowerCase()]++;
-            });
-
-            const capturedList = [];
-            for (const type in initialPiecesCount) {
-                const initial = initialPiecesCount[type];
-                const current = currentPiecesCount[type];
-                const capturedCount = initial - current;
-
-                // Check if the piece is of the specified color (meaning it's *not* captured by that color)
-                // This logic is a bit inverted for "captured by".
-                // Let's simplify: if 'color' is 'w', we want pieces that are 'b' and are missing from the board.
-                // If 'color' is 'b', we want pieces that are 'w' and are missing from the board.
-
-                // A more robust way: keep track of pieces that were on the board initially
-                // and compare with current pieces.
-                // For now, let's just count pieces of the *opposite* color that are missing.
-                // This is a simplified approach and might not be perfectly accurate for all chess variants.
-
-                // This logic is for pieces *remaining* on the board.
-                // To get *captured* pieces, we need to compare current board state to initial board state.
-                // A proper implementation would involve comparing current FEN with a base FEN or tracking moves.
-            }
-            // Returning a placeholder for now until proper captured piece logic is implemented.
-            // For a simple visual, we can just show empty or "N/A".
-            return []; // Placeholder
-        }
-
-
-        // Function to get game status
-        function getGameStatus() {
-            if (game.inCheckmate()) {
-                return `Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins!`;
-            } else if (game.inDraw()) {
-                return 'Draw!';
-            } else if (game.inStalemate()) {
-                return 'Stalemate!';
-            } else if (game.inThreefoldRepetition()) {
-                return 'Draw by threefold repetition!';
-            } else if (game.insufficientMaterial()) {
-                return 'Draw by insufficient material!';
-            }
-            return 'Game in progress.';
-        }
-
-        // Function to make AI move (simple random move)
-        function makeAIMove() {
-            const possibleMoves = game.moves({ verbose: true });
-            if (game.gameOver() || possibleMoves.length === 0) {
-                console.log("AI: Game over or no possible moves.");
-                return;
-            }
-
-            const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-            console.log("AI making move:", randomMove);
-            game.move(randomMove);
-            board.position(game.fen());
-            updateGameInFirestore();
-        }
-
-        // Function to handle piece drop
-        function onDrop(source, target) {
-            // Ensure game object is initialized before attempting moves
-            if (!game) {
-                console.error("Game object not initialized. Cannot make move.");
-                return 'snapback';
-            }
-
-            // Determine whose turn it is in the game
-            const turnColor = game.turn(); // 'w' or 'b'
-
-            // Determine which color the current player is assigned (only relevant for multiplayer)
-            let playerAssignedColor = null;
-            if (isMultiplayer) {
-                if (gameData.playerWhiteId === flaskUserId) {
-                    playerAssignedColor = 'w';
-                } else if (gameData.playerBlackId === flaskUserId) {
-                    playerAssignedColor = 'b';
-                }
-            } else { // Solo AI game, human is always white
-                playerAssignedColor = 'w';
-            }
-
-            // Prevent moves if it's not the current player's turn or if it's an AI's turn
-            if (playerAssignedColor !== turnColor) {
-                console.log(`It's ${turnColor}'s turn. You are ${playerAssignedColor}. Invalid move.`);
-                return 'snapback';
-            }
-
-            const move = game.move({
-                from: source,
-                to: target,
-                promotion: 'q' // Always promote to queen for simplicity
-            });
-
-            if (move === null) {
-                console.log("Invalid move:", source, target);
-                return 'snapback'; // Invalid move
-            }
-
-            console.log("Human player made move:", move);
-            updateGameInFirestore();
-
-            // If it's a solo AI game and the human just moved, make AI move
-            if (!isMultiplayer && !game.gameOver()) {
-                // Ensure it's AI's turn before making a move
-                if (game.turn() === 'b') {
-                    setTimeout(makeAIMove, 500); // AI moves after a short delay
-                }
-            }
-        }
-
-        // Global variable to store game data fetched from Firestore
-        let gameData = {};
-
-        // Function to update game state in Firestore
-        async function updateGameInFirestore() {
-            if (!gameDocRef) {
-                console.error("gameDocRef is not defined. Cannot update Firestore.");
-                return;
-            }
-            if (!game) {
-                console.error("Game object not initialized. Cannot update Firestore.");
-                return;
-            }
-
-            const boardFen = game.fen();
-            const turn = game.turn();
-            const gameOver = game.gameOver();
-            let winner = null;
-            if (gameOver) {
-                if (game.inCheckmate()) {
-                    winner = game.turn() === 'w' ? 'Black' : 'White'; // The player whose turn it is just lost
-                } else {
-                    winner = 'Draw';
-                }
-            }
-
-            try {
-                await runTransaction(db, async (transaction) => {
-                    const sfDoc = await transaction.get(gameDocRef);
-                    if (!sfDoc.exists) {
-                        throw "Game document does not exist for update!";
-                    }
-
-                    // Update the document with new game state
-                    transaction.update(gameDocRef, {
-                        boardFen: boardFen,
-                        turn: turn,
-                        gameOver: gameOver,
-                        winner: winner,
-                        lastUpdated: serverTimestamp(),
-                        // Add other game state variables if you track them (e.g., captured pieces, move history)
-                    });
-                });
-                console.log("Game state updated in Firestore successfully.");
-                updateUI(); // Update UI immediately after local move
-            } catch (e) {
-                console.error("Firestore transaction failed: ", e);
-                // Revert local game state if transaction fails
-                if (game && board) { // Ensure game and board are initialized before attempting to revert
-                    board.position(game.fen()); // Revert to previous valid state
-                }
-                updateUI();
-                alert("Failed to update game state. Please try again.");
-            }
-        }
-
-        // Function to initialize the board
-        function initBoard() {
-            const config = {
-                draggable: true,
-                position: 'start',
-                onDrop: onDrop,
-                onSnapEnd: () => {
-                    if (game) board.position(game.fen()); // Ensure game is initialized
-                }
-            };
-            // Corrected: Access Chessboard from the global window object
-            board = window.Chessboard('board', config);
-            console.log("Chessboard initialized.");
-        }
-
-        // Main game initialization function
-        async function initializeGame() {
-            if (initializationFailed) { // Check the flag before proceeding
-                console.error("Skipping game initialization due to prior errors.");
-                return;
-            }
-
-            isLoading = true;
-            updateUI(); // Show loading spinner
-            clearTimeout(loadingTimeout); // Clear any previous timeout
-
-            // Set a timeout for loading
-            loadingTimeout = setTimeout(() => {
-                if (isLoading) {
-                    console.error("Game loading timed out.");
-                    isLoading = false;
-                    document.getElementById('loading-message').textContent = "Game failed to load. Please check your internet connection, Firebase setup, or try again.";
-                    updateUI();
-                }
-            }, 15000); // 15 seconds timeout
-
-            const urlParams = new URLSearchParams(window.location.search);
-            gameId = urlParams.get('gameId');
-
-            console.log("Starting Firebase authentication...");
-            await new Promise(resolve => {
-                onAuthStateChanged(auth, user => {
-                    if (user) {
-                        currentFirebaseUser = user;
-                        console.log("Firebase user authenticated:", user.uid);
-                        resolve();
-                    } else {
-                        signInAnonymously(auth).then(anonUser => {
-                            currentFirebaseUser = anonUser.user;
-                            console.log("Signed in anonymously:", currentFirebaseUser.uid);
-                            resolve();
-                        }).catch(error => {
-                            console.error("Anonymous sign-in failed:", error);
-                            alert("Failed to authenticate with game services. Please refresh the page.");
-                            isLoading = false;
-                            updateUI();
-                            clearTimeout(loadingTimeout);
-                            resolve(); // Resolve promise even on error to unblock
-                        });
-                    }
-                });
-            });
-
-            if (!currentFirebaseUser) {
-                console.error("Authentication failed. Cannot initialize game.");
-                isLoading = false;
-                updateUI();
-                clearTimeout(loadingTimeout);
-                return;
-            }
-
-            // Initialize game object here, after Chess is confirmed to be available
-            game = new Chess();
-            console.log("Chess game instance created.");
-
-
-            if (gameId) {
-                // Multiplayer game
-                isMultiplayer = true;
-                // Corrected Firestore path
-                gameDocRef = doc(db, `artifacts/${canvasAppId}/games`, gameId);
-                console.log("Attempting to load multiplayer game:", gameId, "from path:", `artifacts/${canvasAppId}/games/${gameId}`);
-
-                unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        gameData = docSnap.data(); // Store fetched game data
-                        console.log("Game state updated from Firestore:", gameData);
-                        game.load(gameData.boardFen);
-                        board.position(game.fen());
-                        
-                        // Determine if current Flask user is white or black player
-                        currentPlayerIsWhite = (gameData.playerWhiteId === flaskUserId);
-                        console.log("Current player is white:", currentPlayerIsWhite);
-
-                        isLoading = false;
-                        updateUI();
-                        clearTimeout(loadingTimeout);
-
-                        // If it's an AI vs Human game and it's AI's turn, make AI move
-                        if (gameData.gameType === 'solo_ai' && game.turn() === 'b' && !game.gameOver()) {
-                             setTimeout(makeAIMove, 500);
-                        }
-
-                    } else {
-                        console.warn("Game not found or has ended:", gameId);
-                        alert("Game not found or has ended.");
-                        isLoading = false;
-                        updateUI();
-                        clearTimeout(loadingTimeout);
-                        // Optionally redirect back to game hub
-                        // window.location.href = '/games';
-                    }
-                }, (error) => {
-                    console.error("Error listening to game updates:", error);
-                    alert("Error synchronizing game. Please refresh.");
-                    isLoading = false;
-                    updateUI();
-                    clearTimeout(loadingTimeout);
-                });
-
-            } else {
-                // Solo AI game
-                isMultiplayer = false;
-                gameId = `solo_ai_${crypto.randomUUID()}`; // Generate unique ID for solo game
-                gameDocRef = doc(db, `artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/solo_games`, gameId);
-                currentPlayerIsWhite = true; // Human is always white in solo play
-
-                console.log("Starting new solo AI game:", gameId, "from path:", `artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/solo_games/${gameId}`);
-
-                // Check if a solo game with this ID already exists (e.g., from a previous session)
-                try {
-                    const docSnap = await getDoc(gameDocRef);
-                    if (docSnap.exists()) {
-                        gameData = docSnap.data(); // Store fetched game data
-                        game.load(gameData.boardFen);
-                        console.log("Loaded existing solo AI game:", gameData);
-                    } else {
-                        // Initialize new solo game state in Firestore
-                        const initialBoardState = game.fen();
-                        gameData = { // Initialize gameData for solo game
-                            boardFen: initialBoardState,
-                            turn: 'w',
-                            whiteCaptures: 0,
-                            blackCaptures: 0,
-                            gameOver: false,
-                            winner: null,
-                            createdAt: serverTimestamp(),
-                            lastUpdated: serverTimestamp(),
-                            playerWhiteId: flaskUserId,
-                            playerBlackId: 'AI',
-                            gameType: 'solo_ai',
-                            gameName: 'chess'
-                        };
-                        await setDoc(gameDocRef, gameData);
-                        console.log("Created new solo AI game in Firestore.");
-                    }
-                    board.position(game.fen());
-                    isLoading = false;
-                    updateUI();
-                    clearTimeout(loadingTimeout);
-
-                    // Set up a listener for solo games too, to keep UI in sync if AI moves
-                    unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
-                        if (docSnap.exists()) {
-                            gameData = docSnap.data(); // Update gameData from snapshot
-                            game.load(gameData.boardFen);
-                            board.position(game.fen());
-                            updateUI();
-                            // If it's AI's turn and game is not over, make AI move
-                            if (game.turn() === 'b' && !game.gameOver()) {
-                                setTimeout(makeAIMove, 500);
-                            }
-                        } else {
-                            console.warn("Solo game document not found or deleted:", gameId);
-                            // This might happen if user clears data or doc is manually deleted
-                            alert("Solo game data not found. Starting a new one.");
-                            game.reset(); // Reset board locally
-                            updateGameInFirestore(); // Re-create document
-                        }
-                    }, (error) => {
-                        console.error("Error listening to solo game updates:", error);
-                        alert("Error synchronizing solo game. Please refresh.");
-                        isLoading = false;
-                        updateUI();
-                        clearTimeout(loadingTimeout);
-                    });
-
-                } catch (e) {
-                    console.error("Error initializing solo AI game:", e);
-                    alert("Failed to start solo AI game. Please try again.");
-                    isLoading = false;
-                    updateUI();
-                    clearTimeout(loadingTimeout);
-                }
-            }
-        }
-
-        // Initialize board when the DOM is ready
-        document.addEventListener('DOMContentLoaded', () => {
-            initBoard();
-            initializeGame();
-
-            // Cleanup on page unload
-            window.addEventListener('beforeunload', () => {
-                if (unsubscribe) {
-                    unsubscribe(); // Unsubscribe from Firestore listener
-                    console.log("Unsubscribed from Firestore game updates.");
-                }
-                if (loadingTimeout) {
-                    clearTimeout(loadingTimeout); // Clear any pending loading timeout
-                }
-            });
-        });
-
-        // Reset game button (for solo play or to start new multiplayer)
-        document.getElementById('reset-game').addEventListener('click', async () => {
-            if (!isMultiplayer) { // Only allow reset for solo games
-                game.reset();
-                board.position('start');
-                gameData = { // Reset gameData for solo game
-                    boardFen: game.fen(),
-                    turn: 'w',
-                    whiteCaptures: 0,
-                    blackCaptures: 0,
-                    gameOver: false,
-                    winner: null,
-                    createdAt: serverTimestamp(),
-                    lastUpdated: serverTimestamp(),
-                    playerWhiteId: flaskUserId,
-                    playerBlackId: 'AI',
-                    gameType: 'solo_ai',
-                    gameName: 'chess'
-                };
-                await setDoc(gameDocRef, gameData);
-                updateUI();
-                alert("Solo game reset!");
-            } else {
-                alert("You can only reset solo games. For multiplayer, start a new invitation from the Friends list.");
-            }
-        });
-    </script>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans">
 
@@ -567,38 +48,464 @@
 
         <h1 class="text-4xl font-extrabold text-center mb-6 text-blue-500">Chess Game</h1>
 
-        <div id="loading-spinner" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-75 z-50 rounded-xl">
-            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
-            <p id="loading-message" class="mt-4 text-xl">Loading game...</p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <!-- Game Info / Status Column -->
-            <div class="md:col-span-1 flex flex-col space-y-4">
-                <div class="bg-gray-700 p-4 rounded-lg shadow-md">
-                    <h2 class="text-2xl font-semibold mb-2 text-blue-400">Game Status</h2>
-                    <p id="status" class="text-lg mb-1">Loading...</p>
-                    <p id="turn" class="text-lg mb-1">Turn: Loading...</p>
-                    <p id="white-player" class="text-md text-gray-300">White: Loading...</p>
-                    <p id="black-player" class="text-md text-gray-300">Black: Loading...</p>
-                </div>
-
-                <div class="bg-gray-700 p-4 rounded-lg shadow-md">
-                    <h2 class="text-2xl font-semibold mb-2 text-blue-400">Captured Pieces</h2>
-                    <p id="white-captures" class="text-lg">White Captures: </p>
-                    <p id="black-captures" class="text-lg">Black Captures: </p>
-                </div>
-
-                <button id="reset-game" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 transform hover:scale-105">
-                    Reset Solo Game
-                </button>
-            </div>
-
-            <!-- Chessboard Column -->
-            <div id="chessboard-container" class="md:col-span-2 flex justify-center items-center bg-gray-700 rounded-lg shadow-md p-4">
-                <div id="board" class="w-full max-w-md aspect-square"></div>
-            </div>
-        </div>
+        <!-- Root div for React app -->
+        <div id="chess-root"></div>
     </div>
+
+    <script type="text/babel">
+        // Import Firebase modules
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+        // Access Chess and Chessboard from the global window object
+        const Chess = window.Chess;
+        const Chessboard = window.Chessboard;
+
+        // Polyfill for crypto.randomUUID for older browsers/environments if needed
+        if (typeof crypto.randomUUID === 'undefined') {
+            crypto.randomUUID = () => {
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            };
+        }
+
+        function ChessGameApp() {
+            const [game, setGame] = React.useState(null);
+            const boardRef = React.useRef(null); // Use ref to hold chessboard.js instance
+            const [isLoading, setIsLoading] = React.useState(true);
+            const [gameData, setGameData] = React.useState({});
+            const [isMultiplayer, setIsMultiplayer] = React.useState(false);
+            const [currentPlayerIsWhite, setCurrentPlayerIsWhite] = React.useState(false);
+            const gameDocRef = React.useRef(null); // Use ref for Firestore doc reference
+            const unsubscribeRef = React.useRef(null); // Use ref for Firestore unsubscribe function
+            const loadingTimeoutRef = React.useRef(null); // Use ref for loading timeout
+
+            // Get Flask-provided config and app ID
+            const firebaseConfig = JSON.parse('{{ firebase_config_json | safe }}');
+            const initialAuthToken = '{{ initial_auth_token | safe }}';
+            const canvasAppId = '{{ canvas_app_id | safe }}';
+            const flaskUserId = '{{ current_user.id | safe }}'; // Get Flask user ID
+
+            // Firebase Auth and Firestore instances
+            const authRef = React.useRef(null);
+            const dbRef = React.useRef(null);
+            const currentFirebaseUserRef = React.useRef(null);
+
+            // --- Firebase Initialization and Auth ---
+            React.useEffect(() => {
+                let initializationFailed = false;
+
+                if (!firebaseConfig || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
+                    console.error("Firebase config is missing or invalid.");
+                    alert("Firebase configuration error. Game cannot load.");
+                    setIsLoading(false);
+                    initializationFailed = true;
+                }
+                if (!canvasAppId || canvasAppId === 'default-app-id') {
+                    console.warn("Canvas App ID is missing or default. Firestore paths might be incorrect.");
+                }
+
+                if (!initializationFailed) {
+                    try {
+                        const app = initializeApp(firebaseConfig);
+                        authRef.current = getAuth(app);
+                        dbRef.current = getFirestore(app);
+                        console.log("Firebase app initialized.");
+
+                        onAuthStateChanged(authRef.current, user => {
+                            if (user) {
+                                currentFirebaseUserRef.current = user;
+                                console.log("Firebase user authenticated:", user.uid);
+                                initializeGameLogic(); // Proceed with game logic after auth
+                            } else {
+                                signInAnonymously(authRef.current).then(anonUser => {
+                                    currentFirebaseUserRef.current = anonUser.user;
+                                    console.log("Signed in anonymously:", currentFirebaseUserRef.current.uid);
+                                    initializeGameLogic(); // Proceed with game logic after auth
+                                }).catch(error => {
+                                    console.error("Anonymous sign-in failed:", error);
+                                    alert("Failed to authenticate with game services. Please refresh the page.");
+                                    setIsLoading(false);
+                                    clearTimeout(loadingTimeoutRef.current);
+                                });
+                            }
+                        });
+                    } catch (e) {
+                        console.error("Failed to initialize Firebase app:", e);
+                        alert("Failed to initialize game services. Please refresh the page.");
+                        setIsLoading(false);
+                    }
+                }
+
+                // Cleanup on unmount
+                return () => {
+                    if (unsubscribeRef.current) {
+                        unsubscribeRef.current();
+                        console.log("Unsubscribed from Firestore game updates.");
+                    }
+                    if (loadingTimeoutRef.current) {
+                        clearTimeout(loadingTimeoutRef.current);
+                    }
+                };
+            }, []); // Empty dependency array means this runs once on mount
+
+            // --- Game Logic Initialization ---
+            const initializeGameLogic = async () => {
+                if (!currentFirebaseUserRef.current || !dbRef.current) {
+                    console.error("Firebase user or DB not ready for game initialization.");
+                    setIsLoading(false);
+                    return;
+                }
+
+                setIsLoading(true);
+                // Set a timeout for loading
+                loadingTimeoutRef.current = setTimeout(() => {
+                    if (isLoading) {
+                        console.error("Game loading timed out.");
+                        setIsLoading(false);
+                        document.getElementById('loading-message').textContent = "Game failed to load. Please check your internet connection, Firebase setup, or try again.";
+                    }
+                }, 15000); // 15 seconds timeout
+
+                const urlParams = new URLSearchParams(window.location.search);
+                const currentUrlGameId = urlParams.get('gameId');
+
+                // Initialize Chess.js game instance
+                if (!game) { // Only create new Chess() if it hasn't been set yet
+                    setGame(new Chess());
+                    console.log("Chess game instance created.");
+                }
+
+                if (currentUrlGameId) {
+                    // Multiplayer game
+                    setIsMultiplayer(true);
+                    gameDocRef.current = doc(dbRef.current, `artifacts/${canvasAppId}/games`, currentUrlGameId);
+                    console.log("Attempting to load multiplayer game:", currentUrlGameId, "from path:", `artifacts/${canvasAppId}/games/${currentUrlGameId}`);
+
+                    unsubscribeRef.current = onSnapshot(gameDocRef.current, (docSnap) => {
+                        if (docSnap.exists()) {
+                            const data = docSnap.data();
+                            setGameData(data); // Update React state with game data
+                            game.load(data.boardFen); // Update Chess.js internal state
+                            boardRef.current.position(game.fen()); // Update chessboard UI
+
+                            setCurrentPlayerIsWhite(data.playerWhiteId === flaskUserId);
+                            console.log("Game state updated from Firestore:", data);
+
+                            setIsLoading(false);
+                            clearTimeout(loadingTimeoutRef.current);
+
+                            // If it's an AI vs Human game and it's AI's turn, make AI move
+                            if (data.gameType === 'solo_ai' && game.turn() === 'b' && !game.gameOver()) {
+                                setTimeout(makeAIMove, 500);
+                            }
+                        } else {
+                            console.warn("Multiplayer game not found or has ended:", currentUrlGameId);
+                            alert("Game not found or has ended.");
+                            setIsLoading(false);
+                            clearTimeout(loadingTimeoutRef.current);
+                            // Optionally redirect back to game hub
+                            // window.location.href = '/games';
+                        }
+                    }, (error) => {
+                        console.error("Error listening to multiplayer game updates:", error);
+                        alert("Error synchronizing game. Please refresh.");
+                        setIsLoading(false);
+                        clearTimeout(loadingTimeoutRef.current);
+                    });
+
+                } else {
+                    // Solo AI game
+                    setIsMultiplayer(false);
+                    const soloGameId = `solo_ai_${crypto.randomUUID()}`;
+                    gameDocRef.current = doc(dbRef.current, `artifacts/${canvasAppId}/users/${currentFirebaseUserRef.current.uid}/solo_games`, soloGameId);
+                    setCurrentPlayerIsWhite(true); // Human is always white in solo play
+
+                    console.log("Starting new solo AI game:", soloGameId, "from path:", `artifacts/${canvasAppId}/users/${currentFirebaseUserRef.current.uid}/solo_games/${soloGameId}`);
+
+                    try {
+                        const docSnap = await getDoc(gameDocRef.current);
+                        let initialGameData;
+                        if (docSnap.exists()) {
+                            initialGameData = docSnap.data();
+                            game.load(initialGameData.boardFen);
+                            console.log("Loaded existing solo AI game:", initialGameData);
+                        } else {
+                            initialGameData = {
+                                boardFen: game.fen(),
+                                turn: 'w',
+                                whiteCaptures: 0,
+                                blackCaptures: 0,
+                                gameOver: false,
+                                winner: null,
+                                createdAt: serverTimestamp(),
+                                lastUpdated: serverTimestamp(),
+                                playerWhiteId: flaskUserId,
+                                playerBlackId: 'AI',
+                                gameType: 'solo_ai',
+                                gameName: 'chess'
+                            };
+                            await setDoc(gameDocRef.current, initialGameData);
+                            console.log("Created new solo AI game in Firestore.");
+                        }
+                        setGameData(initialGameData); // Set initial game data in state
+                        boardRef.current.position(game.fen());
+                        setIsLoading(false);
+                        clearTimeout(loadingTimeoutRef.current);
+
+                        // Set up a listener for solo games too, to keep UI in sync if AI moves
+                        unsubscribeRef.current = onSnapshot(gameDocRef.current, (docSnap) => {
+                            if (docSnap.exists()) {
+                                const data = docSnap.data();
+                                setGameData(data); // Update gameData from snapshot
+                                game.load(data.boardFen);
+                                boardRef.current.position(game.fen());
+                                // If it's AI's turn and game is not over, make AI move
+                                if (game.turn() === 'b' && !game.gameOver()) {
+                                    setTimeout(makeAIMove, 500);
+                                }
+                            } else {
+                                console.warn("Solo game document not found or deleted:", soloGameId);
+                                alert("Solo game data not found. Starting a new one.");
+                                game.reset(); // Reset board locally
+                                updateGameInFirestore(); // Re-create document
+                            }
+                        }, (error) => {
+                            console.error("Error listening to solo game updates:", error);
+                            alert("Error synchronizing solo game. Please refresh.");
+                            setIsLoading(false);
+                            clearTimeout(loadingTimeoutRef.current);
+                        });
+
+                    } catch (e) {
+                        console.error("Error initializing solo AI game:", e);
+                        alert("Failed to start solo AI game. Please try again.");
+                        setIsLoading(false);
+                        clearTimeout(loadingTimeoutRef.current);
+                    }
+                }
+            };
+
+            // --- Chessboard Initialization (runs once after component mounts) ---
+            React.useEffect(() => {
+                if (Chess && Chessboard && !boardRef.current) { // Ensure libraries are loaded and board isn't already initialized
+                    const config = {
+                        draggable: true,
+                        position: 'start',
+                        onDrop: onDrop,
+                        onSnapEnd: () => {
+                            if (game) boardRef.current.position(game.fen());
+                        }
+                    };
+                    boardRef.current = Chessboard('board', config);
+                    console.log("Chessboard initialized.");
+                }
+            }, [game]); // Re-run if game object changes (e.g., after initial setGame)
+
+
+            // --- Helper Functions ---
+            const getCapturedPieces = React.useCallback((color) => {
+                // This is a placeholder for actual captured pieces logic.
+                // A proper implementation would involve comparing current FEN with a base FEN or tracking moves.
+                return []; // Placeholder
+            }, []);
+
+            const getGameStatus = React.useCallback(() => {
+                if (!game) return 'Loading...';
+                if (game.inCheckmate()) {
+                    return `Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins!`;
+                } else if (game.inDraw()) {
+                    return 'Draw!';
+                } else if (game.inStalemate()) {
+                    return 'Stalemate!';
+                } else if (game.inThreefoldRepetition()) {
+                    return 'Draw by threefold repetition!';
+                } else if (game.insufficientMaterial()) {
+                    return 'Draw by insufficient material!';
+                }
+                return 'Game in progress.';
+            }, [game]);
+
+            const makeAIMove = React.useCallback(() => {
+                if (!game || game.gameOver()) {
+                    console.log("AI: Game over or no possible moves.");
+                    return;
+                }
+
+                const possibleMoves = game.moves({ verbose: true });
+                if (possibleMoves.length === 0) {
+                    return;
+                }
+
+                const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                console.log("AI making move:", randomMove);
+                game.move(randomMove);
+                boardRef.current.position(game.fen());
+                updateGameInFirestore();
+            }, [game]); // Depend on 'game' object
+
+            const onDrop = React.useCallback((source, target) => {
+                if (!game || !boardRef.current) {
+                    console.error("Game or board not initialized. Cannot make move.");
+                    return 'snapback';
+                }
+
+                const turnColor = game.turn();
+                let playerAssignedColor = null;
+                if (isMultiplayer) {
+                    if (gameData.playerWhiteId === flaskUserId) {
+                        playerAssignedColor = 'w';
+                    } else if (gameData.playerBlackId === flaskUserId) {
+                        playerAssignedColor = 'b';
+                    }
+                } else {
+                    playerAssignedColor = 'w'; // Human is always white in solo play
+                }
+
+                if (playerAssignedColor !== turnColor) {
+                    console.log(`It's ${turnColor}'s turn. You are ${playerAssignedColor}. Invalid move.`);
+                    return 'snapback';
+                }
+
+                const move = game.move({
+                    from: source,
+                    to: target,
+                    promotion: 'q'
+                });
+
+                if (move === null) {
+                    console.log("Invalid move:", source, target);
+                    return 'snapback';
+                }
+
+                console.log("Human player made move:", move);
+                updateGameInFirestore();
+
+                if (!isMultiplayer && !game.gameOver()) {
+                    if (game.turn() === 'b') {
+                        setTimeout(makeAIMove, 500);
+                    }
+                }
+            }, [game, isMultiplayer, gameData, flaskUserId, makeAIMove]); // Dependencies for useCallback
+
+            const updateGameInFirestore = React.useCallback(async () => {
+                if (!gameDocRef.current || !game || !dbRef.current) {
+                    console.error("Firestore refs or game not defined. Cannot update Firestore.");
+                    return;
+                }
+
+                const boardFen = game.fen();
+                const turn = game.turn();
+                const gameOver = game.gameOver();
+                let winner = null;
+                if (gameOver) {
+                    if (game.inCheckmate()) {
+                        winner = game.turn() === 'w' ? 'Black' : 'White';
+                    } else {
+                        winner = 'Draw';
+                    }
+                }
+
+                try {
+                    await runTransaction(dbRef.current, async (transaction) => {
+                        const sfDoc = await transaction.get(gameDocRef.current);
+                        if (!sfDoc.exists) {
+                            throw "Game document does not exist for update!";
+                        }
+
+                        transaction.update(gameDocRef.current, {
+                            boardFen: boardFen,
+                            turn: turn,
+                            gameOver: gameOver,
+                            winner: winner,
+                            lastUpdated: serverTimestamp(),
+                        });
+                    });
+                    console.log("Game state updated in Firestore successfully.");
+                } catch (e) {
+                    console.error("Firestore transaction failed: ", e);
+                    if (game && boardRef.current) {
+                        boardRef.current.position(game.fen());
+                    }
+                    alert("Failed to update game state. Please try again.");
+                }
+            }, [game, gameDocRef, dbRef]); // Dependencies for useCallback
+
+            const handleResetGame = React.useCallback(async () => {
+                if (!isMultiplayer) {
+                    if (!game || !boardRef.current || !gameDocRef.current || !dbRef.current || !currentFirebaseUserRef.current) {
+                        console.error("Cannot reset solo game: dependencies not ready.");
+                        return;
+                    }
+                    game.reset();
+                    boardRef.current.position('start');
+                    const resetGameData = {
+                        boardFen: game.fen(),
+                        turn: 'w',
+                        whiteCaptures: 0,
+                        blackCaptures: 0,
+                        gameOver: false,
+                        winner: null,
+                        createdAt: serverTimestamp(),
+                        lastUpdated: serverTimestamp(),
+                        playerWhiteId: flaskUserId,
+                        playerBlackId: 'AI',
+                        gameType: 'solo_ai',
+                        gameName: 'chess'
+                    };
+                    await setDoc(gameDocRef.current, resetGameData);
+                    setGameData(resetGameData); // Update React state
+                    alert("Solo game reset!");
+                } else {
+                    alert("You can only reset solo games. For multiplayer, start a new invitation from the Friends list.");
+                }
+            }, [game, isMultiplayer, gameDocRef, dbRef, currentFirebaseUserRef, flaskUserId]); // Dependencies for useCallback
+
+
+            return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    {/* Loading Spinner */}
+                    {isLoading && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-75 z-50 rounded-xl">
+                            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+                            <p id="loading-message" className="mt-4 text-xl">Loading game...</p>
+                        </div>
+                    )}
+
+                    {/* Game Info / Status Column */}
+                    <div className="md:col-span-1 flex flex-col space-y-4">
+                        <div className="bg-gray-700 p-4 rounded-lg shadow-md">
+                            <h2 className="text-2xl font-semibold mb-2 text-blue-400">Game Status</h2>
+                            <p id="status" className="text-lg mb-1">{getGameStatus()}</p>
+                            <p id="turn" className="text-lg mb-1">Turn: {game ? (game.turn() === 'w' ? 'White' : 'Black') : 'N/A'}</p>
+                            <p id="white-player" className="text-md text-gray-300">White: {isMultiplayer ? (gameData.playerWhiteId === flaskUserId ? 'You' : (gameData.playerWhiteName || gameData.playerWhiteId)) : 'You'}</p>
+                            <p id="black-player" className="text-md text-gray-300">Black: {isMultiplayer ? (gameData.playerBlackId === flaskUserId ? 'You' : (gameData.playerBlackName || gameData.playerBlackId)) : 'AI'}</p>
+                        </div>
+
+                        <div className="bg-gray-700 p-4 rounded-lg shadow-md">
+                            <h2 className="text-2xl font-semibold mb-2 text-blue-400">Captured Pieces</h2>
+                            <p id="white-captures" className="text-lg">White Captures: {getCapturedPieces('b').join(', ')}</p>
+                            <p id="black-captures" className="text-lg">Black Captures: {getCapturedPieces('w').join(', ')}</p>
+                        </div>
+
+                        <button onClick={handleResetGame} className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 transform hover:scale-105">
+                            Reset Solo Game
+                        </button>
+                    </div>
+
+                    {/* Chessboard Column */}
+                    <div id="chessboard-container" className="md:col-span-2 flex justify-center items-center bg-gray-700 rounded-lg shadow-md p-4">
+                        <div id="board" className="w-full max-w-md aspect-square"></div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render the React component
+        ReactDOM.render(<ChessGameApp />, document.getElementById('chess-root'));
+    </script>
 </body>
 </html>
