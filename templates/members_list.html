@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}Friends{% endblock %}
+{% block title %}Friends{% endblock %} {# Changed title here #}
 
 {% block content %}
 <style>
@@ -33,265 +33,251 @@
         overflow-y: auto; /* THIS MAKES IT SCROLLABLE */
         box-sizing: border-box;
         padding: 20px; /* Padding inside the scrollable area */
-        /* bottom will be set by JS */
+        bottom: 60px; /* Space for the fixed footer */
     }
 
-    /* Member List Item Styles */
-    .list-group-item {
-        background-color: var(--card-bg); /* Use a card background color */
-        border: 1px solid var(--card-border); /* Add a border */
-        border-radius: 0.5rem; /* Match other rounded corners */
-        color: var(--text-color); /* Ensure text color matches theme */
-        transition: background-color 0.2s ease; /* Smooth hover transition */
-    }
-
-    .list-group-item:hover {
-        background-color: var(--nav-link-hover-bg); /* Use a subtle hover effect */
-        cursor: pointer;
-    }
-
-    .profile-pic-wrapper {
-        flex-shrink: 0; /* Prevent image from shrinking */
-        width: 50px; /* Explicit width for wrapper */
-        height: 50px; /* Explicit height for wrapper */
-        display: flex; /* For centering if needed */
-        align-items: center;
-        justify-content: center;
-        overflow: hidden; /* Ensure rounded corners */
-    }
-
-    .member-name {
-        font-size: 1.1em; /* Slightly larger font for name */
-        white-space: nowrap; /* Prevent name from wrapping */
-        overflow: hidden; /* Hide overflow text */
-        text-overflow: ellipsis; /* Add ellipsis for overflow text */
-    }
-
-    /* Alert container positioning */
-    .alert-container {
-        position: fixed; /* Fixed position for alerts */
-        top: 70px; /* Below navbar */
-        left: 50%;
-        transform: translateX(-50%);
-        width: 90%;
-        max-width: 600px;
-        z-index: 1050; /* Above all other content */
-        text-align: center;
-    }
-
-    /* Responsive adjustments */
-    @media (min-width: 768px) {
+    /* Adjust container for smaller screens if needed */
+    @media (max-width: 767.98px) {
         .members-list-container {
-            padding: 20px 30px;
+            padding: 10px; /* Less padding on small screens */
         }
-        .member-name {
-            font-size: 1.2em;
-        }
+    }
+
+    /* Specific styles for the search bar */
+    .search-bar {
+        margin-bottom: 20px;
+        padding: 10px;
+        border-radius: 0.5rem;
+        background-color: var(--card-bg);
+        border: 1px solid var(--card-border);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        display: flex;
+        align-items: center;
+    }
+    .search-bar input {
+        flex-grow: 1;
+        border: none;
+        background: transparent;
+        color: var(--text-color);
+        outline: none;
+        padding: 5px 10px;
+    }
+    .search-bar input::placeholder {
+        color: var(--text-color);
+        opacity: 0.7;
+    }
+    .search-bar i {
+        color: var(--text-color);
+        margin-right: 10px;
+        opacity: 0.7;
+    }
+
+    /* Member card styling */
+    .member-card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 0.75rem;
+        padding: 15px;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .member-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+    }
+    .member-card img {
+        width: 60px;
+        height: 60px;
+        object-fit: cover;
+        border-radius: 50%;
+        margin-right: 15px;
+        border: 2px solid var(--primary-color);
+    }
+    .member-info {
+        flex-grow: 1;
+    }
+    .member-info h5 {
+        margin-bottom: 5px;
+        font-weight: 600;
+        color: var(--text-color);
+    }
+    .member-info p {
+        margin-bottom: 0;
+        color: var(--text-color);
+        font-size: 0.9em;
+        opacity: 0.8;
+    }
+    .member-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-left: 15px;
+    }
+    .member-actions .btn {
+        padding: 8px 12px;
+        font-size: 0.85em;
+        border-radius: 0.5rem;
+        transition: background-color 0.2s, transform 0.2s;
+    }
+    .member-actions .btn:hover {
+        transform: translateY(-1px);
+    }
+
+    /* Status indicator dot */
+    .status-dot {
+        width: 12px;
+        height: 12px;
+        background-color: #28a745; /* Green for active */
+        border-radius: 50%;
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        border: 2px solid var(--card-bg); /* Border to stand out from profile photo */
+    }
+    .profile-pic-wrapper {
+        position: relative;
+        width: 60px; /* Match img width */
+        height: 60px; /* Match img height */
     }
 </style>
 
-{# Alerts will be positioned fixed, so they don't need to be in a container #}
-{% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        <div class="alert-container">
-            {% for category, message in messages %}
-                <div class="alert alert-{{ category }}">{{ message | safe }}</div>
-            {% endfor %}
-        </div>
-    {% endif %}
-{% endwith %}
+<div class="members-list-container">
+    <h2 class="mb-4 text-center">Friends and Family</h2>
 
-{# Main Members List Container (Scrollable) #}
-<div class="members-list-container" id="membersListContainer">
-    <h1 class="text-center mb-4">Friends</h1>
-
-    {# Search Input Field #}
-    <div class="mb-4">
-        <input type="text" id="memberSearchInput" class="form-control" placeholder="Search by name or username...">
+    <div class="search-bar">
+        <i class="fas fa-search"></i>
+        <input type="text" id="memberSearch" placeholder="Search by name or username...">
     </div>
 
-    {# Add New Member Button - Only visible to admin users #}
-    {% if current_user.is_admin %}
-    <div class="text-end mb-3">
-        <a href="{{ url_for('add_member_form') }}" class="btn btn-success">Add New Member</a>
+    <div id="membersList">
+        {# Members will be rendered here by JavaScript #}
     </div>
-    {% endif %}
-
-    <div class="members-list-content"> {# New wrapper for the list #}
-        {% if members %}
-            <div class="row justify-content-center">
-                <div class="col-md-8">
-                    <ul class="list-group list-group-flush" id="membersList"> {# Added ID for JS access #}
-                        {# Members will be rendered here by JavaScript #}
-                    </ul>
-                </div>
-            </div>
-        {% else %}
-            <p class="text-center text-muted mt-3">No other family members found.</p>
-        {% endif %}
-    </div>
-</div>
-
-{# Game Invitation Modal #}
-<div class="modal fade" id="gameInvitationModal" tabindex="-1" aria-labelledby="gameInvitationModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content bg-gray-800 text-white rounded-2xl">
-      <div class="modal-header border-b border-gray-700">
-        <h5 class="modal-title" id="gameInvitationModalLabel">Invite <span id="inviteeName"></span> to a Game</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p class="text-gray-400">Choose a game to invite them to play:</p>
-        <div class="d-grid gap-3">
-          <a id="inviteRacing" href="#" class="btn btn-primary d-flex align-items-center justify-content-center py-3">
-            <i class="fas fa-car-side me-2"></i> Racing Game
-          </a>
-          <a id="inviteChess" href="#" class="btn btn-secondary d-flex align-items-center justify-content-center py-3">
-            <i class="fas fa-chess-knight me-2"></i> Chess
-          </a>
-          <a id="inviteBoardGames" href="#" class="btn btn-success d-flex align-items-center justify-content-center py-3">
-            <i class="fas fa-dice me-2"></i> Board Games
-          </a>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const membersListContainer = document.getElementById('membersListContainer');
-        const footerHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--footer-height')) || 60; // From base.html CSS var
+        const memberSearchInput = document.getElementById('memberSearch');
+        const membersListContainer = document.getElementById('membersList');
 
-        function adjustMembersListPosition() {
-            if (membersListContainer) { // Check if membersListContainer exists
-                const navbarHeight = 70; // Assuming your navbar is 70px tall
+        // This data is passed from Flask (app.py)
+        const allMembers = {{ members | tojson }};
 
-                // The members list starts below the navbar
-                membersListContainer.style.top = `${navbarHeight}px`;
-                // Its height fills the rest of the viewport above the footer
-                membersListContainer.style.bottom = `${footerHeight}px`;
-            }
-        }
-
-        // Adjust on load and on window resize
-        adjustMembersListPosition();
-        window.addEventListener('resize', adjustMembersListPosition);
-
-        // --- Live Search and Filter Logic ---
-        const memberSearchInput = document.getElementById('memberSearchInput');
-        const membersListElement = document.getElementById('membersList');
-        const gameInvitationModal = new bootstrap.Modal(document.getElementById('gameInvitationModal'));
-        const inviteeNameSpan = document.getElementById('inviteeName');
-        const inviteRacingBtn = document.getElementById('inviteRacing');
-        const inviteChessBtn = document.getElementById('inviteChess');
-        const inviteBoardGamesBtn = document.getElementById('inviteBoardGames');
-
-        // Store all members data from Jinja into a JavaScript array
-        const allMembers = [
-            {% for member in members %}
-                {
-                    id: {{ member.id }},
-                    fullName: "{{ member.fullName | e }}",
-                    username: "{{ (member.username if member.username is defined else '') | e }}",
-                    profilePhoto: "{{ member.profilePhoto | e if member.profilePhoto else url_for('static', filename='img/default_profile.png') | e }}",
-                    detailUrl: "{{ url_for('member_detail', member_id=member.id) | e }}"
-                },
-            {% endfor %}
-        ];
-
-        // Function to render members into the list
         function renderMembers(membersToRender) {
-            membersListElement.innerHTML = ''; // Clear current list
-
+            membersListContainer.innerHTML = ''; // Clear existing members
             if (membersToRender.length === 0) {
-                membersListElement.innerHTML = `
-                    <li class="list-group-item text-center py-4 text-muted">
-                        <p class="mb-0">No matching family members found.</p>
-                    </li>
-                `;
+                membersListContainer.innerHTML = '<p class="text-center text-muted mt-3">No members found matching your search.</p>';
                 return;
             }
 
             membersToRender.forEach(member => {
-                const listItem = document.createElement('li');
-                listItem.className = 'list-group-item d-flex align-items-center justify-content-between py-3 px-3 mb-2 shadow-sm';
-                listItem.innerHTML = `
-                    <a href="${member.detailUrl}" class="d-flex align-items-center flex-grow-1 text-decoration-none text-reset">
-                        <div class="profile-pic-wrapper me-3">
-                            <img src="${member.profilePhoto}" class="img-fluid rounded-circle" alt="${member.fullName} Profile Photo" style="width: 50px; height: 50px; object-fit: cover;">
-                        </div>
-                        <div class="member-name fw-bold">
-                            ${member.fullName}
-                            ${member.username ? `<span class="text-muted ms-2 fw-normal">(@${member.username})</span>` : ''}
-                        </div>
-                    </a>
-                    <button class="btn btn-primary btn-sm ms-3" onclick="showGameInvitationModal(${member.id}, '${member.fullName.replace(/'/g, "\\'")}')">
-                        <i class="fas fa-gamepad me-1"></i> Invite to Game
-                    </button>
+                const memberCard = document.createElement('div');
+                memberCard.classList.add('member-card');
+
+                let profilePhotoSrc = member.profilePhotoUrl;
+                if (!profilePhotoSrc) {
+                    profilePhotoSrc = "{{ url_for('static', filename='img/default_profile.png') }}";
+                }
+
+                memberCard.innerHTML = `
+                    <div class="profile-pic-wrapper">
+                        <img src="${profilePhotoSrc}" alt="${member.fullName} Profile Photo">
+                        ${member.has_active_video ? '<span class="status-dot" title="Has active status"></span>' : ''}
+                    </div>
+                    <div class="member-info">
+                        <h5>${member.fullName}</h5>
+                        <p class="text-muted">${member.association}</p>
+                        ${member.username ? `<p class="text-muted small">@${member.username}</p>` : ''}
+                    </div>
+                    <div class="member-actions">
+                        <a href="{{ url_for('member_detail', member_id=0) }}${member.id}" class="btn btn-info btn-sm">View Profile</a>
+                        ${member.isLinkedUser ? `
+                            <a href="{{ url_for('messages_with', other_user_id=0) }}${member.user_id}" class="btn btn-primary btn-sm">Message</a>
+                            ${member.user_id !== {{ current_user.id }} ? `
+                                <div class="dropdown">
+                                    <button class="btn btn-success btn-sm dropdown-toggle" type="button" id="dropdownMenuButton_${member.id}" data-bs-toggle="dropdown" aria-expanded="false">
+                                        Invite to Game
+                                    </button>
+                                    <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton_${member.id}">
+                                        <li>
+                                            <form action="{{ url_for('invite_game', game_name='chess', recipient_id=0) }}${member.user_id}" method="post">
+                                                <button type="submit" class="dropdown-item">Chess</button>
+                                            </form>
+                                        </li>
+                                        <li>
+                                            <form action="{{ url_for('invite_game', game_name='racing', recipient_id=0) }}${member.user_id}" method="post">
+                                                <button type="submit" class="dropdown-item">Racing Game</button>
+                                            </form>
+                                        </li>
+                                        <li>
+                                            <form action="{{ url_for('invite_game', game_name='board_games', recipient_id=0) }}${member.user_id}" method="post">
+                                                <button type="submit" class="dropdown-item">Board Games</button>
+                                            </form>
+                                        </li>
+                                    </ul>
+                                </div>
+                            ` : ''}
+                        ` : ''}
+                    </div>
                 `;
-                membersListElement.appendChild(listItem);
+                membersListContainer.appendChild(memberCard);
             });
         }
 
-        // Global function to show the modal and set the data
-        window.showGameInvitationModal = function(memberId, memberName) {
-            inviteeNameSpan.textContent = memberName;
-            
-            // Set the dynamic URLs for each game's invitation button
-            inviteRacingBtn.href = `{{ url_for('send_game_invite', recipient_id=1, game_name='racing') }}`.replace('1', memberId);
-            inviteChessBtn.href = `{{ url_for('send_game_invite', recipient_id=1, game_name='chess') }}`.replace('1', memberId);
-            inviteBoardGamesBtn.href = `{{ url_for('send_game_invite', recipient_id=1, game_name='board_games') }}`.replace('1', memberId);
-
-            gameInvitationModal.show();
-        };
-
-        // Function to filter and sort members
         function filterAndSortMembers() {
-            const searchTerm = memberSearchInput.value.toLowerCase().trim();
-
-            if (searchTerm === '') {
-                const sortedAllMembers = [...allMembers].sort((a, b) => a.fullName.localeCompare(b.fullName));
-                renderMembers(sortedAllMembers);
-                return;
-            }
-
-            const filteredMembers = allMembers.filter(member => {
-                const fullName = member.fullName.toLowerCase();
+            const query = memberSearchInput.value.toLowerCase();
+            let filteredMembers = allMembers.filter(member => {
+                const fullName = member.fullName ? member.fullName.toLowerCase() : '';
                 const username = member.username ? member.username.toLowerCase() : '';
-                return fullName.includes(searchTerm) || username.includes(searchTerm);
+                const association = member.association ? member.association.toLowerCase() : '';
+                return fullName.includes(query) || username.includes(query) || association.includes(query);
             });
 
+            // Sort members based on search query relevance and then alphabetically
             filteredMembers.sort((a, b) => {
-                const aFullName = a.fullName.toLowerCase();
-                const bFullName = b.fullName.toLowerCase();
+                const aFullName = a.fullName ? a.fullName.toLowerCase() : '';
+                const bFullName = b.fullName ? b.fullName.toLowerCase() : '';
                 const aUsername = a.username ? a.username.toLowerCase() : '';
                 const bUsername = b.username ? b.username.toLowerCase() : '';
 
-                const aFullNameStarts = aFullName.startsWith(searchTerm);
-                const bFullNameStarts = bFullName.startsWith(searchTerm);
-                const aUsernameStarts = aUsername.startsWith(searchTerm);
-                const bUsernameStarts = bUsername.startsWith(searchTerm);
+                const aFullNameMatches = aFullName === query;
+                const bFullNameMatches = bFullName === query;
+                const aUsernameMatches = aUsername === query;
+                const bUsernameMatches = bUsername === query;
 
-                const aFullNameIncludes = aFullName.includes(searchTerm);
-                const bFullNameIncludes = bFullName.includes(searchTerm);
-                const aUsernameIncludes = aUsername.includes(searchTerm);
-                const bUsernameIncludes = bUsername.includes(searchTerm);
+                const aFullNameStarts = aFullName.startsWith(query);
+                const bFullNameStarts = bFullName.startsWith(query);
+                const aUsernameStarts = aUsername.startsWith(query);
+                const bUsernameStarts = bUsername.startsWith(query);
 
+                const aFullNameIncludes = aFullName.includes(query);
+                const bFullNameIncludes = bFullName.includes(query);
+                const aUsernameIncludes = aUsername.includes(query);
+                const bUsernameIncludes = bUsername.includes(query);
+
+                // Priority 1: Exact match (full name or username)
+                if (aFullNameMatches && !bFullNameMatches) return -1;
+                if (!aFullNameMatches && bFullNameMatches) return 1;
+                if (aUsernameMatches && !bUsernameMatches) return -1;
+                if (!aUsernameMatches && bUsernameMatches) return 1;
+
+                // Priority 2: Starts with (full name or username)
                 if (aFullNameStarts && !bFullNameStarts) return -1;
                 if (!aFullNameStarts && bFullNameStarts) return 1;
+                if (aUsernameStarts && !bUsernameStarts) return -1;
+                if (!aUsernameStarts && bUsernameStarts) return 1;
 
-                if (aFullNameStarts === bFullNameStarts) {
-                    if (aUsernameStarts && !bUsernameStarts) return -1;
-                    if (!aUsernameStarts && bUsernameStarts) return 1;
-                }
-
+                // Priority 3: Full name contains
                 if (aFullNameIncludes && !bFullNameIncludes) return -1;
                 if (!aFullNameIncludes && bFullNameIncludes) return 1;
 
+                // Priority 4: Username contains
                 if (aUsernameIncludes && !bUsernameIncludes) return -1;
                 if (!aUsernameIncludes && bUsernameIncludes) return 1;
 
+                // Default: alphabetical by full name if no other criteria differentiate
                 return aFullName.localeCompare(bFullName);
             });
 
@@ -302,8 +288,25 @@
         memberSearchInput.addEventListener('input', filterAndSortMembers);
 
         // Initial render of all members when the page loads
-        const sortedInitialMembers = [...allMembers].sort((a, b) => a.fullName.localeCompare(b.fullName));
+        // Sort initially by full name
+        const sortedInitialMembers = [...allMembers].sort((a, b) => {
+            const aFullName = a.fullName || '';
+            const bFullName = b.fullName || '';
+            return aFullName.localeCompare(bFullName);
+        });
         renderMembers(sortedInitialMembers);
+
+        // Auto-hide flash messages (copied from base.html for consistency)
+        const flashMessages = document.querySelectorAll('.flash');
+        flashMessages.forEach(function(flash) {
+            setTimeout(function() {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s ease-out';
+                setTimeout(function() {
+                    flash.remove();
+                }, 500);
+            }, 5000);
+        });
     });
 </script>
 {% endblock %}
