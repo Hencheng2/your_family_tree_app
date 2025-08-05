@@ -1805,7 +1805,7 @@ def member_detail(member_id):
         member=member_profile,
         age=age,
         can_message_member=can_message_member,
-        temp_video=temp_video_data_for_video
+        temp_video=temp_video_data_for_template
     )
 
 
