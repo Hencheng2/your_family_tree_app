@@ -26,10 +26,11 @@
             <div class="p-6 flex flex-col flex-grow">
                 <h3 class="text-3xl font-bold text-white mb-2">Racing Game</h3>
                 <p class="text-gray-400 mb-4 flex-grow">Challenge your friends to a thrilling race or practice your skills in single-player mode. A game of speed and precision.</p>
-                <div class="flex flex-col sm:flex-row gap-4 mt-auto">
-                    <!-- Links to the game routes -->
-                    <a href="{{ url_for('play_game', game_name='racing', mode='solo') }}" class="w-full sm:w-1/2 bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Single Player</a>
-                    <a href="{{ url_for('invite_game', game_name='racing') }}" class="w-full sm:w-1/2 bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Invite a Friend</a>
+                <div class="flex flex-col space-y-3 mt-auto">
+                    <!-- Link to play solo racing game -->
+                    <a href="{{ url_for('play_game', game_name='racing', mode='solo') }}" class="block w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Play Solo</a>
+                    <!-- Link to invite a friend for racing game (will redirect to members list with game pre-selected) -->
+                    <a href="{{ url_for('list_members', invite_game='racing') }}" class="block w-full bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Invite a Friend</a>
                 </div>
             </div>
         </div>
@@ -44,10 +45,11 @@
             <div class="p-6 flex flex-col flex-grow">
                 <h3 class="text-3xl font-bold text-white mb-2">Chess</h3>
                 <p class="text-gray-400 mb-4 flex-grow">A timeless game of strategy and tactics. Compete against a friend or the computer to checkmate your opponent's king.</p>
-                <div class="flex flex-col sm:flex-row gap-4 mt-auto">
-                    <!-- Links to the game routes -->
-                    <a href="{{ url_for('play_game', game_name='chess', mode='solo') }}" class="w-full sm:w-1/2 bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Single Player</a>
-                    <a href="{{ url_for('invite_game', game_name='chess') }}" class="w-full sm:w-1/2 bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Invite a Friend</a>
+                <div class="flex flex-col space-y-3 mt-auto">
+                    <!-- Link to play solo chess game -->
+                    <a href="{{ url_for('play_game', game_name='chess', mode='solo') }}" class="block w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Play Solo</a>
+                    <!-- Link to invite a friend for chess game -->
+                    <a href="{{ url_for('list_members', invite_game='chess') }}" class="block w-full bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Invite a Friend</a>
                 </div>
             </div>
         </div>
@@ -62,10 +64,11 @@
             <div class="p-6 flex flex-col flex-grow">
                 <h3 class="text-3xl font-bold text-white mb-2">Board Games</h3>
                 <p class="text-gray-400 mb-4 flex-grow">A collection of various classic and modern board games for you and your family to enjoy together.</p>
-                <div class="flex flex-col sm:flex-row gap-4 mt-auto">
-                    <!-- Links to the game routes -->
-                    <a href="{{ url_for('play_game', game_name='board_games', mode='solo') }}" class="w-full sm:w-1/2 bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Single Player</a>
-                    <a href="{{ url_for('invite_game', game_name='board_games') }}" class="w-full sm:w-1/2 bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Invite a Friend</a>
+                <div class="flex flex-col space-y-3 mt-auto">
+                    <!-- Link to play solo board games -->
+                    <a href="{{ url_for('play_game', game_name='board_games', mode='solo') }}" class="block w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Play Solo</a>
+                    <!-- Link to invite a friend for board games -->
+                    <a href="{{ url_for('list_members', invite_game='board_games') }}" class="block w-full bg-purple-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-purple-700">Invite a Friend</a>
                 </div>
             </div>
         </div>
@@ -73,5 +76,3 @@
     </div>
 </div>
 {% endblock %}
-
-{% block footer %}{% endblock %}
