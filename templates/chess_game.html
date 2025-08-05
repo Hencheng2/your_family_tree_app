@@ -262,7 +262,7 @@
 
         <h1 class="text-4xl font-extrabold text-blue-500">Chess Game</h1>
 
-        <!-- Loading Overlay -->
+        <!-- Loading Overlay - Initially hidden, only shown for Firebase ops -->
         <div id="loadingOverlay" class="loading-overlay hidden">
             <div class="loading-spinner"></div>
             <p id="loadingMessage" class="mt-4 text-xl">Loading game...</p>
@@ -388,8 +388,11 @@
                 'k': '&#9818;', 'q': '&#9819;', 'r': '&#9820;', 'b': '&#9821;', 'n': '&#9822;', 'p': '&#9823;'  // Black
             };
 
+            // Initial board state (FEN-like 2D array)
+            const INITIAL_BOARD_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
             // --- UI Update Functions ---
-            function showLoading(message = 'Loading game...') {
+            function showLoading(message = 'Syncing game state...') {
                 loadingMessage.textContent = message;
                 loadingOverlay.classList.remove('hidden');
             }
@@ -524,7 +527,7 @@
                 updateScoreboard();
 
                 // Highlight king in check if applicable
-                const kingPos = findKing(turn === 'w');
+                const kingPos = findKing(turn === 'w', board);
                 if (kingPos && isKingInCheck(board, turn === 'w')) {
                     const kingSquare = boardElement.querySelector(`[data-row="${kingPos.row}"][data-col="${kingPos.col}"]`);
                     if (kingSquare) {
@@ -540,7 +543,7 @@
                 return pieceChar === pieceChar.toUpperCase() ? 'w' : 'b';
             }
 
-            function isPlayersPiece(pieceChar, checkTurn = turn) {
+            function isPlayersPiece(pieceChar, checkTurn) {
                 return (checkTurn === 'w' && pieceChar === pieceChar.toUpperCase()) ||
                        (checkTurn === 'b' && pieceChar === pieceChar.toLowerCase());
             }
@@ -1071,6 +1074,7 @@
                 // Capturing a rook also invalidates castling rights
                 // This is a simplified check and might not cover all edge cases perfectly.
                 // A more robust system would track captured pieces more directly.
+                // For now, we'll check if the *target* square was a rook's initial position.
                 if (endRow === 7 && endCol === 7 && getPieceColor(board[7][7]) === 'b' && board[7][7].toLowerCase() === 'r') castlingRights.wK = false;
                 if (endRow === 7 && endCol === 0 && getPieceColor(board[7][0]) === 'b' && board[7][0].toLowerCase() === 'r') castlingRights.wQ = false;
                 if (endRow === 0 && endCol === 7 && getPieceColor(board[0][7]) === 'w' && board[0][7].toLowerCase() === 'r') castlingRights.bK = false;
@@ -1150,13 +1154,13 @@
                         selectedSquare = null;
                         selectedPiecePos = null;
                         validMoves = [];
-                        if (piece && isPlayersPiece(piece)) {
+                        if (piece && isPlayersPiece(piece, turn)) { // Check if new clicked piece is current player's
                             selectPiece(clickedSquare, row, col);
                         }
                     }
                 } else {
                     // No piece selected, try to select one
-                    if (piece && isPlayersPiece(piece)) {
+                    if (piece && isPlayersPiece(piece, turn)) {
                         console.log("Selecting piece at:", row, col);
                         selectPiece(clickedSquare, row, col);
                     } else {
@@ -1171,6 +1175,9 @@
 
                 console.log("AI is thinking...");
                 showLoading("AI is thinking...");
+
+                // Give a small delay for the loading message to appear
+                await new Promise(resolve => setTimeout(resolve, 300));
 
                 const allLegalMovesForAI = getAllLegalMovesForPlayer(board, 'b');
 
@@ -1209,7 +1216,8 @@
 
             // --- Firebase and Game Initialization ---
             async function initializeFirebaseAndGame() {
-                showLoading();
+                // Show loading only for Firebase operations
+                showLoading(); 
                 try {
                     const app = initializeApp(firebaseConfig);
                     auth = getAuth(app);
@@ -1227,7 +1235,7 @@
                                     console.log("Signed in anonymously:", currentFirebaseUser.uid);
                                 }).catch(error => {
                                     console.error("Anonymous sign-in failed:", error);
-                                    alert("Failed to authenticate with game services. Please refresh the page.");
+                                    alert("Failed to authenticate with game services. You can still play locally, but progress won't be saved.");
                                     hideLoading();
                                 });
                             }
@@ -1236,9 +1244,9 @@
                     });
 
                     if (!currentFirebaseUser) {
-                        console.error("Authentication failed. Cannot initialize game.");
+                        console.error("Authentication failed. Cannot save/load game progress.");
                         hideLoading();
-                        return;
+                        return; // Continue playing locally without Firebase sync
                     }
 
                     const urlParams = new URLSearchParams(window.location.search);
@@ -1272,6 +1280,7 @@
                                     // Spectator mode or invalid player
                                     currentPlayerColor = null;
                                     console.warn("You are not a player in this game. Spectator mode.");
+                                    alert("You are viewing this game as a spectator.");
                                 }
 
                                 renderBoard();
@@ -1287,8 +1296,9 @@
 
                             } else {
                                 console.warn("Game not found or has ended:", gameIdFromUrl);
-                                alert("Game not found or has ended. Starting a new solo game.");
-                                initializeSoloGame(); // Fallback to solo game if multiplayer game not found
+                                alert("Multiplayer game not found or has ended. Please check the invitation link.");
+                                // No fallback to solo game for multiplayer links, as it implies a specific game.
+                                hideLoading();
                             }
                         }, (error) => {
                             console.error("Error listening to game updates:", error);
@@ -1330,10 +1340,10 @@
                         lastMove = data.lastMove || null;
                     } else {
                         console.log("No existing solo AI game found. Creating new one.");
-                        resetGameLocalState(); // Reset local state to initial
+                        // Local state is already reset by DOMContentLoaded, just create doc
                         await updateGameInFirestore(board, turn, gameOver, null); // Create new doc in Firestore
                     }
-                    renderBoard();
+                    renderBoard(); // Render board based on loaded or initial state
                     hideLoading();
 
                     // Set up listener for solo game to react to AI moves
@@ -1357,14 +1367,14 @@
                                 setTimeout(makeAIMove, 500);
                             }
                         } else {
-                            console.warn("Solo game document disappeared. Resetting locally.");
+                            console.warn("Solo game document disappeared. Resetting locally and re-creating.");
                             // This scenario might happen if the doc is manually deleted from console
                             resetGameLocalState();
                             updateGameInFirestore(board, turn, gameOver, null); // Re-create doc
                         }
                     }, (error) => {
                         console.error("Error listening to solo game updates:", error);
-                        alert("Error synchronizing solo game. Please refresh.");
+                        alert("Error synchronizing solo game. You can still play locally, but progress won't be saved.");
                         hideLoading();
                     });
 
@@ -1375,16 +1385,16 @@
 
                 } catch (e) {
                     console.error("Error initializing solo AI game:", e);
-                    alert("Failed to start solo AI game. Please try again.");
+                    alert("Failed to start solo AI game. You can still play locally, but progress won't be saved.");
                     hideLoading();
                 }
             }
 
             // Function to update game state in Firestore
             async function updateGameInFirestore(currentBoardState, currentTurn, currentGameOver, currentWinner) {
-                if (!gameDocRef) {
-                    console.error("gameDocRef is not defined. Cannot update Firestore.");
-                    return;
+                if (!gameDocRef || !db) {
+                    console.warn("Firestore not fully initialized. Game state will not be saved.");
+                    return; // Don't try to save if Firebase isn't ready
                 }
 
                 try {
@@ -1429,14 +1439,13 @@
                     });
                 } catch (e) {
                     console.error("Firestore transaction failed: ", e);
-                    alert("Failed to update game state. Please try again.");
+                    alert("Failed to save game state. You can continue playing, but progress might not be synced.");
                 }
             }
 
             // Function to reset the game to initial state (local only)
             function resetGameLocalState() {
-                const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-                parseFEN(STARTING_FEN);
+                parseFEN(INITIAL_BOARD_FEN);
                 selectedSquare = null;
                 selectedPiecePos = null;
                 validMoves = [];
@@ -1459,8 +1468,9 @@
                     return;
                 }
                 resetGameLocalState();
-                updateGameInFirestore(board, turn, gameOver, null); // Update Firestore to reset the solo game
-                console.log("Solo game reset and updated in Firestore.");
+                // Attempt to update Firestore, but don't block
+                updateGameInFirestore(board, turn, gameOver, null); 
+                console.log("Solo game reset and updated in Firestore (attempted).");
             }
 
             // --- Event Listeners ---
@@ -1479,6 +1489,9 @@
             });
 
             // Initial game setup on DOM ready
+            // 1. Render board instantly
+            resetGameLocalState(); 
+            // 2. Then, initialize Firebase and sync game state in background
             initializeFirebaseAndGame();
 
             // Cleanup on page unload
