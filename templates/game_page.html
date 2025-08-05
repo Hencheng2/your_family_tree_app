@@ -1,418 +1,61 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Game</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chess.js@1.0.0-beta.6/chess.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.css">
-    <script type="module">
-        // Import Firebase modules
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+{% extends 'base.html' %}
 
-        // Polyfill for crypto.randomUUID for older browsers/environments if needed
-        if (typeof crypto.randomUUID === 'undefined') {
-            crypto.randomUUID = () => {
-                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                    return v.toString(16);
-                });
-            };
-        }
+{% block title %}Game Library{% endblock %}
 
-        let game = new Chess();
-        let board = null;
-        let auth = null;
-        let db = null;
-        let currentFirebaseUser = null;
-        let gameId = null;
-        let isMultiplayer = false;
-        let currentPlayerIsWhite = false;
-        let gameDocRef = null;
-        let unsubscribe = null; // To store the Firestore unsubscribe function
-        let isLoading = true;
-
-        // Get Flask-provided config and app ID
-        const firebaseConfig = JSON.parse('{{ firebase_config_json | safe }}');
-        const initialAuthToken = '{{ initial_auth_token | safe }}';
-        const canvasAppId = '{{ canvas_app_id | safe }}';
-        const flaskUserId = '{{ current_user.id | safe }}'; // Get Flask user ID
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-
-        // Function to update UI elements
-        function updateUI() {
-            document.getElementById('status').textContent = getGameStatus();
-            document.getElementById('turn').textContent = `Turn: ${game.turn() === 'w' ? 'White' : 'Black'}`;
-            document.getElementById('white-captures').textContent = `White Captures: ${getCapturedPieces('b').join(', ')}`;
-            document.getElementById('black-captures').textContent = `Black Captures: ${getCapturedPieces('w').join(', ')}`;
-
-            const whitePlayerElem = document.getElementById('white-player');
-            const blackPlayerElem = document.getElementById('black-player');
-
-            if (isMultiplayer) {
-                whitePlayerElem.textContent = `White: ${gameData.playerWhiteName || gameData.playerWhiteId}`;
-                blackPlayerElem.textContent = `Black: ${gameData.playerBlackName || gameData.playerBlackId}`;
-            } else { // Solo AI game
-                whitePlayerElem.textContent = `White: You`;
-                blackPlayerElem.textContent = `Black: AI`;
-            }
-
-            // Show/hide loading spinner
-            const loadingSpinner = document.getElementById('loading-spinner');
-            if (isLoading) {
-                loadingSpinner.classList.remove('hidden');
-            } else {
-                loadingSpinner.classList.add('hidden');
-            }
-        }
-
-        // Function to get captured pieces
-        function getCapturedPieces(color) {
-            const captured = {
-                'p': 0, 'n': 0, 'b': 0, 'r': 0, 'q': 0
-            };
-            const boardPieces = game.board().flat().filter(p => p); // Flatten board and remove nulls
-
-            // Count pieces of the opposite color (captured by 'color')
-            boardPieces.forEach(piece => {
-                if (piece.color !== color) {
-                    captured[piece.type.toLowerCase()]++;
-                }
-            });
-
-            // Count all pieces on the board
-            const initialPieces = {
-                'p': 8, 'n': 2, 'b': 2, 'r': 2, 'q': 1
-            };
-
-            const capturedList = [];
-            for (const type in initialPieces) {
-                const currentCount = captured[type];
-                const initialCount = initialPieces[type];
-                const diff = initialCount - currentCount;
-                for (let i = 0; i < diff; i++) {
-                    capturedList.push(type.toUpperCase()); // Use uppercase for captured pieces
-                }
-            }
-            return capturedList;
-        }
-
-        // Function to get game status
-        function getGameStatus() {
-            if (game.inCheckmate()) {
-                return `Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins!`;
-            } else if (game.inDraw()) {
-                return 'Draw!';
-            } else if (game.inStalemate()) {
-                return 'Stalemate!';
-            } else if (game.inThreefoldRepetition()) {
-                return 'Draw by threefold repetition!';
-            } else if (game.insufficientMaterial()) {
-                return 'Draw by insufficient material!';
-            }
-            return 'Game in progress.';
-        }
-
-        // Function to make AI move (simple random move)
-        function makeAIMove() {
-            const possibleMoves = game.moves({ verbose: true });
-            if (game.gameOver() || possibleMoves.length === 0) {
-                return;
-            }
-
-            const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-            game.move(randomMove);
-            board.position(game.fen());
-            updateGameInFirestore();
-        }
-
-        // Function to handle piece drop
-        function onDrop(source, target) {
-            // Check if it's a multiplayer game and it's not the current player's turn
-            if (isMultiplayer && game.turn() === 'w' && !currentPlayerIsWhite) {
-                return 'snapback'; // Snap back if it's white's turn but current player is black
-            }
-            if (isMultiplayer && game.turn() === 'b' && currentPlayerIsWhite) {
-                return 'snapback'; // Snap back if it's black's turn but current player is white
-            }
-
-            const move = game.move({
-                from: source,
-                to: target,
-                promotion: 'q' // Always promote to queen for simplicity
-            });
-
-            if (move === null) return 'snapback'; // Invalid move
-
-            updateGameInFirestore();
-
-            // If it's a solo AI game and the human just moved, make AI move
-            if (!isMultiplayer && !game.gameOver()) {
-                setTimeout(makeAIMove, 500); // AI moves after a short delay
-            }
-        }
-
-        // Function to update game state in Firestore
-        async function updateGameInFirestore() {
-            if (!gameDocRef) return;
-
-            const boardFen = game.fen();
-            const turn = game.turn();
-            const gameOver = game.gameOver();
-            const winner = gameOver ? (game.turn() === 'w' ? 'Black' : 'White') : null; // Winner is the one who delivered checkmate
-
-            try {
-                await runTransaction(db, async (transaction) => {
-                    const sfDoc = await transaction.get(gameDocRef);
-                    if (!sfDoc.exists) {
-                        throw "Document does not exist!";
-                    }
-
-                    // Update the document with new game state
-                    transaction.update(gameDocRef, {
-                        boardFen: boardFen,
-                        turn: turn,
-                        gameOver: gameOver,
-                        winner: winner,
-                        lastUpdated: serverTimestamp(),
-                        // Add other game state variables if you track them (e.g., captured pieces, move history)
-                    });
-                });
-                console.log("Game state updated in Firestore.");
-                updateUI(); // Update UI immediately after local move
-            } catch (e) {
-                console.error("Transaction failed: ", e);
-                // Revert local game state if transaction fails
-                board.position(game.fen());
-                updateUI();
-                alert("Failed to update game state. Please try again.");
-            }
-        }
-
-        // Function to initialize the board
-        function initBoard() {
-            const config = {
-                draggable: true,
-                position: 'start',
-                onDrop: onDrop,
-                onSnapEnd: () => board.position(game.fen()) // Snap back if invalid move
-            };
-            board = Chessboard('board', config);
-        }
-
-        // Main game initialization function
-        async function initializeGame() {
-            isLoading = true;
-            updateUI(); // Show loading spinner
-
-            const urlParams = new URLSearchParams(window.location.search);
-            gameId = urlParams.get('gameId');
-
-            await new Promise(resolve => {
-                onAuthStateChanged(auth, user => {
-                    if (user) {
-                        currentFirebaseUser = user;
-                        console.log("Firebase user authenticated:", user.uid);
-                    } else {
-                        // Sign in anonymously if no user is logged in (for Canvas environment)
-                        signInAnonymously(auth).then(anonUser => {
-                            currentFirebaseUser = anonUser.user;
-                            console.log("Signed in anonymously:", currentFirebaseUser.uid);
-                        }).catch(error => {
-                            console.error("Anonymous sign-in failed:", error);
-                            alert("Failed to authenticate with game services. Please refresh the page.");
-                        });
-                    }
-                    resolve();
-                });
-            });
-
-            if (!currentFirebaseUser) {
-                alert("Authentication failed. Cannot initialize game.");
-                isLoading = false;
-                updateUI();
-                return;
-            }
-
-            if (gameId) {
-                // Multiplayer game
-                isMultiplayer = true;
-                // Corrected Firestore path
-                gameDocRef = doc(db, `artifacts/${canvasAppId}/games`, gameId);
-                console.log("Attempting to load multiplayer game:", gameId);
-
-                unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        game.load(data.boardFen);
-                        board.position(game.fen());
-                        currentPlayerIsWhite = (data.playerWhiteId === flaskUserId); // Check if current Flask user is white
-                        console.log("Game state updated from Firestore:", data);
-                        isLoading = false;
-                        updateUI();
-                    } else {
-                        alert("Game not found or has ended.");
-                        isLoading = false;
-                        updateUI();
-                        // Optionally redirect back to game hub
-                        window.location.href = '/games';
-                    }
-                }, (error) => {
-                    console.error("Error listening to game updates:", error);
-                    alert("Error synchronizing game. Please refresh.");
-                    isLoading = false;
-                    updateUI();
-                });
-
-            } else {
-                // Solo AI game
-                isMultiplayer = false;
-                gameId = `solo_ai_${crypto.randomUUID()}`; // Generate unique ID for solo game
-                gameDocRef = doc(db, `artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/solo_games`, gameId);
-                currentPlayerIsWhite = true; // Human is always white in solo play
-
-                console.log("Starting new solo AI game:", gameId);
-
-                // Check if a solo game with this ID already exists (e.g., from a previous session)
-                const docSnap = await getDoc(gameDocRef);
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    game.load(data.boardFen);
-                    console.log("Loaded existing solo AI game:", data);
-                } else {
-                    // Initialize new solo game state in Firestore
-                    const initialBoardState = game.fen();
-                    await setDoc(gameDocRef, {
-                        boardFen: initialBoardState,
-                        turn: 'w',
-                        whiteCaptures: 0,
-                        blackCaptures: 0,
-                        gameOver: false,
-                        winner: null,
-                        createdAt: serverTimestamp(),
-                        lastUpdated: serverTimestamp(),
-                        playerWhiteId: flaskUserId, // Store Flask user ID
-                        playerBlackId: 'AI', // Indicate AI opponent
-                        gameType: 'solo_ai',
-                        gameName: 'chess'
-                    });
-                    console.log("Created new solo AI game in Firestore.");
-                }
-                board.position(game.fen());
-                isLoading = false;
-                updateUI();
-
-                // Set up a listener for solo games too, to keep UI in sync if AI moves
-                unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        game.load(data.boardFen);
-                        board.position(game.fen());
-                        updateUI();
-                        // If it's AI's turn and game is not over, make AI move
-                        if (game.turn() === 'b' && !game.gameOver()) {
-                            setTimeout(makeAIMove, 500);
-                        }
-                    }
-                }, (error) => {
-                    console.error("Error listening to solo game updates:", error);
-                    alert("Error synchronizing solo game. Please refresh.");
-                });
-            }
-        }
-
-        // Initialize board when the DOM is ready
-        document.addEventListener('DOMContentLoaded', () => {
-            initBoard();
-            initializeGame();
-
-            // Cleanup on page unload
-            window.addEventListener('beforeunload', () => {
-                if (unsubscribe) {
-                    unsubscribe(); // Unsubscribe from Firestore listener
-                    console.log("Unsubscribed from Firestore game updates.");
-                }
-            });
-        });
-
-        // Reset game button (for solo play or to start new multiplayer)
-        document.getElementById('reset-game').addEventListener('click', async () => {
-            if (!isMultiplayer) { // Only allow reset for solo games
-                game.reset();
-                board.position('start');
-                await setDoc(gameDocRef, {
-                    boardFen: game.fen(),
-                    turn: 'w',
-                    whiteCaptures: 0,
-                    blackCaptures: 0,
-                    gameOver: false,
-                    winner: null,
-                    createdAt: serverTimestamp(),
-                    lastUpdated: serverTimestamp(),
-                    playerWhiteId: flaskUserId,
-                    playerBlackId: 'AI',
-                    gameType: 'solo_ai',
-                    gameName: 'chess'
-                });
-                updateUI();
-                alert("Solo game reset!");
-            } else {
-                alert("You can only reset solo games. For multiplayer, start a new invitation.");
-            }
-        });
-    </script>
-</head>
-<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans">
-
-    <div class="container mx-auto p-6 bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full relative">
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="text-center mb-12 relative">
         <!-- Home Button -->
-        <a href="{{ url_for('home') }}" class="absolute top-4 left-4 text-blue-400 hover:text-blue-200 transition duration-300">
-            <i class="fas fa-home text-2xl"></i>
+        <a href="{{ url_for('home') }}" class="home-button">
+            <i class="fas fa-home"></i> Home
         </a>
+        <h1 class="text-5xl font-extrabold text-blue-500 tracking-tight mb-2">Game Library</h1>
+        <p class="text-lg text-gray-400">Choose a game to play with friends</p>
+    </div>
 
-        <h1 class="text-4xl font-extrabold text-center mb-6 text-blue-500">Chess Game</h1>
-
-        <div id="loading-spinner" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-50 rounded-xl">
-            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
-            <p class="ml-4 text-xl">Loading game...</p>
+    <div class="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        <!-- Racing Game Card -->
+        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
+            <div class="relative h-5 overflow-hidden">
+                <!-- Placeholder for Racing Game Image -->
+                <img src="https://placehold.co/800x400/1e293b/fff?text=Racing+Game" alt="Racing Game" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
+                <div class="absolute bottom-1 left-2 text-white text-lg font-bold">Racing Game</div>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-400 mb-4">Experience the thrill of high-speed racing. Compete against others or challenge yourself on various tracks.</p>
+                <a href="{{ url_for('play_game', game_name='racing') }}" class="block w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-blue-700">Play Racing Game</a>
+            </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <!-- Game Info / Status Column -->
-            <div class="md:col-span-1 flex flex-col space-y-4">
-                <div class="bg-gray-700 p-4 rounded-lg shadow-md">
-                    <h2 class="text-2xl font-semibold mb-2 text-blue-400">Game Status</h2>
-                    <p id="status" class="text-lg mb-1">Loading...</p>
-                    <p id="turn" class="text-lg mb-1">Turn: Loading...</p>
-                    <p id="white-player" class="text-md text-gray-300">White: Loading...</p>
-                    <p id="black-player" class="text-md text-gray-300">Black: Loading...</p>
-                </div>
-
-                <div class="bg-gray-700 p-4 rounded-lg shadow-md">
-                    <h2 class="text-2xl font-semibold mb-2 text-blue-400">Captured Pieces</h2>
-                    <p id="white-captures" class="text-lg">White Captures: </p>
-                    <p id="black-captures" class="text-lg">Black Captures: </p>
-                </div>
-
-                <button id="reset-game" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 transform hover:scale-105">
-                    Reset Solo Game
-                </button>
+        <!-- Chess Game Card -->
+        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
+            <div class="relative h-5 overflow-hidden">
+                <!-- Placeholder for Chess Game Image -->
+                <img src="https://placehold.co/800x400/1e293b/fff?text=Chess" alt="Chess" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
+                <div class="absolute bottom-1 left-2 text-white text-lg font-bold">Chess</div>
             </div>
+            <div class="p-6">
+                <p class="text-gray-400 mb-4">A timeless game of strategy and tactics. Compete against a friend or the computer to checkmate your opponent's king.</p>
+                <!-- This button will now initiate a solo AI game -->
+                <a href="{{ url_for('play_game', game_name='chess') }}" class="block w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-indigo-700">Play Chess (Solo AI)</a>
+            </div>
+        </div>
 
-            <!-- Chessboard Column -->
-            <div class="md:col-span-2 flex justify-center items-center bg-gray-700 rounded-lg shadow-md p-4">
-                <div id="board" class="w-full max-w-md aspect-square"></div>
+        <!-- Board Games Card -->
+        <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
+            <div class="relative h-20 overflow-hidden">
+                <!-- Placeholder for Board Games Image -->
+                <img src="https://placehold.co/800x400/1e293b/fff?text=Board+Games" alt="Board Games" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
+                <div class="absolute bottom-1 left-2 text-white text-lg font-bold">Board Games</div>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-400 mb-4">A collection of various classic and modern board games for you and your family to enjoy together.</p>
+                <a href="{{ url_for('play_game', game_name='board_games') }}" class="block w-full bg-green-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-green-700">Play Board Games</a>
             </div>
         </div>
     </div>
-</body>
-</html>
+</div>
+{% endblock %}
