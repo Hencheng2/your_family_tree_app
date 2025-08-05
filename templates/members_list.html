@@ -33,148 +33,179 @@
         overflow-y: auto; /* THIS MAKES IT SCROLLABLE */
         box-sizing: border-box;
         padding: 20px; /* Padding inside the scrollable area */
-        bottom: 60px; /* Space for the fixed footer */
-    }
-
-    /* Adjust container for smaller screens if needed */
-    @media (max-width: 767.98px) {
-        .members-list-container {
-            padding: 10px; /* Less padding on small screens */
-        }
+        height: calc(100vh - 70px); /* Adjust height to fill remaining viewport */
     }
 
     /* Specific styles for the search bar */
     .search-bar {
-        margin-bottom: 20px;
-        padding: 10px;
-        border-radius: 0.5rem;
-        background-color: var(--card-bg);
-        border: 1px solid var(--card-border);
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        display: flex;
-        align-items: center;
-    }
-    .search-bar input {
-        flex-grow: 1;
-        border: none;
-        background: transparent;
-        color: var(--text-color);
-        outline: none;
-        padding: 5px 10px;
-    }
-    .search-bar input::placeholder {
-        color: var(--text-color);
-        opacity: 0.7;
-    }
-    .search-bar i {
-        color: var(--text-color);
-        margin-right: 10px;
-        opacity: 0.7;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background-color: var(--background-color); /* Match background */
+        padding-bottom: 15px; /* Space below search bar */
+        margin-bottom: 15px; /* Space between search bar and list */
+        border-bottom: 1px solid var(--border-color); /* Subtle separator */
     }
 
     /* Member card styling */
     .member-card {
-        background-color: var(--card-bg);
-        border: 1px solid var(--card-border);
-        border-radius: 0.75rem;
-        padding: 15px;
+        background-color: var(--card-background-color);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
         margin-bottom: 15px;
+        padding: 15px;
         display: flex;
         align-items: center;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s ease-in-out;
     }
+
     .member-card:hover {
         transform: translateY(-3px);
-        box-shadow: 0 6px 15px rgba(0,0,0,0.15);
     }
+
     .member-card img {
         width: 60px;
         height: 60px;
         object-fit: cover;
         border-radius: 50%;
-        margin-right: 15px;
         border: 2px solid var(--primary-color);
+        margin-right: 15px;
     }
+
     .member-info {
         flex-grow: 1;
     }
+
     .member-info h5 {
         margin-bottom: 5px;
         font-weight: 600;
         color: var(--text-color);
     }
+
     .member-info p {
         margin-bottom: 0;
-        color: var(--text-color);
+        color: var(--secondary-text-color);
         font-size: 0.9em;
-        opacity: 0.8;
     }
+
     .member-actions {
         display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-left: 15px;
+        gap: 10px; /* Space between buttons */
     }
+
     .member-actions .btn {
-        padding: 8px 12px;
-        font-size: 0.85em;
-        border-radius: 0.5rem;
-        transition: background-color 0.2s, transform 0.2s;
+        padding: 8px 15px;
+        font-size: 0.9em;
+        border-radius: 8px;
+        transition: background-color 0.2s ease-in-out, transform 0.2s ease-in-out;
     }
-    .member-actions .btn:hover {
+
+    .member-actions .btn-primary {
+        background-color: var(--primary-color);
+        border-color: var(--primary-color);
+    }
+
+    .member-actions .btn-primary:hover {
+        background-color: var(--primary-color-dark);
+        border-color: var(--primary-color-dark);
         transform: translateY(-1px);
     }
 
-    /* Status indicator dot */
-    .status-dot {
-        width: 12px;
-        height: 12px;
-        background-color: #28a745; /* Green for active */
-        border-radius: 50%;
-        position: absolute;
-        bottom: 0;
-        right: 0;
-        border: 2px solid var(--card-bg); /* Border to stand out from profile photo */
+    .member-actions .btn-info {
+        background-color: #17a2b8; /* Bootstrap info blue */
+        border-color: #17a2b8;
+        color: white;
     }
-    .profile-pic-wrapper {
-        position: relative;
-        width: 60px; /* Match img width */
-        height: 60px; /* Match img height */
+
+    .member-actions .btn-info:hover {
+        background-color: #138496;
+        border-color: #138496;
+        transform: translateY(-1px);
+    }
+
+    /* Style for the "Active Status" badge */
+    .active-status-badge {
+        font-size: 0.75em;
+        padding: 3px 8px;
+        border-radius: 5px;
+        background-color: #28a745; /* Green */
+        color: white;
+        margin-left: 10px;
+        vertical-align: middle;
+    }
+
+    /* Dropdown specific styles */
+    .dropdown-menu {
+        background-color: var(--card-background-color);
+        border: 1px solid var(--border-color);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        border-radius: 8px;
+        z-index: 1000; /* Ensure dropdown is on top */
+    }
+
+    .dropdown-item {
+        color: var(--text-color);
+        padding: 10px 15px;
+        transition: background-color 0.2s ease-in-out;
+    }
+
+    .dropdown-item:hover {
+        background-color: var(--primary-color-light);
+        color: white;
+    }
+
+    .dropdown-toggle::after {
+        vertical-align: middle;
     }
 </style>
 
 <div class="members-list-container">
-    <h2 class="mb-4 text-center">Friends and Family</h2>
+    <div class="container">
+        <h2 class="text-center mb-4 text-3xl font-bold text-blue-500">All Members</h2>
 
-    <div class="search-bar">
-        <i class="fas fa-search"></i>
-        <input type="text" id="memberSearch" placeholder="Search by name or username...">
-    </div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="alert-container mb-4">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show flash" role="alert">
+                            {{ message | safe }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
 
-    <div id="membersList">
-        {# Members will be rendered here by JavaScript #}
+        <div class="search-bar mb-4">
+            <input type="text" id="memberSearch" class="form-control p-3 rounded-lg border border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500 focus:border-blue-500" placeholder="Search members by name or username...">
+        </div>
+
+        <div id="membersList" class="grid grid-cols-1 gap-4">
+            <!-- Members will be rendered here by JavaScript -->
+        </div>
     </div>
 </div>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const memberSearchInput = document.getElementById('memberSearch');
-        const membersListContainer = document.getElementById('membersList');
+        // This data is passed from Flask and available globally in the template
+        const allMembers = {{ members | tojson | safe }};
+        const currentUserId = {{ current_user.id | tojson | safe }}; // Get current user's ID
 
-        // This data is passed from Flask (app.py)
-        const allMembers = {{ members | tojson }};
+        const membersListDiv = document.getElementById('membersList');
+        const memberSearchInput = document.getElementById('memberSearch');
 
         function renderMembers(membersToRender) {
-            membersListContainer.innerHTML = ''; // Clear existing members
+            membersListDiv.innerHTML = ''; // Clear existing list
             if (membersToRender.length === 0) {
-                membersListContainer.innerHTML = '<p class="text-center text-muted mt-3">No members found matching your search.</p>';
+                membersListDiv.innerHTML = '<p class="text-center text-gray-400">No members found matching your search.</p>';
                 return;
             }
 
             membersToRender.forEach(member => {
                 const memberCard = document.createElement('div');
-                memberCard.classList.add('member-card');
+                memberCard.className = 'member-card';
 
                 let profilePhotoSrc = member.profilePhotoUrl;
                 if (!profilePhotoSrc) {
@@ -182,47 +213,44 @@
                 }
 
                 memberCard.innerHTML = `
-                    <div class="profile-pic-wrapper">
-                        <img src="${profilePhotoSrc}" alt="${member.fullName} Profile Photo">
-                        ${member.has_active_video ? '<span class="status-dot" title="Has active status"></span>' : ''}
-                    </div>
+                    <img src="${profilePhotoSrc}" alt="${member.fullName} Profile Photo">
                     <div class="member-info">
-                        <h5>${member.fullName}</h5>
-                        <p class="text-muted">${member.association}</p>
-                        ${member.username ? `<p class="text-muted small">@${member.username}</p>` : ''}
+                        <h5>${member.fullName}
+                            ${member.has_active_video ? '<span class="active-status-badge">Active Status</span>' : ''}
+                        </h5>
+                        <p>${member.association}</p>
+                        ${member.username ? `<p class="text-xs text-gray-500">@${member.username}</p>` : ''}
                     </div>
                     <div class="member-actions">
-                        <a href="{{ url_for('member_detail', member_id=0) }}${member.id}" class="btn btn-info btn-sm">View Profile</a>
-                        ${member.isLinkedUser ? `
-                            <a href="{{ url_for('messages_with', other_user_id=0) }}${member.user_id}" class="btn btn-primary btn-sm">Message</a>
-                            ${member.user_id !== {{ current_user.id }} ? `
-                                <div class="dropdown">
-                                    <button class="btn btn-success btn-sm dropdown-toggle" type="button" id="dropdownMenuButton_${member.id}" data-bs-toggle="dropdown" aria-expanded="false">
-                                        Invite to Game
-                                    </button>
-                                    <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton_${member.id}">
-                                        <li>
-                                            <form action="{{ url_for('invite_game', game_name='chess', recipient_id=0) }}${member.user_id}" method="post">
-                                                <button type="submit" class="dropdown-item">Chess</button>
-                                            </form>
-                                        </li>
-                                        <li>
-                                            <form action="{{ url_for('invite_game', game_name='racing', recipient_id=0) }}${member.user_id}" method="post">
-                                                <button type="submit" class="dropdown-item">Racing Game</button>
-                                            </form>
-                                        </li>
-                                        <li>
-                                            <form action="{{ url_for('invite_game', game_name='board_games', recipient_id=0) }}${member.user_id}" method="post">
-                                                <button type="submit" class="dropdown-item">Board Games</button>
-                                            </form>
-                                        </li>
-                                    </ul>
-                                </div>
-                            ` : ''}
+                        <a href="{{ url_for('member_detail', member_id=0) }}${member.id}" class="btn btn-info">View Profile</a>
+                        ${member.user_id && member.user_id != currentUserId ? `
+                            <a href="{{ url_for('messages_with', other_user_id=0) }}${member.user_id}" class="btn btn-primary">Message</a>
+                            <div class="dropdown">
+                                <button class="btn btn-success dropdown-toggle" type="button" id="dropdownMenuButton${member.id}" data-bs-toggle="dropdown" aria-expanded="false">
+                                    Invite to Game
+                                </button>
+                                <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton${member.id}">
+                                    <li>
+                                        <form action="{{ url_for('invite_game', game_name='chess', recipient_id=0) }}${member.user_id}" method="post">
+                                            <button type="submit" class="dropdown-item">Chess</button>
+                                        </form>
+                                    </li>
+                                    <li>
+                                        <form action="{{ url_for('invite_game', game_name='racing', recipient_id=0) }}${member.user_id}" method="post">
+                                            <button type="submit" class="dropdown-item">Racing Game</button>
+                                        </form>
+                                    </li>
+                                    <li>
+                                        <form action="{{ url_for('invite_game', game_name='board_games', recipient_id=0) }}${member.user_id}" method="post">
+                                            <button type="submit" class="dropdown-item">Board Games</button>
+                                        </form>
+                                    </li>
+                                </ul>
+                            </div>
                         ` : ''}
                     </div>
                 `;
-                membersListContainer.appendChild(memberCard);
+                membersListDiv.appendChild(memberCard);
             });
         }
 
@@ -235,17 +263,17 @@
                 return fullName.includes(query) || username.includes(query) || association.includes(query);
             });
 
-            // Sort members based on search query relevance and then alphabetically
+            // Sort logic (prioritize exact matches, then starts with, then contains, then alphabetical)
             filteredMembers.sort((a, b) => {
-                const aFullName = a.fullName ? a.fullName.toLowerCase() : '';
-                const bFullName = b.fullName ? b.fullName.toLowerCase() : '';
-                const aUsername = a.username ? a.username.toLowerCase() : '';
-                const bUsername = b.username ? b.username.toLowerCase() : '';
+                const aFullName = a.fullName || '';
+                const bFullName = b.fullName || '';
+                const aUsername = a.username || '';
+                const bUsername = b.username || '';
 
-                const aFullNameMatches = aFullName === query;
-                const bFullNameMatches = bFullName === query;
-                const aUsernameMatches = aUsername === query;
-                const bUsernameMatches = bUsername === query;
+                const aFullNameExact = aFullName === query;
+                const bFullNameExact = bFullName === query;
+                const aUsernameExact = aUsername === query;
+                const bUsernameExact = bUsername === query;
 
                 const aFullNameStarts = aFullName.startsWith(query);
                 const bFullNameStarts = bFullName.startsWith(query);
@@ -257,13 +285,13 @@
                 const aUsernameIncludes = aUsername.includes(query);
                 const bUsernameIncludes = bUsername.includes(query);
 
-                // Priority 1: Exact match (full name or username)
-                if (aFullNameMatches && !bFullNameMatches) return -1;
-                if (!aFullNameMatches && bFullNameMatches) return 1;
-                if (aUsernameMatches && !bUsernameMatches) return -1;
-                if (!aUsernameMatches && bUsernameMatches) return 1;
+                // Priority 1: Exact match on full name or username
+                if (aFullNameExact && !bFullNameExact) return -1;
+                if (!aFullNameExact && bFullNameExact) return 1;
+                if (aUsernameExact && !bUsernameExact) return -1;
+                if (!aUsernameExact && bUsernameExact) return 1;
 
-                // Priority 2: Starts with (full name or username)
+                // Priority 2: Starts with on full name or username
                 if (aFullNameStarts && !bFullNameStarts) return -1;
                 if (!aFullNameStarts && bFullNameStarts) return 1;
                 if (aUsernameStarts && !bUsernameStarts) return -1;
