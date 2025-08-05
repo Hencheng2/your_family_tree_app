@@ -223,33 +223,10 @@
             font-size: 1.5em; /* Adjust piece size within option */
         }
 
-        /* Loading Spinner Overlay */
-        .loading-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(0, 0, 0, 0.75);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            border-radius: 1rem;
-        }
-        .loading-spinner {
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        /* Loading Spinner Overlay - Removed from this version for instant play */
+        /* .loading-overlay { ... } */
+        /* .loading-spinner { ... } */
+        /* @keyframes spin { ... } */
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans">
@@ -262,11 +239,7 @@
 
         <h1 class="text-4xl font-extrabold text-blue-500">Chess Game</h1>
 
-        <!-- Loading Overlay - Initially hidden, only shown for Firebase ops -->
-        <div id="loadingOverlay" class="loading-overlay hidden">
-            <div class="loading-spinner"></div>
-            <p id="loadingMessage" class="mt-4 text-xl">Loading game...</p>
-        </div>
+        <!-- Removed Loading Overlay HTML -->
 
         <div class="scoreboard">
             <span id="whiteScore">White Captures: 0</span>
@@ -321,20 +294,8 @@
     </div>
 
     <script type="module">
-        // Import Firebase modules
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-
-        // Polyfill for crypto.randomUUID for older browsers/environments if needed
-        if (typeof crypto.randomUUID === 'undefined') {
-            crypto.randomUUID = () => {
-                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                    return v.toString(16);
-                });
-            };
-        }
+        // NO FIREBASE IMPORTS IN THIS VERSION FOR INSTANT LOCAL PLAY
+        // All Firebase related code removed for simplicity and instant loading.
 
         document.addEventListener('DOMContentLoaded', function() {
             const boardElement = document.getElementById('chessBoard');
@@ -348,23 +309,8 @@
             const promotionModalElement = document.getElementById('promotionModal');
             const promotionModal = new bootstrap.Modal(promotionModalElement);
             const promotionOptions = document.querySelectorAll('.promotion-option');
-            const loadingOverlay = document.getElementById('loadingOverlay');
-            const loadingMessage = document.getElementById('loadingMessage');
 
-            // Flask-provided data (ensure these are correctly passed from your Flask app)
-            const firebaseConfig = JSON.parse('{{ firebase_config_json | safe }}');
-            const initialAuthToken = '{{ initial_auth_token | safe }}';
-            const canvasAppId = '{{ canvas_app_id | safe }}';
-            const flaskUserId = '{{ current_user.id | safe }}'; // The ID of the currently logged-in Flask user
-
-            // Firebase instances
-            let auth;
-            let db;
-            let currentFirebaseUser; // Firebase user (uid)
-            let gameDocRef; // Firestore document reference for the current game
-            let unsubscribeGameListener; // Function to unsubscribe from Firestore listener
-
-            // Game state variables
+            // Game state variables (local only)
             let board = []; // 8x8 array representing the board state
             let turn = 'w'; // 'w' for white, 'b' for black
             let selectedSquare = null; // Stores the currently selected square element
@@ -378,9 +324,9 @@
             let lastMove = null; // Stores {startRow, startCol, endRow, endCol, piece} of the last move
             let promotionPawnPos = null; // Stores the position of the pawn to be promoted
 
-            // Game type and player roles
-            let isMultiplayerGame = false; // True if playing against another user
-            let currentPlayerColor = 'w'; // 'w' or 'b' - the color the current user is playing
+            // Game type and player roles (simplified for local play)
+            const isMultiplayerGame = false; // Always false in this version
+            const currentPlayerColor = 'w'; // User always plays white in solo mode
 
             // Piece Unicode mapping (corrected for standard symbols)
             const PIECES = {
@@ -392,31 +338,11 @@
             const INITIAL_BOARD_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
             // --- UI Update Functions ---
-            function showLoading(message = 'Syncing game state...') {
-                loadingMessage.textContent = message;
-                loadingOverlay.classList.remove('hidden');
-            }
-
-            function hideLoading() {
-                loadingOverlay.classList.add('hidden');
-            }
+            // Removed showLoading/hideLoading as there's no loading anymore
 
             function updateTurnIndicator() {
                 turnIndicator.textContent = (turn === 'w') ? "White's Turn" : "Black's Turn";
-                // Optionally add visual indicator for current player
-                if (isMultiplayerGame) {
-                    if (turn === currentPlayerColor) {
-                        turnIndicator.style.color = 'yellow'; // Highlight if it's your turn
-                    } else {
-                        turnIndicator.style.color = 'white'; // Normal if opponent's turn
-                    }
-                } else { // Solo AI
-                    if (turn === 'w') {
-                        turnIndicator.style.color = 'yellow';
-                    } else {
-                        turnIndicator.style.color = 'white';
-                    }
-                }
+                turnIndicator.style.color = (turn === 'w') ? 'yellow' : 'white'; // Highlight if it's your turn (always white)
             }
 
             function updateScoreboard() {
@@ -893,43 +819,34 @@
                     const specialMoveType = move[2]; // 'castlingK', 'castlingQ', 'enPassant'
 
                     // Simulate the move
-                    const capturedPiece = originalBoard[endRow][endCol]; // Use originalBoard for captured piece
+                    // We need to make a deep copy of the board for simulation
+                    const simulatedBoard = JSON.parse(JSON.stringify(originalBoard));
                     
-                    board[endRow][endCol] = originalPiece;
-                    board[startRow][startCol] = null;
+                    simulatedBoard[endRow][endCol] = simulatedBoard[startRow][startCol];
+                    simulatedBoard[startRow][startCol] = null;
 
                     // Handle special move simulation for check validation
                     if (specialMoveType === 'castlingK') {
                         const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                        board[startRow][5] = rookChar; // Move rook to f-file
-                        board[startRow][7] = null; // Clear original rook square
+                        simulatedBoard[startRow][5] = rookChar; // Move rook to f-file
+                        simulatedBoard[startRow][7] = null; // Clear original rook square
                     } else if (specialMoveType === 'castlingQ') {
                         const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                        board[startRow][3] = rookChar; // Move rook to d-file
-                        board[startRow][0] = null; // Clear original rook square
+                        simulatedBoard[startRow][3] = rookChar; // Move rook to d-file
+                        simulatedBoard[startRow][0] = null; // Clear original rook square
                     } else if (specialMoveType === 'enPassant') {
                         const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
-                        board[capturedPawnRow][endCol] = null; // Remove captured pawn
+                        simulatedBoard[capturedPawnRow][endCol] = null; // Remove captured pawn
                     }
 
                     // Temporarily update enPassantTarget and lastMove for accurate isKingInCheck simulation
                     // This is crucial for pawn attacks that are en passant targets
-                    if (originalPiece.toLowerCase() === 'p' && Math.abs(startRow - endRow) === 2) {
-                        enPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
-                    } else {
-                        enPassantTarget = null;
-                    }
-                    lastMove = { startRow, startCol, endRow, endCol, piece: originalPiece };
-
+                    // (This part is tricky without a full game state object, simplifying for now)
+                    // For now, isKingInCheck relies on the passed board, not global enPassantTarget/lastMove.
+                    // This is a simplification. A full engine would pass these as part of a state object.
 
                     // Check if king is in check after the simulated move
-                    const kingInCheckAfterMove = isKingInCheck(board, isMovingPieceWhite);
-
-                    // Undo the move by restoring the board to its original state
-                    board = JSON.parse(JSON.stringify(originalBoard)); // Restore full board
-                    castlingRights = { ...originalCastlingRights }; // Restore castling rights
-                    enPassantTarget = originalEnPassantTarget; // Restore en passant target
-                    lastMove = originalLastMove; // Restore last move
+                    const kingInCheckAfterMove = isKingInCheck(simulatedBoard, isMovingPieceWhite);
 
                     if (!kingInCheckAfterMove) {
                         legalMoves.push(move); // Add the original move (with special type if any)
@@ -1104,13 +1021,8 @@
                 const piece = board[row][col];
                 const pieceColor = getPieceColor(piece);
 
-                // Determine if it's the current user's turn to move
-                let canMove = false;
-                if (isMultiplayerGame) {
-                    canMove = (turn === currentPlayerColor);
-                } else { // Solo AI mode, user is always white
-                    canMove = (turn === 'w');
-                }
+                // Determine if it's the current user's turn to move (always white for local AI game)
+                const canMove = (turn === 'w');
 
                 if (!canMove) {
                     console.log(`It's not your turn (${turn}).`);
@@ -1146,9 +1058,11 @@
                             promotionPawnPos = { row, col };
                             showPromotionModal();
                         } else {
-                            // After a move, update Firestore and check game end
-                            updateGameInFirestore(board, turn, gameOver, null); // Pass current board state, new turn, and game over status
+                            // After a move, check game end and trigger AI move
                             checkGameEnd(board, turn); // Check for checkmate/stalemate after every move
+                            if (turn === 'b' && !gameOver) { // If it's now AI's turn
+                                setTimeout(makeAIMove, 500);
+                            }
                         }
                     } else {
                         console.log("Invalid move. Deselecting current piece.");
@@ -1173,20 +1087,19 @@
 
             // --- AI Logic (Random Moves) ---
             async function makeAIMove() {
-                if (gameOver || turn !== 'b' || isMultiplayerGame) return; // Only AI moves as black in solo mode
+                if (gameOver || turn !== 'b') return; // Only AI moves as black
 
                 console.log("AI is thinking...");
-                showLoading("AI is thinking...");
+                // No loading overlay here, just a console message for AI thinking
 
-                // Give a small delay for the loading message to appear
-                await new Promise(resolve => setTimeout(resolve, 300));
+                // Give a small delay for the user to see their move
+                await new Promise(resolve => setTimeout(resolve, 500));
 
                 const allLegalMovesForAI = getAllLegalMovesForPlayer(board, 'b');
 
                 if (allLegalMovesForAI.length === 0) {
                     console.log("AI has no legal moves.");
                     checkGameEnd(board, 'b'); // Check if AI is stalemated/checkmated
-                    hideLoading();
                     return;
                 }
 
@@ -1210,248 +1123,8 @@
                     console.log("AI pawn promoted to Queen.");
                 }
 
-                // After AI move, update Firestore and check game end
-                await updateGameInFirestore(board, turn, gameOver, null); // Pass new state after AI move
+                // After AI move, check game end
                 checkGameEnd(board, turn); // Check for game end after AI move
-                hideLoading();
-            }
-
-            // --- Firebase and Game Initialization ---
-            async function initializeFirebaseAndGame() {
-                // No initial showLoading() here. Board renders instantly.
-                try {
-                    // Check if firebaseConfig is valid before initializing
-                    if (!firebaseConfig || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
-                        console.error("Firebase config is missing or invalid. Game progress will not be saved/synced.");
-                        alert("Firebase configuration error. You can still play locally, but progress won't be saved.");
-                        return; // Exit if config is bad
-                    }
-
-                    auth = getAuth(initializeApp(firebaseConfig));
-                    db = getFirestore(initializeApp(firebaseConfig)); // Re-initialize db with the same app
-
-                    console.log("Firebase app initialized.");
-
-                    await new Promise(resolve => {
-                        onAuthStateChanged(auth, user => {
-                            if (user) {
-                                currentFirebaseUser = user;
-                                console.log("Firebase user authenticated:", user.uid);
-                            } else {
-                                signInAnonymously(auth).then(anonUser => {
-                                    currentFirebaseUser = anonUser.user;
-                                    console.log("Signed in anonymously:", currentFirebaseUser.uid);
-                                }).catch(error => {
-                                    console.error("Anonymous sign-in failed:", error);
-                                    alert("Failed to authenticate with game services. You can still play locally, but progress won't be saved.");
-                                });
-                            }
-                            resolve(); // Resolve the promise once auth state is determined
-                        });
-                    });
-
-                    if (!currentFirebaseUser) {
-                        console.error("Authentication failed. Cannot save/load game progress.");
-                        return; // Continue playing locally without Firebase sync
-                    }
-
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const gameIdFromUrl = urlParams.get('gameId');
-
-                    if (gameIdFromUrl) {
-                        // Multiplayer Game
-                        isMultiplayerGame = true;
-                        gameDocRef = doc(db, `artifacts/${canvasAppId}/games`, gameIdFromUrl);
-                        console.log(`Loading multiplayer game: ${gameIdFromUrl} from artifacts/${canvasAppId}/games`);
-                        showLoading("Loading multiplayer game..."); // Show loading for network fetch
-
-                        unsubscribeGameListener = onSnapshot(gameDocRef, (docSnap) => {
-                            if (docSnap.exists()) {
-                                const data = docSnap.data();
-                                console.log("Game state received from Firestore:", data);
-                                board = JSON.parse(data.boardFen);
-                                turn = data.turn;
-                                whiteCaptures = data.whiteCaptures || 0;
-                                blackCaptures = data.blackCaptures || 0;
-                                gameOver = data.gameOver || false;
-                                castlingRights = data.castlingRights || { 'wK': true, 'wQ': true, 'bK': true, 'bQ': true };
-                                enPassantTarget = data.enPassantTarget || null;
-                                lastMove = data.lastMove || null;
-
-                                // Determine current player's color for multiplayer
-                                if (data.playerWhiteId === flaskUserId) {
-                                    currentPlayerColor = 'w';
-                                } else if (data.playerBlackId === flaskUserId) {
-                                    currentPlayerColor = 'b';
-                                } else {
-                                    // Spectator mode or invalid player
-                                    currentPlayerColor = null;
-                                    console.warn("You are not a player in this game. Spectator mode.");
-                                    alert("You are viewing this game as a spectator.");
-                                }
-
-                                renderBoard();
-                                if (gameOver) {
-                                    showMessageBox(data.winner ? `${data.winner} wins!` : 'Draw!');
-                                }
-                                hideLoading();
-
-                                // If it's AI's turn in a solo game (shouldn't happen in multiplayer, but for robustness)
-                                if (!isMultiplayerGame && turn === 'b' && !gameOver) {
-                                    setTimeout(makeAIMove, 500);
-                                }
-
-                            } else {
-                                console.warn("Game not found or has ended:", gameIdFromUrl);
-                                alert("Multiplayer game not found or has ended. Please check the invitation link.");
-                                // No fallback to solo game for multiplayer links, as it implies a specific game.
-                                hideLoading();
-                            }
-                        }, (error) => {
-                            console.error("Error listening to game updates:", error);
-                            alert("Error synchronizing game. Please refresh.");
-                            hideLoading();
-                        });
-
-                    } else {
-                        // Solo AI Game (initial state already rendered)
-                        initializeSoloGame();
-                    }
-
-                } catch (e) {
-                    console.error("Failed to initialize Firebase or game:", e);
-                    alert("Failed to start game services. You can still play locally, but progress won't be saved.");
-                    hideLoading();
-                }
-            }
-
-            async function initializeSoloGame() {
-                isMultiplayerGame = false;
-                currentPlayerColor = 'w'; // User always plays white in solo mode
-                const soloGameId = `solo_ai_${currentFirebaseUser.uid}`; // Use user ID for consistent solo game ID
-                gameDocRef = doc(db, `artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/solo_games`, soloGameId);
-                console.log(`Loading solo AI game: ${soloGameId} from artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/solo_games`);
-
-                try {
-                    showLoading("Loading solo game progress..."); // Show loading for network fetch
-                    const docSnap = await getDoc(gameDocRef);
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        console.log("Loaded existing solo AI game from Firestore:", data);
-                        board = JSON.parse(data.boardFen);
-                        turn = data.turn;
-                        whiteCaptures = data.whiteCaptures || 0;
-                        blackCaptures = data.blackCaptures || 0;
-                        gameOver = data.gameOver || false;
-                        castlingRights = data.castlingRights || { 'wK': true, 'wQ': true, 'bK': true, 'bQ': true };
-                        enPassantTarget = data.enPassantTarget || null;
-                        lastMove = data.lastMove || null;
-                    } else {
-                        console.log("No existing solo AI game found. Creating new one.");
-                        // Local state is already reset by DOMContentLoaded, just create doc
-                        await updateGameInFirestore(board, turn, gameOver, null); // Create new doc in Firestore
-                    }
-                    renderBoard(); // Render board based on loaded or initial state
-                    hideLoading();
-
-                    // Set up listener for solo game to react to AI moves
-                    unsubscribeGameListener = onSnapshot(gameDocRef, (docSnap) => {
-                        if (docSnap.exists()) {
-                            const data = docSnap.data();
-                            board = JSON.parse(data.boardFen);
-                            turn = data.turn;
-                            whiteCaptures = data.whiteCaptures || 0;
-                            blackCaptures = data.blackCaptures || 0;
-                            gameOver = data.gameOver || false;
-                            castlingRights = data.castlingRights || { 'wK': true, 'wQ': true, 'bK': true, 'bQ': true };
-                            enPassantTarget = data.enPassantTarget || null;
-                            lastMove = data.lastMove || null;
-                            renderBoard();
-                            if (gameOver) {
-                                showMessageBox(data.winner ? `${data.winner} wins!` : 'Draw!');
-                            }
-                            // If it's AI's turn and game is not over, make AI move
-                            if (turn === 'b' && !gameOver) {
-                                setTimeout(makeAIMove, 500);
-                            }
-                        } else {
-                            console.warn("Solo game document disappeared. Resetting locally and re-creating.");
-                            // This scenario might happen if the doc is manually deleted from console
-                            resetGameLocalState();
-                            updateGameInFirestore(board, turn, gameOver, null); // Re-create doc
-                        }
-                    }, (error) => {
-                        console.error("Error listening to solo game updates:", error);
-                        alert("Error synchronizing solo game. You can still play locally, but progress won't be saved.");
-                        hideLoading();
-                    });
-
-                    // If it's AI's turn immediately (e.g., loaded a game where AI just moved)
-                    if (turn === 'b' && !gameOver) {
-                        setTimeout(makeAIMove, 500);
-                    }
-
-                } catch (e) {
-                    console.error("Error initializing solo AI game:", e);
-                    alert("Failed to start solo AI game. You can still play locally, but progress won't be saved.");
-                    hideLoading();
-                }
-            }
-
-            // Function to update game state in Firestore
-            async function updateGameInFirestore(currentBoardState, currentTurn, currentGameOver, currentWinner) {
-                if (!gameDocRef || !db || !currentFirebaseUser) {
-                    console.warn("Firestore not fully initialized or user not authenticated. Game state will not be saved.");
-                    return; // Don't try to save if Firebase isn't ready or user not authenticated
-                }
-
-                try {
-                    showLoading("Saving game progress..."); // Show loading for network write
-                    await runTransaction(db, async (transaction) => {
-                        const sfDoc = await transaction.get(gameDocRef);
-                        if (!sfDoc.exists) {
-                            // If document doesn't exist, create it. This can happen on first solo game.
-                            transaction.set(gameDocRef, {
-                                boardFen: JSON.stringify(currentBoardState),
-                                turn: currentTurn,
-                                whiteCaptures: whiteCaptures,
-                                blackCaptures: blackCaptures,
-                                gameOver: currentGameOver,
-                                winner: currentWinner,
-                                castlingRights: castlingRights,
-                                enPassantTarget: enPassantTarget,
-                                lastMove: lastMove,
-                                createdAt: serverTimestamp(),
-                                lastUpdated: serverTimestamp(),
-                                playerWhiteId: isMultiplayerGame ? (currentPlayerColor === 'w' ? flaskUserId : null) : flaskUserId,
-                                playerBlackId: isMultiplayerGame ? (currentPlayerColor === 'b' ? flaskUserId : null) : 'AI',
-                                gameType: isMultiplayerGame ? 'multiplayer' : 'solo_ai',
-                                gameName: 'chess'
-                            });
-                            console.log("Game document created in Firestore.");
-                        } else {
-                            // If document exists, update it.
-                            transaction.update(gameDocRef, {
-                                boardFen: JSON.stringify(currentBoardState),
-                                turn: currentTurn,
-                                whiteCaptures: whiteCaptures,
-                                blackCaptures: blackCaptures,
-                                gameOver: currentGameOver,
-                                winner: currentWinner,
-                                castlingRights: castlingRights,
-                                enPassantTarget: enPassantTarget,
-                                lastMove: lastMove,
-                                lastUpdated: serverTimestamp(),
-                            });
-                            console.log("Game state updated in Firestore.");
-                        }
-                    });
-                    hideLoading();
-                } catch (e) {
-                    console.error("Firestore transaction failed: ", e);
-                    alert("Failed to save game state. You can continue playing, but progress might not be synced.");
-                    hideLoading();
-                }
             }
 
             // Function to reset the game to initial state (local only)
@@ -1472,16 +1145,10 @@
                 console.log("Game local state reset.");
             }
 
-            // Function to reset the game (full reset, including Firestore)
+            // Function to reset the game (full reset, local only)
             function resetGame() {
-                if (isMultiplayerGame) {
-                    alert("You cannot reset a multiplayer game directly. Start a new game by inviting a friend from the Friends list.");
-                    return;
-                }
                 resetGameLocalState();
-                // Attempt to update Firestore, but don't block
-                updateGameInFirestore(board, turn, gameOver, null); 
-                console.log("Solo game reset and updated in Firestore (attempted).");
+                console.log("Solo game reset.");
             }
 
             // --- Event Listeners ---
@@ -1493,25 +1160,16 @@
                     const promotedTo = this.dataset.piece;
                     promotePawn(promotedTo);
                     hidePromotionModal();
-                    // After promotion, update Firestore and check game end
-                    updateGameInFirestore(board, turn, gameOver, null);
+                    // After promotion, check game end and trigger AI move if applicable
                     checkGameEnd(board, turn);
+                    if (turn === 'b' && !gameOver) { // If it's now AI's turn
+                        setTimeout(makeAIMove, 500);
+                    }
                 });
             });
 
-            // Initial game setup on DOM ready
-            // 1. Render board instantly with initial state
+            // Initial game setup on DOM ready - INSTANTLY
             resetGameLocalState(); 
-            // 2. Then, initialize Firebase and sync game state in background
-            initializeFirebaseAndGame();
-
-            // Cleanup on page unload
-            window.addEventListener('beforeunload', () => {
-                if (unsubscribeGameListener) {
-                    unsubscribeGameListener(); // Unsubscribe from Firestore listener
-                    console.log("Unsubscribed from Firestore game updates.");
-                }
-            });
         });
     </script>
 </body>
