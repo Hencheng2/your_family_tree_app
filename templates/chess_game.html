@@ -1,511 +1,1124 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Game</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- Load Chess.js and Chessboard.js - they will attach to the global window object -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.css">
+{% extends 'base.html' %}
 
-    <!-- React and ReactDOM CDNs -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <!-- Babel for JSX transformation in the browser (for development only) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+{% block title %}Chess Game{% endblock %}
 
-    <style>
-        /* Custom styles for the chessboard to ensure it's visible and centered */
-        #board {
-            width: 100%;
-            max-width: 500px; /* Max width for larger screens */
-            margin: 0 auto; /* Center the board */
-        }
-        .square-55d63 {
-            background-color: #f0d9b5 !important; /* Light squares */
-        }
-        .square-85d47 {
-            background-color: #b58863 !important; /* Dark squares */
-        }
-        .highlight-white {
-            box-shadow: inset 0 0 3px 3px yellow;
-        }
-        .highlight-black {
-            box-shadow: inset 0 0 3px 3px blue;
-        }
-    </style>
-</head>
-<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+{% block content %}
+<style>
+    body {
+        background-color: var(--background-color);
+        color: var(--text-color);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding-top: 70px; /* Space for navbar */
+        padding-bottom: 60px; /* Space for footer */
+        box-sizing: border-box;
+        overflow-y: auto; /* Allow scrolling if content exceeds viewport */
+    }
 
-    <div class="container mx-auto p-6 bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full relative">
-        <!-- Home Button -->
-        <a href="{{ url_for('home') }}" class="absolute top-4 left-4 text-blue-400 hover:text-blue-200 transition duration-300">
-            <i class="fas fa-home text-2xl"></i>
-        </a>
+    .game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        max-width: 90vw;
+        width: 100%;
+        padding: 20px;
+        background-color: var(--card-bg);
+        border-radius: 1rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
 
-        <h1 class="text-4xl font-extrabold text-center mb-6 text-blue-500">Chess Game</h1>
+    .scoreboard {
+        display: flex;
+        justify-content: space-around;
+        width: 100%;
+        max-width: 500px;
+        padding: 15px;
+        background-color: var(--primary-color);
+        color: white;
+        border-radius: 0.75rem;
+        font-weight: bold;
+        font-size: 1.2em;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
 
-        <!-- Root div for React app -->
-        <div id="chess-root"></div>
+    .board-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        max-width: 600px; /* Max width for the board */
+        aspect-ratio: 1 / 1; /* Keep board square */
+        border: 4px solid var(--text-color);
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+        border-radius: 0.5rem;
+        overflow: hidden; /* Ensures rounded corners */
+    }
+
+    .chess-board {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(8, 1fr);
+        width: 100%;
+        height: 100%;
+    }
+
+    .square {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 3.5vw; /* Responsive font size for pieces */
+        cursor: pointer;
+        user-select: none; /* Prevent text selection */
+        transition: background-color 0.1s ease-in-out;
+    }
+
+    /* Chess board colors */
+    .light { background-color: #f0d9b5; color: #b58863; } /* Light wood color */
+    .dark { background-color: #b58863; color: #f0d9b5; } /* Dark wood color */
+
+    /* Highlight colors */
+    .selected { background-color: #ffcc00 !important; } /* Yellow for selected piece */
+    .possible-move { background-color: #88ff88 !important; } /* Green for possible moves */
+    .capture-move { background-color: #ff8888 !important; } /* Red for capture moves */
+    .in-check { background-color: #ff4444 !important; } /* Red for king in check */
+
+
+    /* Piece styling */
+    .piece {
+        font-family: 'Arial Unicode MS', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif; /* Fallback for chess symbols */
+        font-size: 4.5vw; /* Larger for pieces */
+        line-height: 1;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+    }
+    .white-piece { color: #fff; }
+    .black-piece { color: #000; }
+
+    /* Responsive font size for pieces */
+    @media (min-width: 768px) {
+        .square {
+            font-size: 2.5vw;
+        }
+        .piece {
+            font-size: 3.5vw;
+        }
+    }
+    @media (min-width: 1024px) {
+        .square {
+            font-size: 2vw;
+        }
+        .piece {
+            font-size: 2.5vw;
+        }
+    }
+
+    .game-controls {
+        display: flex;
+        gap: 15px;
+        margin-top: 20px;
+    }
+    .game-controls button {
+        padding: 10px 20px;
+        border-radius: 0.5rem;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background-color 0.2s, transform 0.2s;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    .game-controls button:hover {
+        transform: translateY(-2px);
+    }
+    .btn-reset {
+        background-color: #dc3545;
+        color: white;
+    }
+    .btn-reset:hover {
+        background-color: #c82333;
+    }
+    .btn-back {
+        background-color: #6c757d;
+        color: white;
+    }
+    .btn-back:hover {
+        background-color: #5a6268;
+    }
+
+    /* Message box for game end */
+    .message-box {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: var(--card-bg);
+        border: 2px solid var(--primary-color);
+        padding: 30px;
+        border-radius: 1rem;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+        text-align: center;
+        z-index: 1001;
+        font-size: 1.5em;
+        font-weight: bold;
+        color: var(--text-color);
+        display: none; /* Hidden by default */
+    }
+    .message-box button {
+        margin-top: 20px;
+        padding: 10px 25px;
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        border-radius: 0.5rem;
+        cursor: pointer;
+        font-size: 1em;
+        transition: background-color 0.2s, transform 0.2s;
+    }
+    .message-box button:hover {
+        background-color: #368a3a;
+        transform: translateY(-2px);
+    }
+
+    /* Pawn Promotion Modal */
+    .promotion-modal-content {
+        background-color: var(--card-bg);
+        color: var(--text-color);
+        border-radius: 1rem;
+        border: 2px solid var(--primary-color);
+    }
+    .promotion-modal-header {
+        border-bottom: 1px solid var(--card-border);
+    }
+    .promotion-option {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 15px;
+        margin: 5px;
+        border: 1px solid var(--card-border);
+        border-radius: 0.5rem;
+        cursor: pointer;
+        transition: background-color 0.2s, transform 0.2s;
+        font-size: 2em; /* Larger piece symbol */
+        font-weight: bold;
+    }
+    .promotion-option:hover {
+        background-color: var(--nav-link-hover-bg);
+        transform: translateY(-2px);
+    }
+    .promotion-option .piece {
+        font-size: 1.5em; /* Adjust piece size within option */
+    }
+</style>
+
+<div class="game-container">
+    <h1 class="text-4xl font-extrabold text-blue-500">Chess Game</h1>
+
+    <div class="scoreboard">
+        <span id="whiteScore">White Captures: 0</span>
+        <span id="blackScore">Black Captures: 0</span>
+        <span id="turnIndicator">White's Turn</span>
     </div>
 
-    <script type="text/babel">
-        // Import Firebase modules
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+    <div class="board-wrapper">
+        <div id="chessBoard" class="chess-board">
+            <!-- Chess squares will be dynamically generated here -->
+        </div>
+    </div>
 
-        // Access Chess and Chessboard from the global window object
-        const Chess = window.Chess;
-        const Chessboard = window.Chessboard;
+    <div class="game-controls">
+        <button id="resetButton" class="btn-reset">Reset Game</button>
+        <button id="backToLibraryButton" class="btn-back" onclick="window.location.href='{{ url_for('games_hub') }}'">Back to Library</button>
+    </div>
+</div>
 
-        // Polyfill for crypto.randomUUID for older browsers/environments if needed
-        if (typeof crypto.randomUUID === 'undefined') {
-            crypto.randomUUID = () => {
-                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                    return v.toString(16);
-                });
+<!-- Message Box for Checkmate/Stalemate -->
+<div id="messageBox" class="message-box">
+    <p id="messageText"></p>
+    <button id="messageBoxCloseButton">OK</button>
+</div>
+
+<!-- Pawn Promotion Modal -->
+<div class="modal fade" id="promotionModal" tabindex="-1" aria-labelledby="promotionModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content promotion-modal-content">
+      <div class="modal-header promotion-modal-header">
+        <h5 class="modal-title" id="promotionModalLabel">Pawn Promotion</h5>
+      </div>
+      <div class="modal-body">
+        <p class="text-center text-muted">Choose a piece to promote your pawn to:</p>
+        <div class="d-flex justify-content-around mt-3">
+          <div class="promotion-option" data-piece="Q">
+            <span class="piece white-piece">&#9813;</span> <!-- Queen -->
+          </div>
+          <div class="promotion-option" data-piece="R">
+            <span class="piece white-piece">&#9814;</span> <!-- Rook -->
+          </div>
+          <div class="promotion-option" data-piece="B">
+            <span class="piece white-piece">&#9815;</span> <!-- Bishop -->
+          </div>
+          <div class="promotion-option" data-piece="N">
+            <span class="piece white-piece">&#9816;</span> <!-- Knight -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const boardElement = document.getElementById('chessBoard');
+        const turnIndicator = document.getElementById('turnIndicator');
+        const resetButton = document.getElementById('resetButton');
+        const whiteScoreElement = document.getElementById('whiteScore');
+        const blackScoreElement = document.getElementById('blackScore');
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+        const messageBoxCloseButton = document.getElementById('messageBoxCloseButton');
+        const promotionModalElement = document.getElementById('promotionModal');
+        const promotionModal = new bootstrap.Modal(promotionModalElement);
+        const promotionOptions = document.querySelectorAll('.promotion-option');
+
+        // Chess piece unicode characters
+        const PIECES = {
+            'K': '&#9812;', 'Q': '&#9813;', 'R': '&#9814;', 'B': '&#9815;', 'N': '&#9816;', 'P': '&#9817;', // White
+            'k': '&#9818;', 'q': '&#9819;', 'r': '&#9820;', 'b': '&#9821;', 'n': '&#9822;', 'p': '&#9823;'  // Black
+        };
+
+        // Initial FEN string for standard chess starting position
+        const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'; // Corrected FEN: last two fields are halfmove clock and fullmove number
+
+        let board = []; // 8x8 array representing the board state
+        let selectedSquare = null; // Stores the currently selected square element
+        let selectedPiecePos = null; // Stores {row, col} of selected piece
+        let turn = 'w'; // 'w' for white, 'b' for black
+        let whiteCaptures = 0;
+        let blackCaptures = 0;
+        let gameOver = false;
+
+        // Game state variables for special moves
+        let castlingRights = {
+            'wK': true, 'wQ': true, // White King-side, White Queen-side
+            'bK': true, 'bQ': true  // Black King-side, Black Queen-side
+        };
+        let enPassantTarget = null; // Stores {row, col} if an en passant capture is possible
+        let lastMove = null; // Stores {startRow, startCol, endRow, endCol, piece} of the last move
+
+        let promotionPawnPos = null; // Stores the position of the pawn to be promoted
+
+        // Function to parse FEN string and initialize the board
+        function parseFEN(fen) {
+            board = Array(8).fill(null).map(() => Array(8).fill(null));
+            const parts = fen.split(' ');
+            const boardString = parts[0];
+            turn = parts[1]; // 'w' or 'b'
+            
+            // Parse castling rights
+            const castlingString = parts[2];
+            castlingRights = {
+                'wK': castlingString.includes('K'),
+                'wQ': castlingString.includes('Q'),
+                'bK': castlingString.includes('k'),
+                'bQ': castlingString.includes('q')
             };
+
+            // Parse en passant target square
+            const enPassantString = parts[3];
+            if (enPassantString !== '-') {
+                const colChar = enPassantString.charCodeAt(0) - 'a'.charCodeAt(0);
+                const rowNum = parseInt(enPassantString[1], 10);
+                // FEN rows are 1-8, board rows are 0-7 (8 - rowNum)
+                enPassantTarget = { row: 8 - rowNum, col: colChar };
+            } else {
+                enPassantTarget = null;
+            }
+
+            let row = 0;
+            let col = 0;
+            for (let i = 0; i < boardString.length; i++) {
+                const char = boardString[i];
+                if (char === '/') {
+                    row++;
+                    col = 0;
+                } else if (/\d/.test(char)) {
+                    col += parseInt(char, 10);
+                } else {
+                    board[row][col] = char;
+                    col++;
+                }
+            }
+            console.log("FEN Parsed. Board:", board);
+            console.log("Turn:", turn);
+            console.log("Castling Rights:", castlingRights);
+            console.log("En Passant Target:", enPassantTarget);
         }
 
-        function ChessGameApp() {
-            const [game, setGame] = React.useState(null);
-            const boardRef = React.useRef(null); // Use ref to hold chessboard.js instance
-            const [isLoading, setIsLoading] = React.useState(true);
-            const [gameData, setGameData] = React.useState({});
-            const [isMultiplayer, setIsMultiplayer] = React.useState(false);
-            const [currentPlayerIsWhite, setCurrentPlayerIsWhite] = React.useState(false);
-            const gameDocRef = React.useRef(null); // Use ref for Firestore doc reference
-            const unsubscribeRef = React.useRef(null); // Use ref for Firestore unsubscribe function
-            const loadingTimeoutRef = React.useRef(null); // Use ref for loading timeout
+        // Function to render the board based on the board array
+        function renderBoard() {
+            boardElement.innerHTML = '';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const square = document.createElement('div');
+                    square.classList.add('square');
+                    square.classList.add((r + c) % 2 === 0 ? 'light' : 'dark');
+                    square.dataset.row = r;
+                    square.dataset.col = c;
 
-            // Get Flask-provided config and app ID
-            const firebaseConfig = JSON.parse('{{ firebase_config_json | safe }}');
-            const initialAuthToken = '{{ initial_auth_token | safe }}';
-            const canvasAppId = '{{ canvas_app_id | safe }}';
-            const flaskUserId = '{{ current_user.id | safe }}'; // Get Flask user ID
-
-            // Firebase Auth and Firestore instances
-            const authRef = React.useRef(null);
-            const dbRef = React.useRef(null);
-            const currentFirebaseUserRef = React.useRef(null);
-
-            // --- Firebase Initialization and Auth ---
-            React.useEffect(() => {
-                let initializationFailed = false;
-
-                if (!firebaseConfig || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
-                    console.error("Firebase config is missing or invalid.");
-                    alert("Firebase configuration error. Game cannot load.");
-                    setIsLoading(false);
-                    initializationFailed = true;
-                }
-                if (!canvasAppId || canvasAppId === 'default-app-id') {
-                    console.warn("Canvas App ID is missing or default. Firestore paths might be incorrect.");
-                }
-
-                if (!initializationFailed) {
-                    try {
-                        const app = initializeApp(firebaseConfig);
-                        authRef.current = getAuth(app);
-                        dbRef.current = getFirestore(app);
-                        console.log("Firebase app initialized.");
-
-                        onAuthStateChanged(authRef.current, user => {
-                            if (user) {
-                                currentFirebaseUserRef.current = user;
-                                console.log("Firebase user authenticated:", user.uid);
-                                initializeGameLogic(); // Proceed with game logic after auth
-                            } else {
-                                signInAnonymously(authRef.current).then(anonUser => {
-                                    currentFirebaseUserRef.current = anonUser.user;
-                                    console.log("Signed in anonymously:", currentFirebaseUserRef.current.uid);
-                                    initializeGameLogic(); // Proceed with game logic after auth
-                                }).catch(error => {
-                                    console.error("Anonymous sign-in failed:", error);
-                                    alert("Failed to authenticate with game services. Please refresh the page.");
-                                    setIsLoading(false);
-                                    clearTimeout(loadingTimeoutRef.current);
-                                });
-                            }
-                        });
-                    } catch (e) {
-                        console.error("Failed to initialize Firebase app:", e);
-                        alert("Failed to initialize game services. Please refresh the page.");
-                        setIsLoading(false);
+                    const pieceChar = board[r][c];
+                    if (pieceChar) {
+                        const pieceElement = document.createElement('span');
+                        pieceElement.classList.add('piece');
+                        pieceElement.classList.add(pieceChar === pieceChar.toUpperCase() ? 'white-piece' : 'black-piece');
+                        pieceElement.innerHTML = PIECES[pieceChar];
+                        square.appendChild(pieceElement);
                     }
+                    square.addEventListener('click', handleSquareClick);
+                    boardElement.appendChild(square);
                 }
+            }
+            updateTurnIndicator();
+            updateScoreboard();
 
-                // Cleanup on unmount
-                return () => {
-                    if (unsubscribeRef.current) {
-                        unsubscribeRef.current();
-                        console.log("Unsubscribed from Firestore game updates.");
-                    }
-                    if (loadingTimeoutRef.current) {
-                        clearTimeout(loadingTimeoutRef.current);
-                    }
-                };
-            }, []); // Empty dependency array means this runs once on mount
-
-            // --- Game Logic Initialization ---
-            const initializeGameLogic = async () => {
-                if (!currentFirebaseUserRef.current || !dbRef.current) {
-                    console.error("Firebase user or DB not ready for game initialization.");
-                    setIsLoading(false);
-                    return;
+            // Highlight king in check if applicable
+            const kingPos = findKing(turn === 'w');
+            if (kingPos && isKingInCheck(turn === 'w')) {
+                const kingSquare = boardElement.querySelector(`[data-row="${kingPos.row}"][data-col="${kingPos.col}"]`);
+                if (kingSquare) {
+                    kingSquare.classList.add('in-check');
                 }
+            }
+            console.log("Board rendered.");
+        }
 
-                setIsLoading(true);
-                // Set a timeout for loading
-                loadingTimeoutRef.current = setTimeout(() => {
-                    if (isLoading) {
-                        console.error("Game loading timed out.");
-                        setIsLoading(false);
-                        document.getElementById('loading-message').textContent = "Game failed to load. Please check your internet connection, Firebase setup, or try again.";
-                    }
-                }, 15000); // 15 seconds timeout
+        // Function to handle square clicks (piece selection and movement)
+        function handleSquareClick(event) {
+            console.log("Clicked square:", event.currentTarget.dataset.row, event.currentTarget.dataset.col);
+            if (gameOver) {
+                console.log("Game is over, no moves allowed.");
+                return; // Prevent moves if game is over
+            }
 
-                const urlParams = new URLSearchParams(window.location.search);
-                const currentUrlGameId = urlParams.get('gameId');
+            const clickedSquare = event.currentTarget;
+            const row = parseInt(clickedSquare.dataset.row, 10);
+            const col = parseInt(clickedSquare.dataset.col, 10);
+            const piece = board[row][col];
 
-                // Initialize Chess.js game instance
-                if (!game) { // Only create new Chess() if it hasn't been set yet
-                    setGame(new Chess());
-                    console.log("Chess game instance created.");
-                }
+            // Clear previous highlights
+            document.querySelectorAll('.selected, .possible-move, .capture-move, .in-check').forEach(s => {
+                s.classList.remove('selected', 'possible-move', 'capture-move', 'in-check');
+            });
+            renderBoard(); // Re-render to clear highlights and re-apply check highlight if needed
 
-                if (currentUrlGameId) {
-                    // Multiplayer game
-                    setIsMultiplayer(true);
-                    gameDocRef.current = doc(dbRef.current, `artifacts/${canvasAppId}/games`, currentUrlGameId);
-                    console.log("Attempting to load multiplayer game:", currentUrlGameId, "from path:", `artifacts/${canvasAppId}/games/${currentUrlGameId}`);
+            if (selectedPiecePos) {
+                // A piece is already selected, try to move it
+                const prevRow = selectedPiecePos.row;
+                const prevCol = selectedPiecePos.col;
+                console.log("Piece already selected at:", prevRow, prevCol);
 
-                    unsubscribeRef.current = onSnapshot(gameDocRef.current, (docSnap) => {
-                        if (docSnap.exists()) {
-                            const data = docSnap.data();
-                            setGameData(data); // Update React state with game data
-                            game.load(data.boardFen); // Update Chess.js internal state
-                            boardRef.current.position(game.fen()); // Update chessboard UI
+                const legalMoves = getLegalMoves(prevRow, prevCol); // Get legal moves
+                console.log("Legal moves for selected piece:", legalMoves);
+                const isLegalMove = legalMoves.some(move => move[0] === row && move[1] === col);
 
-                            setCurrentPlayerIsWhite(data.playerWhiteId === flaskUserId);
-                            console.log("Game state updated from Firestore:", data);
-
-                            setIsLoading(false);
-                            clearTimeout(loadingTimeoutRef.current);
-
-                            // If it's an AI vs Human game and it's AI's turn, make AI move
-                            if (data.gameType === 'solo_ai' && game.turn() === 'b' && !game.gameOver()) {
-                                setTimeout(makeAIMove, 500);
-                            }
-                        } else {
-                            console.warn("Multiplayer game not found or has ended:", currentUrlGameId);
-                            alert("Game not found or has ended.");
-                            setIsLoading(false);
-                            clearTimeout(loadingTimeoutRef.current);
-                            // Optionally redirect back to game hub
-                            // window.location.href = '/games';
-                        }
-                    }, (error) => {
-                        console.error("Error listening to multiplayer game updates:", error);
-                        alert("Error synchronizing game. Please refresh.");
-                        setIsLoading(false);
-                        clearTimeout(loadingTimeoutRef.current);
-                    });
-
-                } else {
-                    // Solo AI game
-                    setIsMultiplayer(false);
-                    const soloGameId = `solo_ai_${crypto.randomUUID()}`;
-                    gameDocRef.current = doc(dbRef.current, `artifacts/${canvasAppId}/users/${currentFirebaseUserRef.current.uid}/solo_games`, soloGameId);
-                    setCurrentPlayerIsWhite(true); // Human is always white in solo play
-
-                    console.log("Starting new solo AI game:", soloGameId, "from path:", `artifacts/${canvasAppId}/users/${currentFirebaseUserRef.current.uid}/solo_games/${soloGameId}`);
-
-                    try {
-                        const docSnap = await getDoc(gameDocRef.current);
-                        let initialGameData;
-                        if (docSnap.exists()) {
-                            initialGameData = docSnap.data();
-                            game.load(initialGameData.boardFen);
-                            console.log("Loaded existing solo AI game:", initialGameData);
-                        } else {
-                            initialGameData = {
-                                boardFen: game.fen(),
-                                turn: 'w',
-                                whiteCaptures: 0,
-                                blackCaptures: 0,
-                                gameOver: false,
-                                winner: null,
-                                createdAt: serverTimestamp(),
-                                lastUpdated: serverTimestamp(),
-                                playerWhiteId: flaskUserId,
-                                playerBlackId: 'AI',
-                                gameType: 'solo_ai',
-                                gameName: 'chess'
-                            };
-                            await setDoc(gameDocRef.current, initialGameData);
-                            console.log("Created new solo AI game in Firestore.");
-                        }
-                        setGameData(initialGameData); // Set initial game data in state
-                        boardRef.current.position(game.fen());
-                        setIsLoading(false);
-                        clearTimeout(loadingTimeoutRef.current);
-
-                        // Set up a listener for solo games too, to keep UI in sync if AI moves
-                        unsubscribeRef.current = onSnapshot(gameDocRef.current, (docSnap) => {
-                            if (docSnap.exists()) {
-                                const data = docSnap.data();
-                                setGameData(data); // Update gameData from snapshot
-                                game.load(data.boardFen);
-                                boardRef.current.position(game.fen());
-                                // If it's AI's turn and game is not over, make AI move
-                                if (game.turn() === 'b' && !game.gameOver()) {
-                                    setTimeout(makeAIMove, 500);
-                                }
-                            } else {
-                                console.warn("Solo game document not found or deleted:", soloGameId);
-                                alert("Solo game data not found. Starting a new one.");
-                                game.reset(); // Reset board locally
-                                updateGameInFirestore(); // Re-create document
-                            }
-                        }, (error) => {
-                            console.error("Error listening to solo game updates:", error);
-                            alert("Error synchronizing solo game. Please refresh.");
-                            setIsLoading(false);
-                            clearTimeout(loadingTimeoutRef.current);
-                        });
-
-                    } catch (e) {
-                        console.error("Error initializing solo AI game:", e);
-                        alert("Failed to start solo AI game. Please try again.");
-                        setIsLoading(false);
-                        clearTimeout(loadingTimeoutRef.current);
-                    }
-                }
-            };
-
-            // --- Chessboard Initialization (runs once after component mounts) ---
-            React.useEffect(() => {
-                if (Chess && Chessboard && !boardRef.current) { // Ensure libraries are loaded and board isn't already initialized
-                    const config = {
-                        draggable: true,
-                        position: 'start',
-                        onDrop: onDrop,
-                        onSnapEnd: () => {
-                            if (game) boardRef.current.position(game.fen());
-                        }
-                    };
-                    boardRef.current = Chessboard('board', config);
-                    console.log("Chessboard initialized.");
-                }
-            }, [game]); // Re-run if game object changes (e.g., after initial setGame)
-
-
-            // --- Helper Functions ---
-            const getCapturedPieces = React.useCallback((color) => {
-                // This is a placeholder for actual captured pieces logic.
-                // A proper implementation would involve comparing current FEN with a base FEN or tracking moves.
-                return []; // Placeholder
-            }, []);
-
-            const getGameStatus = React.useCallback(() => {
-                if (!game) return 'Loading...';
-                if (game.inCheckmate()) {
-                    return `Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins!`;
-                } else if (game.inDraw()) {
-                    return 'Draw!';
-                } else if (game.inStalemate()) {
-                    return 'Stalemate!';
-                } else if (game.inThreefoldRepetition()) {
-                    return 'Draw by threefold repetition!';
-                } else if (game.insufficientMaterial()) {
-                    return 'Draw by insufficient material!';
-                }
-                return 'Game in progress.';
-            }, [game]);
-
-            const makeAIMove = React.useCallback(() => {
-                if (!game || game.gameOver()) {
-                    console.log("AI: Game over or no possible moves.");
-                    return;
-                }
-
-                const possibleMoves = game.moves({ verbose: true });
-                if (possibleMoves.length === 0) {
-                    return;
-                }
-
-                const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-                console.log("AI making move:", randomMove);
-                game.move(randomMove);
-                boardRef.current.position(game.fen());
-                updateGameInFirestore();
-            }, [game]); // Depend on 'game' object
-
-            const onDrop = React.useCallback((source, target) => {
-                if (!game || !boardRef.current) {
-                    console.error("Game or board not initialized. Cannot make move.");
-                    return 'snapback';
-                }
-
-                const turnColor = game.turn();
-                let playerAssignedColor = null;
-                if (isMultiplayer) {
-                    if (gameData.playerWhiteId === flaskUserId) {
-                        playerAssignedColor = 'w';
-                    } else if (gameData.playerBlackId === flaskUserId) {
-                        playerAssignedColor = 'b';
-                    }
-                } else {
-                    playerAssignedColor = 'w'; // Human is always white in solo play
-                }
-
-                if (playerAssignedColor !== turnColor) {
-                    console.log(`It's ${turnColor}'s turn. You are ${playerAssignedColor}. Invalid move.`);
-                    return 'snapback';
-                }
-
-                const move = game.move({
-                    from: source,
-                    to: target,
-                    promotion: 'q'
-                });
-
-                if (move === null) {
-                    console.log("Invalid move:", source, target);
-                    return 'snapback';
-                }
-
-                console.log("Human player made move:", move);
-                updateGameInFirestore();
-
-                if (!isMultiplayer && !game.gameOver()) {
-                    if (game.turn() === 'b') {
-                        setTimeout(makeAIMove, 500);
-                    }
-                }
-            }, [game, isMultiplayer, gameData, flaskUserId, makeAIMove]); // Dependencies for useCallback
-
-            const updateGameInFirestore = React.useCallback(async () => {
-                if (!gameDocRef.current || !game || !dbRef.current) {
-                    console.error("Firestore refs or game not defined. Cannot update Firestore.");
-                    return;
-                }
-
-                const boardFen = game.fen();
-                const turn = game.turn();
-                const gameOver = game.gameOver();
-                let winner = null;
-                if (gameOver) {
-                    if (game.inCheckmate()) {
-                        winner = game.turn() === 'w' ? 'Black' : 'White';
+                if (isLegalMove) {
+                    console.log("Attempting to move piece from", prevRow, prevCol, "to", row, col);
+                    movePiece(prevRow, prevCol, row, col);
+                    selectedSquare = null; // Deselect after move
+                    selectedPiecePos = null;
+                    // Check for pawn promotion after the move
+                    if (board[row][col] && board[row][col].toLowerCase() === 'p' && (row === 0 || row === 7)) {
+                        console.log("Pawn promotion triggered at", row, col);
+                        promotionPawnPos = { row, col };
+                        showPromotionModal();
                     } else {
-                        winner = 'Draw';
+                        checkGameEnd(); // Check for checkmate/stalemate after every move (unless promoting)
                     }
-                }
-
-                try {
-                    await runTransaction(dbRef.current, async (transaction) => {
-                        const sfDoc = await transaction.get(gameDocRef.current);
-                        if (!sfDoc.exists) {
-                            throw "Game document does not exist for update!";
-                        }
-
-                        transaction.update(gameDocRef.current, {
-                            boardFen: boardFen,
-                            turn: turn,
-                            gameOver: gameOver,
-                            winner: winner,
-                            lastUpdated: serverTimestamp(),
-                        });
-                    });
-                    console.log("Game state updated in Firestore successfully.");
-                } catch (e) {
-                    console.error("Firestore transaction failed: ", e);
-                    if (game && boardRef.current) {
-                        boardRef.current.position(game.fen());
-                    }
-                    alert("Failed to update game state. Please try again.");
-                }
-            }, [game, gameDocRef, dbRef]); // Dependencies for useCallback
-
-            const handleResetGame = React.useCallback(async () => {
-                if (!isMultiplayer) {
-                    if (!game || !boardRef.current || !gameDocRef.current || !dbRef.current || !currentFirebaseUserRef.current) {
-                        console.error("Cannot reset solo game: dependencies not ready.");
-                        return;
-                    }
-                    game.reset();
-                    boardRef.current.position('start');
-                    const resetGameData = {
-                        boardFen: game.fen(),
-                        turn: 'w',
-                        whiteCaptures: 0,
-                        blackCaptures: 0,
-                        gameOver: false,
-                        winner: null,
-                        createdAt: serverTimestamp(),
-                        lastUpdated: serverTimestamp(),
-                        playerWhiteId: flaskUserId,
-                        playerBlackId: 'AI',
-                        gameType: 'solo_ai',
-                        gameName: 'chess'
-                    };
-                    await setDoc(gameDocRef.current, resetGameData);
-                    setGameData(resetGameData); // Update React state
-                    alert("Solo game reset!");
                 } else {
-                    alert("You can only reset solo games. For multiplayer, start a new invitation from the Friends list.");
+                    console.log("Invalid move. Deselecting current piece.");
+                    // Invalid move, deselect current and re-select if a new valid piece is clicked
+                    selectedSquare = null;
+                    selectedPiecePos = null;
+                    if (piece && isPlayersPiece(piece)) {
+                        selectPiece(clickedSquare, row, col);
+                    }
                 }
-            }, [game, isMultiplayer, gameDocRef, dbRef, currentFirebaseUserRef, flaskUserId]); // Dependencies for useCallback
-
-
-            return (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    {/* Loading Spinner */}
-                    {isLoading && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-75 z-50 rounded-xl">
-                            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
-                            <p id="loading-message" className="mt-4 text-xl">Loading game...</p>
-                        </div>
-                    )}
-
-                    {/* Game Info / Status Column */}
-                    <div className="md:col-span-1 flex flex-col space-y-4">
-                        <div className="bg-gray-700 p-4 rounded-lg shadow-md">
-                            <h2 className="text-2xl font-semibold mb-2 text-blue-400">Game Status</h2>
-                            <p id="status" className="text-lg mb-1">{getGameStatus()}</p>
-                            <p id="turn" className="text-lg mb-1">Turn: {game ? (game.turn() === 'w' ? 'White' : 'Black') : 'N/A'}</p>
-                            <p id="white-player" className="text-md text-gray-300">White: {isMultiplayer ? (gameData.playerWhiteId === flaskUserId ? 'You' : (gameData.playerWhiteName || gameData.playerWhiteId)) : 'You'}</p>
-                            <p id="black-player" className="text-md text-gray-300">Black: {isMultiplayer ? (gameData.playerBlackId === flaskUserId ? 'You' : (gameData.playerBlackName || gameData.playerBlackId)) : 'AI'}</p>
-                        </div>
-
-                        <div className="bg-gray-700 p-4 rounded-lg shadow-md">
-                            <h2 className="text-2xl font-semibold mb-2 text-blue-400">Captured Pieces</h2>
-                            <p id="white-captures" className="text-lg">White Captures: {getCapturedPieces('b').join(', ')}</p>
-                            <p id="black-captures" className="text-lg">Black Captures: {getCapturedPieces('w').join(', ')}</p>
-                        </div>
-
-                        <button onClick={handleResetGame} className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 transform hover:scale-105">
-                            Reset Solo Game
-                        </button>
-                    </div>
-
-                    {/* Chessboard Column */}
-                    <div id="chessboard-container" className="md:col-span-2 flex justify-center items-center bg-gray-700 rounded-lg shadow-md p-4">
-                        <div id="board" className="w-full max-w-md aspect-square"></div>
-                    </div>
-                </div>
-            );
+            } else {
+                // No piece selected, try to select one
+                if (piece && isPlayersPiece(piece)) {
+                    console.log("Selecting piece at:", row, col);
+                    selectPiece(clickedSquare, row, col);
+                } else {
+                    console.log("No piece or not player's piece at clicked square.");
+                }
+            }
         }
 
-        // Render the React component
-        ReactDOM.render(<ChessGameApp />, document.getElementById('chess-root'));
-    </script>
-</body>
-</html>
+        // Helper to check if the piece belongs to the current player
+        function isPlayersPiece(pieceChar, checkTurn = turn) {
+            const result = (checkTurn === 'w' && pieceChar === pieceChar.toUpperCase()) ||
+                           (checkTurn === 'b' && pieceChar === pieceChar.toLowerCase());
+            // console.log(`Is '${pieceChar}' player's piece (${checkTurn})?`, result); // Removed for cleaner logs
+            return result;
+        }
+
+        // Helper: Check if target piece is an opponent's piece
+        function isOpponentPiece(targetPieceChar, isMovingPieceWhite) {
+            return (isMovingPieceWhite && targetPieceChar === targetPieceChar.toLowerCase()) ||
+                   (!isMovingPieceWhite && targetPieceChar === targetPieceChar.toUpperCase());
+        }
+
+        // Function to select a piece and highlight possible moves
+        function selectPiece(squareElement, row, col) {
+            selectedSquare = squareElement;
+            selectedPiecePos = { row, col };
+            selectedSquare.classList.add('selected');
+            highlightPossibleMoves(row, col);
+            // console.log("Piece selected at:", row, col); // Removed for cleaner logs
+        }
+
+        // Function to highlight possible moves for the selected piece
+        function highlightPossibleMoves(row, col) {
+            const moves = getLegalMoves(row, col); // Now uses getLegalMoves
+            // console.log("Highlighting moves:", moves); // Removed for cleaner logs
+            moves.forEach(move => {
+                const targetSquare = boardElement.querySelector(`[data-row="${move[0]}"][data-col="${move[1]}"]`);
+                if (targetSquare) {
+                    if (board[move[0]][move[1]]) { // If target square has a piece
+                        targetSquare.classList.add('capture-move');
+                    } else { // If target square is empty
+                        targetSquare.classList.add('possible-move');
+                    }
+                }
+            });
+        }
+
+        // --- Core Chess Logic: Get Pseudo-Legal Moves for Each Piece Type ---
+        // These functions return moves without considering if the king is in check
+        function getPseudoLegalMoves(row, col) {
+            const piece = board[row][col];
+            if (!piece) return [];
+
+            const isWhite = piece === piece.toUpperCase();
+            let moves = [];
+
+            switch (piece.toLowerCase()) {
+                case 'p': moves = getPawnPseudoLegalMoves(row, col, isWhite); break;
+                case 'r': moves = getRookPseudoLegalMoves(row, col); break;
+                case 'n': moves = getKnightPseudoLegalMoves(row, col); break;
+                case 'b': moves = getBishopPseudoLegalMoves(row, col); break;
+                case 'q': moves = getQueenPseudoLegalMoves(row, col); break;
+                case 'k': moves = getKingPseudoLegalMoves(row, col); break;
+                default: moves = [];
+            }
+            // console.log(`Pseudo-legal moves for ${piece} at (${row},${col}):`, moves); // Removed for cleaner logs
+            return moves;
+        }
+
+        function getPawnPseudoLegalMoves(row, col, isWhite) {
+            const moves = [];
+            const direction = isWhite ? -1 : 1; // White moves up (row -1), Black moves down (row +1)
+            const startRow = isWhite ? 6 : 1; // White pawns start on row 6, Black on row 1
+
+            // Single step forward
+            if (isValidBoardPos(row + direction, col) && !board[row + direction][col]) {
+                moves.push([row + direction, col]);
+            }
+
+            // Double step forward (from starting position)
+            if (row === startRow && isValidBoardPos(row + 2 * direction, col) && !board[row + 2 * direction][col] && !board[row + direction][col]) {
+                moves.push([row + 2 * direction, col]);
+            }
+
+            // Captures (diagonal)
+            const captureCols = [col - 1, col + 1];
+            captureCols.forEach(c => {
+                if (isValidBoardPos(row + direction, c)) {
+                    const targetPiece = board[row + direction][c];
+                    if (targetPiece && isOpponentPiece(targetPiece, isWhite)) {
+                        moves.push([row + direction, c]);
+                    }
+                }
+            });
+
+            // En Passant
+            if (enPassantTarget) {
+                // Check if current pawn is on the correct rank for en passant (rank 3 for white, rank 4 for black)
+                const enPassantPawnRow = isWhite ? 3 : 4;
+                if (row === enPassantPawnRow) {
+                    // Check if the en passant target is diagonally adjacent
+                    if (enPassantTarget.row === row + direction && Math.abs(enPassantTarget.col - col) === 1) {
+                        // Check if the captured pawn was actually the last move and moved two squares
+                        if (lastMove && lastMove.piece.toLowerCase() === 'p' &&
+                            Math.abs(lastMove.startRow - lastMove.endRow) === 2 &&
+                            lastMove.endCol === enPassantTarget.col &&
+                            lastMove.endRow === row) { // The captured pawn landed next to current pawn
+                            moves.push([enPassantTarget.row, enPassantTarget.col, 'enPassant']); // Add 'enPassant' flag
+                        }
+                    }
+                }
+            }
+            return moves;
+        }
+
+        function getRookPseudoLegalMoves(row, col) {
+            const moves = [];
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]]; // Right, Left, Down, Up
+            const isWhite = board[row][col] === board[row][col].toUpperCase();
+
+            directions.forEach(dir => {
+                for (let i = 1; i < 8; i++) {
+                    const newRow = row + i * dir[0];
+                    const newCol = col + i * dir[1];
+                    if (!isValidBoardPos(newRow, newCol)) break;
+
+                    const targetPiece = board[newRow][newCol];
+                    if (targetPiece) {
+                        if (isOpponentPiece(targetPiece, isWhite)) {
+                            moves.push([newRow, newCol]);
+                        }
+                        break; // Blocked by any piece (own or opponent)
+                    }
+                    moves.push([newRow, newCol]); // Empty square
+                }
+            });
+            return moves;
+        }
+
+        function getKnightPseudoLegalMoves(row, col) {
+            const moves = [];
+            const knightOffsets = [
+                [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+                [1, -2], [1, 2], [2, -1], [2, 1]
+            ];
+            const isWhite = board[row][col] === board[row][col].toUpperCase();
+
+            knightOffsets.forEach(offset => {
+                const newRow = row + offset[0];
+                const newCol = col + offset[1];
+                if (isValidBoardPos(newRow, newCol)) {
+                    const targetPiece = board[newRow][newCol];
+                    if (!targetPiece || isOpponentPiece(targetPiece, isWhite)) {
+                        moves.push([newRow, newCol]);
+                    }
+                }
+            });
+            return moves;
+        }
+
+        function getBishopPseudoLegalMoves(row, col) {
+            const moves = [];
+            const directions = [[1, 1], [1, -1], [-1, 1], [-1, -1]]; // Down-Right, Down-Left, Up-Right, Up-Left
+            const isWhite = board[row][col] === board[row][col].toUpperCase();
+
+            directions.forEach(dir => {
+                for (let i = 1; i < 8; i++) {
+                    const newRow = row + i * dir[0];
+                    const newCol = col + i * dir[1];
+                    if (!isValidBoardPos(newRow, newCol)) break;
+
+                    const targetPiece = board[newRow][newCol];
+                    if (targetPiece) {
+                        if (isOpponentPiece(targetPiece, isWhite)) {
+                            moves.push([newRow, newCol]);
+                        }
+                        break;
+                    }
+                    moves.push([newRow, newCol]);
+                }
+            });
+            return moves;
+        }
+
+        function getQueenPseudoLegalMoves(row, col) {
+            return getRookPseudoLegalMoves(row, col).concat(getBishopPseudoLegalMoves(row, col));
+        }
+
+        function getKingPseudoLegalMoves(row, col) {
+            const moves = [];
+            const kingOffsets = [
+                [-1, -1], [-1, 0], [-1, 1],
+                [0, -1],           [0, 1],
+                [1, -1], [1, 0], [1, 1]
+            ];
+            const isWhite = board[row][col] === board[row][col].toUpperCase();
+            const currentKingRow = row; // King's current row for castling
+
+            kingOffsets.forEach(offset => {
+                const newRow = row + offset[0];
+                const newCol = col + offset[1];
+                if (isValidBoardPos(newRow, newCol)) {
+                    const targetPiece = board[newRow][newCol];
+                    if (!targetPiece || isOpponentPiece(targetPiece, isWhite)) {
+                        moves.push([newRow, newCol]);
+                    }
+                }
+            });
+
+            // Castling
+            if (!isKingInCheck(isWhite)) {
+                // King-side castling (e.g., e1 to g1 for white, h1 rook to f1)
+                if (isWhite && castlingRights.wK && board[currentKingRow][5] === null && board[currentKingRow][6] === null &&
+                    board[currentKingRow][7] === 'R' && !isSquareAttacked(currentKingRow, 5, !isWhite) && !isSquareAttacked(currentKingRow, 6, !isWhite)) {
+                    moves.push([currentKingRow, 6, 'castlingK']); // Add 'castlingK' flag
+                } else if (!isWhite && castlingRights.bK && board[currentKingRow][5] === null && board[currentKingRow][6] === null &&
+                           board[currentKingRow][7] === 'r' && !isSquareAttacked(currentKingRow, 5, !isWhite) && !isSquareAttacked(currentKingRow, 6, !isWhite)) {
+                    moves.push([currentKingRow, 6, 'castlingK']);
+                }
+
+                // Queen-side castling (e.g., e1 to c1 for white, a1 rook to d1)
+                if (isWhite && castlingRights.wQ && board[currentKingRow][1] === null && board[currentKingRow][2] === null && board[currentKingRow][3] === null &&
+                    board[currentKingRow][0] === 'R' && !isSquareAttacked(currentKingRow, 2, !isWhite) && !isSquareAttacked(currentKingRow, 3, !isWhite)) {
+                    moves.push([currentKingRow, 2, 'castlingQ']); // Add 'castlingQ' flag
+                } else if (!isWhite && castlingRights.bQ && board[currentKingRow][1] === null && board[currentKingRow][2] === null && board[currentKingRow][3] === null &&
+                           board[currentKingRow][0] === 'r' && !isSquareAttacked(currentKingRow, 2, !isWhite) && !isSquareAttacked(currentKingRow, 3, !isWhite)) {
+                    moves.push([currentKingRow, 2, 'castlingQ']);
+                }
+            }
+            return moves;
+        }
+
+        // Helper: Check if coordinates are on the board
+        function isValidBoardPos(row, col) {
+            return row >= 0 && row < 8 && col >= 0 && col < 8;
+        }
+
+        // Helper: Check if target piece is an opponent's piece
+        function isOpponentPiece(targetPieceChar, isMovingPieceWhite) {
+            return (isMovingPieceWhite && targetPieceChar === targetPieceChar.toLowerCase()) ||
+                   (!isMovingPieceWhite && targetPieceChar === targetPieceChar.toUpperCase());
+        }
+
+        // --- Phase 2: Check and Game End Logic ---
+
+        // Find the king's position for a given color
+        function findKing(isWhite) {
+            const kingChar = isWhite ? 'K' : 'k';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (board[r][c] === kingChar) {
+                        return { row: r, col: c };
+                    }
+                }
+            }
+            return null; // Should not happen in a valid game
+        }
+
+        // Check if a specific square is attacked by opponent's pieces
+        function isSquareAttacked(targetRow, targetCol, checkByWhitePieces) {
+            const attackingColor = checkByWhitePieces ? 'w' : 'b'; // Color of pieces that would be attacking
+            // console.log(`Checking if (${targetRow},${targetCol}) is attacked by ${attackingColor === 'w' ? 'White' : 'Black'} pieces.`); // Removed for cleaner logs
+
+            // Helper to check for sliding pieces (Rook, Bishop, Queen)
+            function checkSlidingAttack(r, c, dRow, dCol, pieceTypes) {
+                for (let i = 1; i < 8; i++) {
+                    const currR = r + i * dRow;
+                    const currC = c + i * dCol;
+                    if (!isValidBoardPos(currR, currC)) break;
+                    const piece = board[currR][currC];
+                    if (piece) {
+                        // Check if the piece belongs to the attacking color
+                        if (isPlayersPiece(piece, attackingColor) && pieceTypes.includes(piece.toLowerCase())) {
+                            // console.log(`  Attacked by ${piece} at (${currR},${currC}) (sliding).`); // Removed for cleaner logs
+                            return true;
+                        }
+                        break; // Blocked by any piece (own or opponent)
+                    }
+                }
+                return false;
+            }
+
+            // Check for pawn attacks
+            const pawnDirection = attackingColor === 'w' ? -1 : 1; // White pawns attack "up" (row -1), Black pawns attack "down" (row +1)
+            const pawnAttackOffsets = [[pawnDirection, -1], [pawnDirection, 1]];
+            for (const offset of pawnAttackOffsets) {
+                const r = targetRow + offset[0];
+                const c = targetCol + offset[1];
+                if (isValidBoardPos(r, c)) {
+                    const piece = board[r][c];
+                    if (piece && piece.toLowerCase() === 'p' && isPlayersPiece(piece, attackingColor)) {
+                        // console.log(`  Attacked by pawn ${piece} at (${r},${c}).`); // Removed for cleaner logs
+                        return true;
+                    }
+                }
+            }
+
+            // Check for knight attacks
+            const knightOffsets = [
+                [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+                [1, -2], [1, 2], [2, -1], [2, 1]
+            ];
+            for (const offset of knightOffsets) {
+                const r = targetRow + offset[0];
+                const c = targetCol + offset[1];
+                if (isValidBoardPos(r, c)) {
+                    const piece = board[r][c];
+                    if (piece && piece.toLowerCase() === 'n' && isPlayersPiece(piece, attackingColor)) {
+                        // console.log(`  Attacked by knight ${piece} at (${r},${c}).`); // Removed for cleaner logs
+                        return true;
+                    }
+                }
+            }
+
+            // Check for rook/queen (horizontal/vertical) attacks
+            const rookQueenDirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            for (const dir of rookQueenDirs) {
+                if (checkSlidingAttack(targetRow, targetCol, dir[0], dir[1], ['r', 'q'])) return true;
+            }
+
+            // Check for bishop/queen (diagonal) attacks
+            const bishopQueenDirs = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+            for (const dir of bishopQueenDirs) {
+                if (checkSlidingAttack(targetRow, targetCol, dir[0], dir[1], ['b', 'q'])) return true;
+            }
+
+            // Check for king attacks (adjacent squares)
+            const kingOffsets = [
+                [-1, -1], [-1, 0], [-1, 1],
+                [0, -1],           [0, 1],
+                [1, -1], [1, 0], [1, 1]
+            ];
+            for (const offset of kingOffsets) {
+                const r = targetRow + offset[0];
+                const c = targetCol + offset[1];
+                if (isValidBoardPos(r, c)) {
+                    const piece = board[r][c];
+                    // King can only attack if it's an opponent's king.
+                    // This check is mainly for king-to-king proximity, not capturing.
+                    if (piece && piece.toLowerCase() === 'k' && isPlayersPiece(piece, attackingColor)) {
+                        // console.log(`  Attacked by opponent king ${piece} at (${r},${c}).`); // Removed for cleaner logs
+                        return true;
+                    }
+                }
+            }
+
+            // console.log(`(${targetRow},${targetCol}) is NOT attacked by ${attackingColor === 'w' ? 'White' : 'Black'} pieces.`); // Removed for cleaner logs
+            return false;
+        }
+
+        // Check if the current player's king is in check
+        function isKingInCheck(isWhiteKing) {
+            const kingPos = findKing(isWhiteKing);
+            if (!kingPos) {
+                console.error("King not found for check check!");
+                return false;
+            }
+            // A white king is in check if it's attacked by black pieces.
+            // A black king is in check if it's attacked by white pieces.
+            const inCheck = isSquareAttacked(kingPos.row, kingPos.col, !isWhiteKing); // Check if attacked by opponent's color
+            console.log(`King (${isWhiteKing ? 'White' : 'Black'}) at (${kingPos.row},${kingPos.col}) is in check:`, inCheck);
+            return inCheck;
+        }
+
+        // Get legal moves (pseudo-legal moves that don't leave king in check)
+        function getLegalMoves(startRow, startCol) {
+            const pseudoLegalMoves = getPseudoLegalMoves(startRow, startCol);
+            const legalMoves = [];
+            const originalPiece = board[startRow][startCol];
+            const isMovingPieceWhite = originalPiece === originalPiece.toUpperCase();
+
+            // Store current board state, castling rights, en passant target, last move for simulation
+            const originalBoard = JSON.parse(JSON.stringify(board)); // Deep copy
+            const originalCastlingRights = { ...castlingRights };
+            const originalEnPassantTarget = enPassantTarget;
+            const originalLastMove = lastMove;
+
+            for (const move of pseudoLegalMoves) {
+                const endRow = move[0];
+                const endCol = move[1];
+                const specialMoveType = move[2]; // 'castlingK', 'castlingQ', 'enPassant'
+
+                // Simulate the move
+                const capturedPiece = originalBoard[endRow][endCol]; // Use originalBoard for captured piece
+                
+                board[endRow][endCol] = originalPiece;
+                board[startRow][startCol] = null;
+
+                // Handle special move simulation for check validation
+                if (specialMoveType === 'castlingK') {
+                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                    board[startRow][5] = rookChar; // Move rook to f-file
+                    board[startRow][7] = null; // Clear original rook square
+                } else if (specialMoveType === 'castlingQ') {
+                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                    board[startRow][3] = rookChar; // Move rook to d-file
+                    board[startRow][0] = null; // Clear original rook square
+                } else if (specialMoveType === 'enPassant') {
+                    const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
+                    board[capturedPawnRow][endCol] = null; // Remove captured pawn
+                }
+
+                // Temporarily update enPassantTarget and lastMove for accurate isKingInCheck simulation
+                // This is crucial for pawn attacks that are en passant targets
+                if (originalPiece.toLowerCase() === 'p' && Math.abs(startRow - endRow) === 2) {
+                    enPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
+                } else {
+                    enPassantTarget = null;
+                }
+                lastMove = { startRow, startCol, endRow, endCol, piece: originalPiece };
+
+
+                // Check if king is in check after the simulated move
+                const kingInCheckAfterMove = isKingInCheck(isMovingPieceWhite);
+                // console.log(`Simulating move from (${startRow},${startCol}) to (${endRow},${endCol}). King in check after move:`, kingInCheckAfterMove); // Removed for cleaner logs
+
+                // Undo the move by restoring the board to its original state
+                board = JSON.parse(JSON.stringify(originalBoard)); // Restore full board
+                castlingRights = { ...originalCastlingRights }; // Restore castling rights
+                enPassantTarget = originalEnPassantTarget; // Restore en passant target
+                lastMove = originalLastMove; // Restore last move
+
+                if (!kingInCheckAfterMove) {
+                    legalMoves.push(move); // Add the original move (with special type if any)
+                }
+            }
+            console.log(`Final legal moves for (${startRow},${startCol}):`, legalMoves);
+            return legalMoves;
+        }
+
+        // Check for checkmate or stalemate
+        function checkGameEnd() {
+            const currentPlayerHasLegalMoves = getAllLegalMovesForPlayer(turn).length > 0;
+            const kingInCheck = isKingInCheck(turn === 'w');
+
+            if (!currentPlayerHasLegalMoves) {
+                gameOver = true;
+                if (kingInCheck) {
+                    const winner = (turn === 'w') ? 'Black' : 'White';
+                    showMessageBox(`${winner} wins by Checkmate!`);
+                    console.log(`Game Over: ${winner} wins by Checkmate!`);
+                } else {
+                    showMessageBox("Stalemate! It's a draw.");
+                    console.log("Game Over: Stalemate!");
+                }
+            } else {
+                console.log("Current player has legal moves, game continues.");
+            }
+        }
+
+        // Get all legal moves for ALL pieces of the current player
+        function getAllLegalMovesForPlayer(playerTurn) {
+            const allMoves = [];
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = board[r][c];
+                    if (piece && isPlayersPiece(piece, playerTurn)) {
+                        allMoves.push(...getLegalMoves(r, c));
+                    }
+                }
+            }
+            console.log(`All legal moves for ${playerTurn} player:`, allMoves);
+            return allMoves;
+        }
+
+        // Function to move the piece on the board array and re-render
+        function movePiece(startRow, startCol, endRow, endCol) {
+            const pieceToMove = board[startRow][startCol];
+            const capturedPiece = board[endRow][endCol];
+            const isMovingPieceWhite = pieceToMove === pieceToMove.toUpperCase();
+
+            console.log(`Executing move: ${pieceToMove} from (${startRow},${startCol}) to (${endRow},${endCol})`);
+
+            // Update lastMove for en passant tracking
+            lastMove = { startRow, startCol, endRow, endCol, piece: pieceToMove };
+
+            // Handle captures for scoreboard
+            if (capturedPiece) {
+                if (turn === 'w') {
+                    whiteCaptures++;
+                } else {
+                    blackCaptures++;
+                }
+                console.log(`Captured piece: ${capturedPiece}. White Captures: ${whiteCaptures}, Black Captures: ${blackCaptures}`);
+            }
+
+            // Handle En Passant Capture
+            // An en passant move is identified by a pawn moving to an empty enPassantTarget square
+            if (pieceToMove.toLowerCase() === 'p' && enPassantTarget &&
+                endRow === enPassantTarget.row && endCol === enPassantTarget.col && !capturedPiece) {
+                // Determine captured pawn's actual position (behind the target square)
+                const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
+                board[capturedPawnRow][endCol] = null; // Remove captured pawn
+                if (isMovingPieceWhite) { // White pawn captured black pawn
+                    whiteCaptures++;
+                } else { // Black pawn captured white pawn
+                    blackCaptures++;
+                }
+                console.log(`En Passant capture at (${capturedPawnRow},${endCol}).`);
+            }
+
+            // Handle Castling
+            if (pieceToMove.toLowerCase() === 'k' && Math.abs(startCol - endCol) === 2) {
+                const currentKingRow = startRow; // King's row
+                // King-side castling (e.g., e1 to g1 for white)
+                if (endCol === 6) {
+                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                    board[currentKingRow][5] = rookChar; // Move rook to f-file
+                    board[currentKingRow][7] = null; // Clear original rook square
+                    console.log(`King-side castling. Rook moved from (${currentKingRow},7) to (${currentKingRow},5).`);
+                }
+                // Queen-side castling (e.g., e1 to c1 for white)
+                else if (endCol === 2) {
+                    const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                    board[currentKingRow][3] = rookChar; // Move rook to d-file
+                    board[currentKingRow][0] = null; // Clear original rook square
+                    console.log(`Queen-side castling. Rook moved from (${currentKingRow},0) to (${currentKingRow},3).`);
+                }
+            }
+
+            board[endRow][endCol] = pieceToMove; // Move piece
+            board[startRow][startCol] = null; // Clear starting square
+
+            // Update castling rights based on king and rook moves
+            updateCastlingRights(startRow, startCol, endRow, endCol, pieceToMove);
+
+            // Set en passant target for next turn if pawn moved two squares
+            enPassantTarget = null; // Reset for current turn
+            if (pieceToMove.toLowerCase() === 'p' && Math.abs(startRow - endRow) === 2) {
+                enPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
+                console.log("New en passant target set:", enPassantTarget);
+            }
+            
+            switchTurn();
+            renderBoard(); // Re-render the board after move
+            console.log("Move execution complete. Board state:", board);
+        }
+
+        // Function to update castling rights
+        function updateCastlingRights(startRow, startCol, endRow, endCol, piece) {
+            const isWhite = piece === piece.toUpperCase();
+
+            // King moves invalidate castling rights for that side
+            if (piece.toLowerCase() === 'k') {
+                if (isWhite) {
+                    castlingRights.wK = false;
+                    castlingRights.wQ = false;
+                } else {
+                    castlingRights.bK = false;
+                    castlingRights.bQ = false;
+                }
+                console.log(`King moved. Castling rights updated:`, castlingRights);
+            }
+            // Rook moves invalidate castling rights for that rook's side
+            else if (piece.toLowerCase() === 'r') {
+                if (isWhite) {
+                    if (startRow === 7 && startCol === 7) castlingRights.wK = false; // White King-side rook
+                    if (startRow === 7 && startCol === 0) castlingRights.wQ = false; // White Queen-side rook
+                } else {
+                    if (startRow === 0 && startCol === 7) castlingRights.bK = false; // Black King-side rook
+                    if (startRow === 0 && startCol === 0) castlingRights.bQ = false; // Black Queen-side rook
+                }
+                console.log(`Rook moved. Castling rights updated:`, castlingRights);
+            }
+            // Capturing a rook also invalidates castling rights
+            // This needs to check the *original* piece at the end square, before it's overwritten
+            // This is complex to do perfectly here without a full move history or deeper state.
+            // For simplicity, we'll assume the captured piece check is done on the board *before* the move.
+            // A more robust system would pass the captured piece into this function.
+            // For now, if a rook is captured on its original square, the rights are lost.
+            // This is handled by checking the *end* square's original piece in the `getLegalMoves` simulation,
+            // but for the actual `movePiece` execution, it's simpler to just check if `capturedPiece` was a rook.
+            if (endRow === 7 && endCol === 7 && isOpponentPiece(board[7][7], !isWhite) && board[7][7].toLowerCase() === 'r') castlingRights.wK = false;
+            if (endRow === 7 && endCol === 0 && isOpponentPiece(board[7][0], !isWhite) && board[7][0].toLowerCase() === 'r') castlingRights.wQ = false;
+            if (endRow === 0 && endCol === 7 && isOpponentPiece(board[0][7], !isWhite) && board[0][7].toLowerCase() === 'r') castlingRights.bK = false;
+            if (endRow === 0 && endCol === 0 && isOpponentPiece(board[0][0], !isWhite) && board[0][0].toLowerCase() === 'r') castlingRights.bQ = false;
+        }
+
+
+        // Function to switch turns
+        function switchTurn() {
+            turn = (turn === 'w') ? 'b' : 'w';
+            console.log("Turn switched to:", turn);
+        }
+
+        // Function to update the turn indicator text
+        function updateTurnIndicator() {
+            turnIndicator.textContent = (turn === 'w') ? "White's Turn" : "Black's Turn";
+        }
+
+        // Function to update the scoreboard
+        function updateScoreboard() {
+            whiteScoreElement.textContent = `White Captures: ${whiteCaptures}`;
+            blackScoreElement.textContent = `Black Captures: ${blackCaptures}`;
+        }
+
+        // Function to reset the game
+        function resetGame() {
+            parseFEN(STARTING_FEN);
+            selectedSquare = null;
+            selectedPiecePos = null;
+            whiteCaptures = 0;
+            blackCaptures = 0;
+            turn = 'w'; // Reset turn to white
+            gameOver = false;
+            enPassantTarget = null;
+            lastMove = null;
+            castlingRights = { 'wK': true, 'wQ': true, 'bK': true, 'bQ': true }; // Reset castling rights
+            hideMessageBox(); // Hide message box on reset
+            hidePromotionModal(); // Hide promotion modal on reset
+            renderBoard();
+            console.log("Game reset.");
+        }
+
+        // Message Box functions
+        function showMessageBox(message) {
+            messageText.textContent = message;
+            messageBox.style.display = 'block';
+            console.log("Message Box shown:", message);
+        }
+
+        function hideMessageBox() {
+            messageBox.style.display = 'none';
+            console.log("Message Box hidden.");
+        }
+
+        // Pawn Promotion Modal functions
+        function showPromotionModal() {
+            // Set piece colors in the modal based on current turn
+            const pieceColorClass = turn === 'w' ? 'white-piece' : 'black-piece';
+            promotionOptions.forEach(option => {
+                const span = option.querySelector('.piece');
+                span.classList.remove('white-piece', 'black-piece');
+                span.classList.add(pieceColorClass);
+            });
+            promotionModal.show();
+            console.log("Promotion modal shown.");
+        }
+
+        function hidePromotionModal() {
+            promotionModal.hide();
+            console.log("Promotion modal hidden.");
+        }
+
+        promotionOptions.forEach(option => {
+            option.addEventListener('click', function() {
+                const promotedTo = this.dataset.piece;
+                promotePawn(promotedTo);
+                hidePromotionModal();
+                checkGameEnd(); // Check for game end after promotion
+            });
+        });
+
+        function promotePawn(promotedToPiece) {
+            if (!promotionPawnPos) return;
+
+            const { row, col } = promotionPawnPos;
+            const newPieceChar = turn === 'w' ? promotedToPiece.toUpperCase() : promotedToPiece.toLowerCase();
+            board[row][col] = newPieceChar;
+            promotionPawnPos = null; // Clear promotion state
+            renderBoard(); // Re-render with the new piece
+            console.log(`Pawn at (${row},${col}) promoted to ${newPieceChar}.`);
+        }
+
+
+        // Event listener for reset button
+        resetButton.addEventListener('click', resetGame);
+        messageBoxCloseButton.addEventListener('click', hideMessageBox);
+
+        // Initial game setup
+        resetGame(); // Call reset to set up the initial board and state
+    });
+</script>
+{% endblock %}
