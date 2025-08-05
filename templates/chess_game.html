@@ -9,6 +9,26 @@
     <script src="https://cdn.jsdelivr.net/npm/chess.js@1.0.0-beta.6/chess.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.css">
+    <style>
+        /* Custom styles for the chessboard to ensure it's visible and centered */
+        #board {
+            width: 100%;
+            max-width: 500px; /* Max width for larger screens */
+            margin: 0 auto; /* Center the board */
+        }
+        .square-55d63 {
+            background-color: #f0d9b5 !important; /* Light squares */
+        }
+        .square-85d47 {
+            background-color: #b58863 !important; /* Dark squares */
+        }
+        .highlight-white {
+            box-shadow: inset 0 0 3px 3px yellow;
+        }
+        .highlight-black {
+            box-shadow: inset 0 0 3px 3px blue;
+        }
+    </style>
     <script type="module">
         // Import Firebase modules
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
@@ -32,10 +52,11 @@
         let currentFirebaseUser = null;
         let gameId = null;
         let isMultiplayer = false;
-        let currentPlayerIsWhite = false;
+        let currentPlayerIsWhite = false; // True if the current browser user is the white player
         let gameDocRef = null;
         let unsubscribe = null; // To store the Firestore unsubscribe function
         let isLoading = true;
+        let loadingTimeout = null; // To store the timeout ID
 
         // Get Flask-provided config and app ID
         const firebaseConfig = JSON.parse('{{ firebase_config_json | safe }}');
@@ -43,10 +64,35 @@
         const canvasAppId = '{{ canvas_app_id | safe }}';
         const flaskUserId = '{{ current_user.id | safe }}'; // Get Flask user ID
 
+        console.log("Firebase Config:", firebaseConfig);
+        console.log("Canvas App ID:", canvasAppId);
+        console.log("Flask User ID:", flaskUserId);
+
+        if (!firebaseConfig || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
+            console.error("Firebase config is missing or invalid.");
+            alert("Firebase configuration error. Game cannot load.");
+            isLoading = false;
+            updateUI();
+            return;
+        }
+        if (!canvasAppId || canvasAppId === 'default-app-id') {
+            console.warn("Canvas App ID is missing or default. Firestore paths might be incorrect.");
+            // This might not be a fatal error for local dev, but good to warn.
+        }
+
         // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
+        try {
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            console.log("Firebase app initialized.");
+        } catch (e) {
+            console.error("Failed to initialize Firebase app:", e);
+            alert("Failed to initialize game services. Please refresh the page.");
+            isLoading = false;
+            updateUI();
+            return;
+        }
 
         // Function to update UI elements
         function updateUI() {
@@ -59,8 +105,9 @@
             const blackPlayerElem = document.getElementById('black-player');
 
             if (isMultiplayer) {
-                whitePlayerElem.textContent = `White: ${gameData.playerWhiteName || gameData.playerWhiteId}`;
-                blackPlayerElem.textContent = `Black: ${gameData.playerBlackName || gameData.playerBlackId}`;
+                // In multiplayer, playerWhiteId and playerBlackId are Flask user IDs
+                whitePlayerElem.textContent = `White: ${gameData.playerWhiteId === flaskUserId ? 'You' : (gameData.playerWhiteName || gameData.playerWhiteId)}`;
+                blackPlayerElem.textContent = `Black: ${gameData.playerBlackId === flaskUserId ? 'You' : (gameData.playerBlackName || gameData.playerBlackId)}`;
             } else { // Solo AI game
                 whitePlayerElem.textContent = `White: You`;
                 blackPlayerElem.textContent = `Black: AI`;
@@ -68,43 +115,55 @@
 
             // Show/hide loading spinner
             const loadingSpinner = document.getElementById('loading-spinner');
+            const loadingMessage = document.getElementById('loading-message');
             if (isLoading) {
                 loadingSpinner.classList.remove('hidden');
+                loadingMessage.textContent = "Loading game...";
             } else {
                 loadingSpinner.classList.add('hidden');
+                loadingMessage.textContent = ""; // Clear message
             }
         }
 
         // Function to get captured pieces
         function getCapturedPieces(color) {
-            const captured = {
-                'p': 0, 'n': 0, 'b': 0, 'r': 0, 'q': 0
-            };
-            const boardPieces = game.board().flat().filter(p => p); // Flatten board and remove nulls
+            const initialPiecesCount = { 'p': 8, 'n': 2, 'b': 2, 'r': 2, 'q': 1 };
+            const currentPiecesCount = { 'p': 0, 'n': 0, 'b': 0, 'r': 0, 'q': 0 };
 
-            // Count pieces of the opposite color (captured by 'color')
-            boardPieces.forEach(piece => {
-                if (piece.color !== color) {
-                    captured[piece.type.toLowerCase()]++;
-                }
+            game.board().flat().filter(p => p).forEach(piece => {
+                currentPiecesCount[piece.type.toLowerCase()]++;
             });
 
-            // Count all pieces on the board
-            const initialPieces = {
-                'p': 8, 'n': 2, 'b': 2, 'r': 2, 'q': 1
-            };
-
             const capturedList = [];
-            for (const type in initialPieces) {
-                const currentCount = captured[type];
-                const initialCount = initialPieces[type];
-                const diff = initialCount - currentCount;
-                for (let i = 0; i < diff; i++) {
-                    capturedList.push(type.toUpperCase()); // Use uppercase for captured pieces
-                }
+            for (const type in initialPiecesCount) {
+                const initial = initialPiecesCount[type];
+                const current = currentPiecesCount[type];
+                const capturedCount = initial - current;
+
+                // Check if the piece is of the specified color (meaning it's *not* captured by that color)
+                // This logic is a bit inverted for "captured by".
+                // Let's simplify: if 'color' is 'w', we want pieces that are 'b' and are missing from the board.
+                // If 'color' is 'b', we want pieces that are 'w' and are missing from the board.
+
+                // A more robust way: keep track of pieces that were on the board initially
+                // and compare with current pieces.
+                // For now, let's just count pieces of the *opposite* color that are missing.
+                // This is a simplified approach and might not be perfectly accurate for all chess variants.
+
+                // This logic is for pieces *remaining* on the board.
+                // To get *captured* pieces, we need to compare current board state to initial board state.
+                // A simpler way for Chess.js is to parse the PGN or maintain a separate list.
+                // For now, let's stick to a basic count of pieces that are *not* on the board.
+
+                // This is a placeholder and needs more sophisticated logic for actual captured pieces.
+                // For now, it will just show counts of pieces not currently on the board.
+                // A proper implementation would involve comparing current FEN with a base FEN or tracking moves.
             }
-            return capturedList;
+            // Returning a placeholder for now until proper captured piece logic is implemented.
+            // For a simple visual, we can just show empty or "N/A".
+            return []; // Placeholder
         }
+
 
         // Function to get game status
         function getGameStatus() {
@@ -126,10 +185,12 @@
         function makeAIMove() {
             const possibleMoves = game.moves({ verbose: true });
             if (game.gameOver() || possibleMoves.length === 0) {
+                console.log("AI: Game over or no possible moves.");
                 return;
             }
 
             const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+            console.log("AI making move:", randomMove);
             game.move(randomMove);
             board.position(game.fen());
             updateGameInFirestore();
@@ -137,12 +198,25 @@
 
         // Function to handle piece drop
         function onDrop(source, target) {
-            // Check if it's a multiplayer game and it's not the current player's turn
-            if (isMultiplayer && game.turn() === 'w' && !currentPlayerIsWhite) {
-                return 'snapback'; // Snap back if it's white's turn but current player is black
+            // Determine whose turn it is in the game
+            const turnColor = game.turn(); // 'w' or 'b'
+
+            // Determine which color the current player is assigned (only relevant for multiplayer)
+            let playerAssignedColor = null;
+            if (isMultiplayer) {
+                if (gameData.playerWhiteId === flaskUserId) {
+                    playerAssignedColor = 'w';
+                } else if (gameData.playerBlackId === flaskUserId) {
+                    playerAssignedColor = 'b';
+                }
+            } else { // Solo AI game, human is always white
+                playerAssignedColor = 'w';
             }
-            if (isMultiplayer && game.turn() === 'b' && currentPlayerIsWhite) {
-                return 'snapback'; // Snap back if it's black's turn but current player is white
+
+            // Prevent moves if it's not the current player's turn or if it's an AI's turn
+            if (playerAssignedColor !== turnColor) {
+                console.log(`It's ${turnColor}'s turn. You are ${playerAssignedColor}. Invalid move.`);
+                return 'snapback';
             }
 
             const move = game.move({
@@ -151,30 +225,50 @@
                 promotion: 'q' // Always promote to queen for simplicity
             });
 
-            if (move === null) return 'snapback'; // Invalid move
+            if (move === null) {
+                console.log("Invalid move:", source, target);
+                return 'snapback'; // Invalid move
+            }
 
+            console.log("Human player made move:", move);
             updateGameInFirestore();
 
             // If it's a solo AI game and the human just moved, make AI move
             if (!isMultiplayer && !game.gameOver()) {
-                setTimeout(makeAIMove, 500); // AI moves after a short delay
+                // Ensure it's AI's turn before making a move
+                if (game.turn() === 'b') {
+                    setTimeout(makeAIMove, 500); // AI moves after a short delay
+                }
             }
         }
 
+        // Global variable to store game data fetched from Firestore
+        let gameData = {};
+
         // Function to update game state in Firestore
         async function updateGameInFirestore() {
-            if (!gameDocRef) return;
+            if (!gameDocRef) {
+                console.error("gameDocRef is not defined. Cannot update Firestore.");
+                return;
+            }
 
             const boardFen = game.fen();
             const turn = game.turn();
             const gameOver = game.gameOver();
-            const winner = gameOver ? (game.turn() === 'w' ? 'Black' : 'White') : null; // Winner is the one who delivered checkmate
+            let winner = null;
+            if (gameOver) {
+                if (game.inCheckmate()) {
+                    winner = game.turn() === 'w' ? 'Black' : 'White'; // The player whose turn it is just lost
+                } else {
+                    winner = 'Draw';
+                }
+            }
 
             try {
                 await runTransaction(db, async (transaction) => {
                     const sfDoc = await transaction.get(gameDocRef);
                     if (!sfDoc.exists) {
-                        throw "Document does not exist!";
+                        throw "Game document does not exist for update!";
                     }
 
                     // Update the document with new game state
@@ -184,15 +278,14 @@
                         gameOver: gameOver,
                         winner: winner,
                         lastUpdated: serverTimestamp(),
-                        // Add other game state variables if you track them (e.g., captured pieces, move history)
                     });
                 });
-                console.log("Game state updated in Firestore.");
+                console.log("Game state updated in Firestore successfully.");
                 updateUI(); // Update UI immediately after local move
             } catch (e) {
-                console.error("Transaction failed: ", e);
+                console.error("Firestore transaction failed: ", e);
                 // Revert local game state if transaction fails
-                board.position(game.fen());
+                board.position(game.fen()); // Revert to previous valid state
                 updateUI();
                 alert("Failed to update game state. Please try again.");
             }
@@ -207,39 +300,57 @@
                 onSnapEnd: () => board.position(game.fen()) // Snap back if invalid move
             };
             board = Chessboard('board', config);
+            console.log("Chessboard initialized.");
         }
 
         // Main game initialization function
         async function initializeGame() {
             isLoading = true;
             updateUI(); // Show loading spinner
+            clearTimeout(loadingTimeout); // Clear any previous timeout
+
+            // Set a timeout for loading
+            loadingTimeout = setTimeout(() => {
+                if (isLoading) {
+                    console.error("Game loading timed out.");
+                    isLoading = false;
+                    document.getElementById('loading-message').textContent = "Game failed to load. Please check your internet connection or try again.";
+                    updateUI();
+                }
+            }, 15000); // 15 seconds timeout
 
             const urlParams = new URLSearchParams(window.location.search);
             gameId = urlParams.get('gameId');
 
+            console.log("Starting Firebase authentication...");
             await new Promise(resolve => {
                 onAuthStateChanged(auth, user => {
                     if (user) {
                         currentFirebaseUser = user;
                         console.log("Firebase user authenticated:", user.uid);
+                        resolve();
                     } else {
-                        // Sign in anonymously if no user is logged in (for Canvas environment)
                         signInAnonymously(auth).then(anonUser => {
                             currentFirebaseUser = anonUser.user;
                             console.log("Signed in anonymously:", currentFirebaseUser.uid);
+                            resolve();
                         }).catch(error => {
                             console.error("Anonymous sign-in failed:", error);
                             alert("Failed to authenticate with game services. Please refresh the page.");
+                            isLoading = false;
+                            updateUI();
+                            clearTimeout(loadingTimeout);
+                            resolve(); // Resolve promise even on error to unblock
                         });
                     }
-                    resolve();
                 });
             });
 
             if (!currentFirebaseUser) {
-                alert("Authentication failed. Cannot initialize game.");
+                console.error("Authentication failed. Cannot initialize game.");
                 isLoading = false;
                 updateUI();
+                clearTimeout(loadingTimeout);
                 return;
             }
 
@@ -248,29 +359,43 @@
                 isMultiplayer = true;
                 // Corrected Firestore path
                 gameDocRef = doc(db, `artifacts/${canvasAppId}/games`, gameId);
-                console.log("Attempting to load multiplayer game:", gameId);
+                console.log("Attempting to load multiplayer game:", gameId, "from path:", `artifacts/${canvasAppId}/games/${gameId}`);
 
                 unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
                     if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        game.load(data.boardFen);
+                        gameData = docSnap.data(); // Store fetched game data
+                        console.log("Game state updated from Firestore:", gameData);
+                        game.load(gameData.boardFen);
                         board.position(game.fen());
-                        currentPlayerIsWhite = (data.playerWhiteId === flaskUserId); // Check if current Flask user is white
-                        console.log("Game state updated from Firestore:", data);
+                        
+                        // Determine if current Flask user is white or black player
+                        currentPlayerIsWhite = (gameData.playerWhiteId === flaskUserId);
+                        console.log("Current player is white:", currentPlayerIsWhite);
+
                         isLoading = false;
                         updateUI();
+                        clearTimeout(loadingTimeout);
+
+                        // If it's an AI vs Human game and it's AI's turn, make AI move
+                        if (gameData.gameType === 'solo_ai' && game.turn() === 'b' && !game.gameOver()) {
+                             setTimeout(makeAIMove, 500);
+                        }
+
                     } else {
+                        console.warn("Game not found or has ended:", gameId);
                         alert("Game not found or has ended.");
                         isLoading = false;
                         updateUI();
+                        clearTimeout(loadingTimeout);
                         // Optionally redirect back to game hub
-                        window.location.href = '/games';
+                        // window.location.href = '/games';
                     }
                 }, (error) => {
                     console.error("Error listening to game updates:", error);
                     alert("Error synchronizing game. Please refresh.");
                     isLoading = false;
                     updateUI();
+                    clearTimeout(loadingTimeout);
                 });
 
             } else {
@@ -280,53 +405,73 @@
                 gameDocRef = doc(db, `artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/solo_games`, gameId);
                 currentPlayerIsWhite = true; // Human is always white in solo play
 
-                console.log("Starting new solo AI game:", gameId);
+                console.log("Starting new solo AI game:", gameId, "from path:", `artifacts/${canvasAppId}/users/${currentFirebaseUser.uid}/solo_games/${gameId}`);
 
                 // Check if a solo game with this ID already exists (e.g., from a previous session)
-                const docSnap = await getDoc(gameDocRef);
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    game.load(data.boardFen);
-                    console.log("Loaded existing solo AI game:", data);
-                } else {
-                    // Initialize new solo game state in Firestore
-                    const initialBoardState = game.fen();
-                    await setDoc(gameDocRef, {
-                        boardFen: initialBoardState,
-                        turn: 'w',
-                        whiteCaptures: 0,
-                        blackCaptures: 0,
-                        gameOver: false,
-                        winner: null,
-                        createdAt: serverTimestamp(),
-                        lastUpdated: serverTimestamp(),
-                        playerWhiteId: flaskUserId, // Store Flask user ID
-                        playerBlackId: 'AI', // Indicate AI opponent
-                        gameType: 'solo_ai',
-                        gameName: 'chess'
-                    });
-                    console.log("Created new solo AI game in Firestore.");
-                }
-                board.position(game.fen());
-                isLoading = false;
-                updateUI();
-
-                // Set up a listener for solo games too, to keep UI in sync if AI moves
-                unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
+                try {
+                    const docSnap = await getDoc(gameDocRef);
                     if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        game.load(data.boardFen);
-                        board.position(game.fen());
-                        updateUI();
-                        // If it's AI's turn and game is not over, make AI move
-                        if (game.turn() === 'b' && !game.gameOver()) {
-                            setTimeout(makeAIMove, 500);
-                        }
+                        gameData = docSnap.data(); // Store fetched game data
+                        game.load(gameData.boardFen);
+                        console.log("Loaded existing solo AI game:", gameData);
+                    } else {
+                        // Initialize new solo game state in Firestore
+                        const initialBoardState = game.fen();
+                        gameData = { // Initialize gameData for solo game
+                            boardFen: initialBoardState,
+                            turn: 'w',
+                            whiteCaptures: 0,
+                            blackCaptures: 0,
+                            gameOver: false,
+                            winner: null,
+                            createdAt: serverTimestamp(),
+                            lastUpdated: serverTimestamp(),
+                            playerWhiteId: flaskUserId, // Store Flask user ID
+                            playerBlackId: 'AI', // Indicate AI opponent
+                            gameType: 'solo_ai',
+                            gameName: 'chess'
+                        };
+                        await setDoc(gameDocRef, gameData);
+                        console.log("Created new solo AI game in Firestore.");
                     }
-                }, (error) => {
-                    console.error("Error listening to solo game updates:", error);
-                    alert("Error synchronizing solo game. Please refresh.");
-                });
+                    board.position(game.fen());
+                    isLoading = false;
+                    updateUI();
+                    clearTimeout(loadingTimeout);
+
+                    // Set up a listener for solo games too, to keep UI in sync if AI moves
+                    unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
+                        if (docSnap.exists()) {
+                            gameData = docSnap.data(); // Update gameData from snapshot
+                            game.load(gameData.boardFen);
+                            board.position(game.fen());
+                            updateUI();
+                            // If it's AI's turn and game is not over, make AI move
+                            if (game.turn() === 'b' && !game.gameOver()) {
+                                setTimeout(makeAIMove, 500);
+                            }
+                        } else {
+                            console.warn("Solo game document not found or deleted:", gameId);
+                            // This might happen if user clears data or doc is manually deleted
+                            alert("Solo game data not found. Starting a new one.");
+                            game.reset(); // Reset board locally
+                            updateGameInFirestore(); // Re-create document
+                        }
+                    }, (error) => {
+                        console.error("Error listening to solo game updates:", error);
+                        alert("Error synchronizing solo game. Please refresh.");
+                        isLoading = false;
+                        updateUI();
+                        clearTimeout(loadingTimeout);
+                    });
+
+                } catch (e) {
+                    console.error("Error initializing solo AI game:", e);
+                    alert("Failed to start solo AI game. Please try again.");
+                    isLoading = false;
+                    updateUI();
+                    clearTimeout(loadingTimeout);
+                }
             }
         }
 
@@ -341,6 +486,9 @@
                     unsubscribe(); // Unsubscribe from Firestore listener
                     console.log("Unsubscribed from Firestore game updates.");
                 }
+                if (loadingTimeout) {
+                    clearTimeout(loadingTimeout); // Clear any pending loading timeout
+                }
             });
         });
 
@@ -349,7 +497,7 @@
             if (!isMultiplayer) { // Only allow reset for solo games
                 game.reset();
                 board.position('start');
-                await setDoc(gameDocRef, {
+                gameData = { // Reset gameData for solo game
                     boardFen: game.fen(),
                     turn: 'w',
                     whiteCaptures: 0,
@@ -362,11 +510,12 @@
                     playerBlackId: 'AI',
                     gameType: 'solo_ai',
                     gameName: 'chess'
-                });
+                };
+                await setDoc(gameDocRef, gameData);
                 updateUI();
                 alert("Solo game reset!");
             } else {
-                alert("You can only reset solo games. For multiplayer, start a new invitation.");
+                alert("You can only reset solo games. For multiplayer, start a new invitation from the Friends list.");
             }
         });
     </script>
@@ -381,9 +530,9 @@
 
         <h1 class="text-4xl font-extrabold text-center mb-6 text-blue-500">Chess Game</h1>
 
-        <div id="loading-spinner" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-50 rounded-xl">
+        <div id="loading-spinner" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-75 z-50 rounded-xl">
             <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
-            <p class="ml-4 text-xl">Loading game...</p>
+            <p id="loading-message" class="mt-4 text-xl">Loading game...</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
