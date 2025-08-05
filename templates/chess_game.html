@@ -6,6 +6,7 @@
     <title>Chess Game</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Keep this script tag for chess.js - it makes Chess available globally -->
     <script src="https://cdn.jsdelivr.net/npm/chess.js@1.0.0-beta.6/chess.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessboardjs@0.3.0/dist/chessboard-0.3.0.min.css">
@@ -30,6 +31,9 @@
         }
     </style>
     <script type="module">
+        // Access Chess from the global window object, as it's loaded by the script tag above
+        const Chess = window.Chess;
+
         // Import Firebase modules
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
@@ -77,8 +81,6 @@
             isLoading = false;
             updateUI();
             initializationFailed = true; // Set flag
-            // No return here, just set the flag and let the rest of the script run,
-            // but subsequent functions will check this flag.
         }
         if (!canvasAppId || canvasAppId === 'default-app-id') {
             console.warn("Canvas App ID is missing or default. Firestore paths might be incorrect.");
@@ -565,7 +567,7 @@
             </div>
 
             <!-- Chessboard Column -->
-            <div class="md:col-span-2 flex justify-center items-center bg-gray-700 rounded-lg shadow-md p-4">
+            <div id="chessboard-container" class="md:col-span-2 flex justify-center items-center bg-gray-700 rounded-lg shadow-md p-4">
                 <div id="board" class="w-full max-w-md aspect-square"></div>
             </div>
         </div>
