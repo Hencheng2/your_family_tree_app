@@ -1986,10 +1986,52 @@ def invite_game(game_name, recipient_id):
 
         return redirect(url_for('list_members'))
 
+# NEW ROUTE: For declining a Firestore-based game invitation
+@app.route('/decline_game_invite/<game_id>', methods=['POST'])
+@login_required
+def decline_game_invite(game_id):
+    if not firestore_db:
+        flash('Game services not initialized. Please try again later.', 'danger')
+        return redirect(url_for('inbox'))
 
-# Removed accept_game_invite and decline_game_invite routes
-# These are no longer necessary for Firestore-managed games as the game loads directly.
-# For SQLite-managed games, you would implement explicit acceptance/declining if needed.
+    try:
+        game_doc_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public_games').document(game_id)
+        game_doc = game_doc_ref.get()
+
+        if not game_doc.exists:
+            flash('Game invitation not found.', 'danger')
+            return redirect(url_for('inbox'))
+
+        game_data = game_doc.to_dict()
+        current_user_id_str = str(current_user.id)
+
+        # Ensure the current user is one of the players in this game
+        if current_user_id_str not in [game_data.get('playerWhiteId'), game_data.get('playerBlackId')]:
+            flash('You are not authorized to decline this invitation.', 'danger')
+            return redirect(url_for('inbox'))
+
+        # Determine the other player's ID for potential winner setting
+        other_player_id = None
+        if game_data.get('playerWhiteId') == current_user_id_str:
+            other_player_id = game_data.get('playerBlackId')
+        elif game_data.get('playerBlackId') == current_user_id_str:
+            other_player_id = game_data.get('playerWhiteId')
+
+        # Update the game document to mark it as declined/over
+        game_doc_ref.update({
+            'gameOver': True,
+            'status': 'declined', # Add a status field for clarity
+            'winner': other_player_id, # The other player wins by forfeit
+            'lastUpdated': firestore.SERVER_TIMESTAMP
+        })
+        
+        flash('Game invitation declined.', 'info')
+
+    except Exception as e:
+        print(f"Error declining Firestore game invitation {game_id}: {e}")
+        flash('Failed to decline game invitation. Please try again.', 'danger')
+
+    return redirect(url_for('inbox'))
 
 
 @app.route('/message-member')
