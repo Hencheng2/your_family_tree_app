@@ -2431,52 +2431,32 @@ def inbox():
             'is_unread': is_unread
         })
 
-    # NEW: Fetch pending game invitations for the current user from Firestore
+    # NEW: Fetch pending game invitations for the current user from SQLite
     game_invitations_for_template = []
-    if firestore_db and current_user.is_authenticated:
-        try:
-            # Corrected collection path: 'public_games' instead of 'public/games'
-            games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public_games')
-            
-            # Query for games where current user is playerWhiteId or playerBlackId, game is not over, and it's human vs human
-            pending_games_query = games_ref.where('gameType', '==', 'human_vs_human').where('gameOver', '==', False)
-            
-            all_pending_games = pending_games_query.stream()
-            
-            for game_doc in all_pending_games:
-                game_data = game_doc.to_dict()
-                
-                # Ensure the current user is one of the players in this specific game
-                is_player_white = (game_data.get('playerWhiteId') == str(current_user.id))
-                is_player_black = (game_data.get('playerBlackId') == str(current_user.id))
+    try:
+        pending_invites = db.execute(
+            'SELECT id, sender_id, game_name, timestamp FROM game_invitations WHERE recipient_id = ? AND status = ?',
+            (current_user.id, 'pending')
+        ).fetchall()
 
-                if is_player_white or is_player_black:
-                    # Determine who the sender is (the other player)
-                    sender_user_id = None
-                    if is_player_white: # Current user is white, so black is the sender of the invite
-                        sender_user_id = int(game_data.get('playerBlackId'))
-                    elif is_player_black: # Current user is black, so white is the sender of the invite
-                        sender_user_id = int(game_data.get('playerWhiteId'))
-                    
-                    sender_user_data = db.execute('SELECT username, originalName FROM users WHERE id = ?', (sender_user_id,)).fetchone()
-                    sender_name = sender_user_data['originalName'] if sender_user_data and sender_user_data['originalName'] else sender_user_data['username'] if sender_user_data else "Unknown User"
+        for invite in pending_invites:
+            sender_user_data = db.execute('SELECT username, originalName FROM users WHERE id = ?', (invite['sender_id'],)).fetchone()
+            sender_name = sender_user_data['originalName'] if sender_user_data and sender_user_data['originalName'] else sender_user_data['username'] if sender_user_data else "Unknown User"
 
-                    game_invitations_for_template.append({
-                        'id': game_doc.id, # Use Firestore document ID as the game ID
-                        'game_name': game_data.get('gameName', 'Chess'), # Default to Chess if not specified
-                        'timestamp': game_data.get('createdAt').isoformat() if game_data.get('createdAt') else datetime.utcnow().isoformat(),
-                        'sender': {'username': sender_name, 'originalName': sender_name}, # Simplified sender info for template
-                        'is_player_white': is_player_white, # Indicate if current user is white
-                        'is_player_black': is_player_black  # Indicate if current user is black
-                    })
-        except Exception as e:
-            print(f"Error fetching game invitations from Firestore in inbox: {e}")
+            game_invitations_for_template.append({
+                'id': invite['id'], # SQLite row ID for the invitation
+                'game_name': invite['game_name'],
+                'timestamp': invite['timestamp'],
+                'sender': {'username': sender_name, 'originalName': sender_name} # Simplified sender info
+            })
+    except Exception as e:
+        print(f"Error fetching game invitations from SQLite in inbox: {e}")
 
 
     return render_template('inbox.html',
                            conversations=inbox_conversations,
                            ai_user_id=ai_user_id,
-                           game_invitations=game_invitations_for_template) # NEW: Pass game invitations
+                           game_invitations=game_invitations_for_template) # Pass game invitations
 
 @app.route('/messages/<int:other_user_id>', methods=['GET', 'POST'])
 @login_required
