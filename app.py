@@ -1887,105 +1887,57 @@ def play_game(game_name):
 @login_required
 def invite_game(game_name, recipient_id):
     db_sqlite = get_db() # Use db_sqlite to avoid confusion with firestore_db
-    sender_id = str(current_user.id) # Convert to string for Firestore consistency
-    recipient_id_str = str(recipient_id) # Convert to string for Firestore consistency
+    sender_id = str(current_user.id) # Convert to string for consistency with recipient_id
+    recipient_id_str = str(recipient_id) # Convert to string for consistency
 
     # Prevent inviting self
     if sender_id == recipient_id_str:
         flash("You cannot invite yourself to a game.", "danger")
         return redirect(url_for('list_members'))
 
-    # If it's a Chess game, use Firestore for game state
-    if game_name == 'chess':
-        if not firestore_db:
-            flash('Game services not initialized. Please try again later.', 'danger')
-            return redirect(url_for('list_members'))
+    # Check if a pending invitation already exists for this game between these users (SQLite)
+    existing_invite = db_sqlite.execute(
+        'SELECT id FROM game_invitations WHERE sender_id = ? AND recipient_id = ? AND game_name = ? AND status = ?',
+        (sender_id, recipient_id, game_name, 'pending')
+    ).fetchone()
 
-        try:
-            # Generate a unique game ID for this match
-            game_id = f"chess_{uuid.uuid4().hex}"
-            
-            # Determine players' roles (e.g., inviter is white, recipient is black)
-            # For simplicity, inviter is always white, recipient is black.
-            player_white_id = sender_id
-            player_black_id = recipient_id_str
-
-            # Reference to the Firestore game document - Corrected collection path
-            game_doc_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public_games').document(game_id)
-
-            # Initial Chess board state
-            initial_board_state = [
-                ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
-                ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
-                [None, None, None, None, None, None, None, None],
-                [None, None, None, None, None, None, None, None],
-                [None, None, None, None, None, None, None, None],
-                [None, None, None, None, None, None, None, None],
-                ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
-                ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
-            ]
-
-            game_data = {
-                'boardFen': json.dumps(initial_board_state), # Store as JSON string
-                'turn': 'w',
-                'whiteCaptures': 0,
-                'blackCaptures': 0,
-                'castlingRights': {'wK': True, 'wQ': True, 'bK': True, 'bQ': True},
-                'enPassantTarget': None,
-                'lastMove': None,
-                'gameOver': False,
-                'winner': None,
-                'createdAt': firestore.SERVER_TIMESTAMP,
-                'lastUpdated': firestore.SERVER_TIMESTAMP,
-                'playerWhiteId': player_white_id,
-                'playerBlackId': player_black_id,
-                'gameType': 'human_vs_human', # Explicitly human vs human for invites
-                'gameName': game_name # e.g., 'chess'
-            }
-            
-            game_doc_ref.set(game_data)
-            print(f"Created new Firestore game document: {game_id} for {player_white_id} vs {player_black_id}")
-
-            # Flash message for the inviter
-            recipient_member = db_sqlite.execute("SELECT fullName FROM members WHERE user_id = ?", (recipient_id,)).fetchone()
-            recipient_name = recipient_member['fullName'] if recipient_member else "their friend"
-            flash(f'You invited {recipient_name} to a {game_name} game! They can join by navigating to their inbox or directly to the game page.', 'success')
-
-            # Redirect the inviter to the game page with the game ID
-            return redirect(url_for('play_game', game_name=game_name, gameId=game_id))
-
-        except Exception as e:
-            print(f"Error inviting to Chess game via Firestore: {e}")
-            flash('Failed to send Chess game invitation. Please try again.', 'danger')
-            return redirect(url_for('list_members'))
-    
-    # For other games (racing, board_games), continue using SQLite game_invitations table
-    else:
-        # Check if a pending invitation already exists for this game between these users (SQLite)
-        existing_invite = db_sqlite.execute(
-            'SELECT id FROM game_invitations WHERE sender_id = ? AND recipient_id = ? AND game_name = ? AND status = ?',
-            (sender_id, recipient_id, game_name, 'pending')
-        ).fetchone()
-
-        if existing_invite:
-            flash(f"You already have a pending invitation for {game_name} with this user.", "warning")
-            return redirect(url_for('list_members'))
-
-        try:
-            db_sqlite.execute(
-                'INSERT INTO game_invitations (sender_id, recipient_id, game_name, status, timestamp) VALUES (?, ?, ?, ?, ?)',
-                (sender_id, recipient_id, game_name, 'pending', datetime.utcnow())
-            )
-            db_sqlite.commit()
-            recipient_member = db_sqlite.execute("SELECT fullName FROM members WHERE user_id = ?", (recipient_id,)).fetchone()
-            recipient_name = recipient_member['fullName'] if recipient_member else "their friend"
-            flash(f"Invitation to play {game_name.capitalize()} sent successfully to {recipient_name}!", 'success')
-        except sqlite3.Error as e:
-            flash(f"Error sending invitation: {e}", 'danger')
-        except Exception as e:
-            flash(f"An unexpected error occurred: {e}", 'danger')
-
+    if existing_invite:
+        flash(f"You already have a pending invitation for {game_name} with this user.", "warning")
         return redirect(url_for('list_members'))
+
+    try:
+        # For all game types, including chess, now use the SQLite game_invitations table
+        db_sqlite.execute(
+            'INSERT INTO game_invitations (sender_id, recipient_id, game_name, status, timestamp) VALUES (?, ?, ?, ?, ?)',
+            (sender_id, recipient_id, game_name, 'pending', datetime.utcnow())
+        )
+        db_sqlite.commit()
+
+        # Retrieve the newly created invitation ID
+        new_invite_id = db_sqlite.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+        recipient_member = db_sqlite.execute("SELECT fullName FROM members WHERE user_id = ?", (recipient_id,)).fetchone()
+        recipient_name = recipient_member['fullName'] if recipient_member else "their friend"
+        
+        flash_message = f"Invitation to play {game_name.capitalize()} sent successfully to {recipient_name}!"
+
+        # For Chess, we'll now redirect the inviter to the game page with the invitation ID
+        # The recipient will also use this ID to join the game.
+        if game_name == 'chess':
+            flash_message += " They can join by navigating to their inbox or directly to the game page."
+            flash(flash_message, 'success')
+            # Redirect the inviter directly to the game page, passing the SQLite invitation ID
+            return redirect(url_for('play_game', game_name=game_name, gameId=new_invite_id))
+        else:
+            flash(flash_message, 'success')
+            return redirect(url_for('list_members'))
+
+    except sqlite3.Error as e:
+        flash(f"Error sending invitation: {e}", 'danger')
+    except Exception as e:
+        flash(f"An unexpected error occurred: {e}", 'danger')
+
+    return redirect(url_for('list_members'))
 
 # NEW ROUTE: For declining a Firestore-based game invitation
 @app.route('/decline_game_invite/<game_id>', methods=['POST'])
