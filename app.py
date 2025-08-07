@@ -480,7 +480,8 @@ def get_unread_game_invite_count():
     if current_user.is_authenticated and firestore_db:
         try:
             # Query Firestore for games where current user is a player, game is not over, and it's human vs human
-            games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games')
+            # Corrected collection path: 'public_games' instead of 'public/games'
+            games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public_games')
             
             # Check for games where current user is playerWhiteId
             invites_as_white_query = games_ref.where('playerWhiteId', '==', str(current_user.id)).where('gameOver', '==', False).where('gameType', '==', 'human_vs_human')
