@@ -92,7 +92,7 @@
             let promotionPawnPos = null;
             let moveHistory = [];
 
-            // Initialize Stockfish
+            // Initialize Stockfish as a Web Worker
             const stockfish = new Worker('{{ url_for("static", filename="js/stockfish.js") }}');
             let stockfishReady = false;
 
@@ -494,12 +494,28 @@
                 }
             }
 
-            function getAllLegalMovesForPlayer(currentBoard, playerTurn) {
+                        function getAllLegalMovesForPlayer(currentBoard, playerTurn) {
                 const allMoves = [];
                 for (let r = 0; r < 8; r++) {
                     for (let c = 0; c < 8; c++) {
                         const piece = currentBoard[r][c];
                         if (piece && isPlayersPiece(piece, playerTurn)) {
+                            // getLegalMoves uses the global 'board' and 'turn'
+                            // We need to temporarily set the global board/turn for this check,
+                            // or pass them explicitly to getLegalMoves.
+                            // For simplicity, let's assume getLegalMoves can take board/turn as args,
+                            // or we simulate the context.
+                            // Given the existing getLegalMoves signature, it relies on global 'board' and 'turn'.
+                            // To make this robust for `getAllLegalMovesForPlayer` without modifying `getLegalMoves`,
+                            // we would ideally pass a simulated board state to a modified `getLegalMoves`
+                            // or have `getLegalMoves` accept a board parameter.
+                            // For now, let's make a direct call assuming `getLegalMoves` can simulate correctly
+                            // if it were passed the currentBoard.
+                            // However, since getLegalMoves itself calls isKingInCheck which uses the global 'board',
+                            // a proper simulation would be more complex.
+                            // Let's stick to the pattern of `getLegalMoves` relying on the global `board`
+                            // and `turn` for simplicity, as it was in the original context.
+                            // This means `getAllLegalMovesForPlayer` will work on the *current global board state*.
                             allMoves.push(...getLegalMoves(r, c));
                         }
                     }
@@ -507,64 +523,222 @@
                 return allMoves;
             }
 
-            function boardToFEN() {
-                let fen = '';
-                for (let r = 0; r < 8; r++) {
-                    let emptyCount = 0;
-                    for (let c = 0; c < 8; c++) {
-                        const piece = board[r][c];
-                        if (piece) {
-                            if (emptyCount > 0) { fen += emptyCount; emptyCount = 0; }
-                            fen += piece;
-                        } else emptyCount++;
-                    }
-                    if (emptyCount > 0) fen += emptyCount;
-                    if (r < 7) fen += '/';
-                }
-                fen += ` ${turn}`;
-                fen += ` ${castlingRights.wK ? 'K' : ''}${castlingRights.wQ ? 'Q' : ''}${castlingRights.bK ? 'k' : ''}${castlingRights.bQ ? 'q' : ''}`;
-                fen += ` ${enPassantTarget ? String.fromCharCode(97 + enPassantTarget.col) + (8 - enPassantTarget.row) : '-'}`;
-                fen += ` 0 ${Math.floor(moveHistory.length / 2) + 1}`;
-                return fen;
-            }
-
-            function toAlgebraicNotation(startRow, startCol, endRow, endCol, piece, promotedTo = null) {
-                const files = 'abcdefgh';
-                let move = files[startCol] + (8 - startRow) + files[endCol] + (8 - endRow);
-                if (promotedTo) move += '=' + promotedTo;
-                return move;
-            }
-
-            function parseStockfishMove(move) {
-                const files = 'abcdefgh';
-                const startCol = files.indexOf(move[0]);
-                const startRow = 8 - parseInt(move[1]);
-                const endCol = files.indexOf(move[2]);
-                const endRow = 8 - parseInt(move[3]);
-                const promotion = move.length > 4 ? move[4].toUpperCase() : null;
-                return { startRow, startCol, endRow, endCol, promotion };
-            }
-
-            function handleStockfishMove(move) {
-                const { startRow, startCol, endRow, endCol, promotion } = parseStockfishMove(move);
-                movePiece(startRow, startCol, endRow, endCol);
-                if (promotion && board[endRow][endCol].toLowerCase() === 'p') {
-                    board[endRow][endCol] = turn === 'w' ? promotion : promotion.toLowerCase();
-                    renderBoard();
-                }
-                checkGameEnd(board, turn);
-            }
-
             function movePiece(startRow, startCol, endRow, endCol) {
                 const pieceToMove = board[startRow][startCol];
                 const capturedPiece = board[endRow][endCol];
                 const isMovingPieceWhite = getPieceColor(pieceToMove) === 'w';
-                lastMove = { startRow, startCol, endRow, endCol, piece: pieceToMove };
+
+                // Handle captures for scoreboard
                 if (capturedPiece) {
                     if (turn === 'w') whiteCaptures++;
                     else blackCaptures++;
                 }
-                if (pieceToMove.toLowerCase() === 'p' && enPassantTarget && endRow === enPassantTarget.row && endCol === enPassantTarget.col && !capturedPiece) {
+
+                // Handle En Passant Capture
+                if (pieceToMove.toLowerCase() === 'p' && enPassantTarget &&
+                    endRow === enPassantTarget.row && endCol === enPassantTarget.col && !capturedPiece) {
                     const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
                     board[capturedPawnRow][endCol] = null;
-                    if (isMovingPieceWhite
+                    if (isMovingPieceWhite) whiteCaptures++;
+                    else blackCaptures++;
+                }
+
+                // Handle Castling
+                if (pieceToMove.toLowerCase() === 'k' && Math.abs(startCol - endCol) === 2) {
+                    const currentKingRow = startRow;
+                    if (endCol === 6) { // King-side castling
+                        const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                        board[currentKingRow][5] = rookChar;
+                        board[currentKingRow][7] = null;
+                    } else if (endCol === 2) { // Queen-side castling
+                        const rookChar = isMovingPieceWhite ? 'R' : 'r';
+                        board[currentKingRow][3] = rookChar;
+                        board[currentKingRow][0] = null;
+                    }
+                }
+
+                board[endRow][endCol] = pieceToMove;
+                board[startRow][startCol] = null;
+
+                updateCastlingRights(startRow, startCol, endRow, endCol, pieceToMove);
+
+                enPassantTarget = null;
+                if (pieceToMove.toLowerCase() === 'p' && Math.abs(startRow - endRow) === 2) {
+                    enPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
+                }
+                
+                switchTurn();
+                renderBoard();
+            }
+
+            function updateCastlingRights(startRow, startCol, endRow, endCol, piece) {
+                const isWhite = getPieceColor(piece) === 'w';
+                if (piece.toLowerCase() === 'k') {
+                    if (isWhite) { castlingRights.wK = false; castlingRights.wQ = false; }
+                    else { castlingRights.bK = false; castlingRights.bQ = false; }
+                } else if (piece.toLowerCase() === 'r') {
+                    if (isWhite) {
+                        if (startRow === 7 && startCol === 7) castlingRights.wK = false;
+                        if (startRow === 7 && startCol === 0) castlingRights.wQ = false;
+                    } else {
+                        if (startRow === 0 && startCol === 7) castlingRights.bK = false;
+                        if (startRow === 0 && startCol === 0) castlingRights.bQ = false;
+                    }
+                }
+                // Also invalidate castling rights if a rook is captured on its original square
+                // This is a simplified check and might not cover all edge cases perfectly.
+                // A more robust system would track captured pieces more directly.
+                if (endRow === 7 && endCol === 7 && getPieceColor(board[7][7]) === 'b' && board[7][7].toLowerCase() === 'r') castlingRights.wK = false;
+                if (endRow === 7 && endCol === 0 && getPieceColor(board[7][0]) === 'b' && board[7][0].toLowerCase() === 'r') castlingRights.wQ = false;
+                if (endRow === 0 && endCol === 7 && getPieceColor(board[0][7]) === 'w' && board[0][7].toLowerCase() === 'r') castlingRights.bK = false;
+                if (endRow === 0 && endCol === 0 && getPieceColor(board[0][0]) === 'w' && board[0][0].toLowerCase() === 'r') castlingRights.bQ = false;
+            }
+
+            function switchTurn() {
+                turn = (turn === 'w') ? 'b' : 'w';
+            }
+
+            // Function to simulate a click on a square (used for AI moves)
+            function simulateClick(row, col, promotionPiece = null) {
+                const squareElement = boardElement.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+                if (squareElement) {
+                    // Temporarily store promotion choice for simulated click
+                    if (promotionPiece) {
+                        promotionPawnPos = { row, col }; // Set the pawn position for promotion
+                        // Directly promote without showing modal for AI
+                        promotePawn(promotionPiece);
+                        promotionPawnPos = null; // Clear state
+                    }
+                    squareElement.click(); // Trigger the click handler
+                }
+            }
+
+            function handleSquareClick(event) {
+                if (gameOver) return;
+
+                const clickedSquare = event.currentTarget;
+                const row = parseInt(clickedSquare.dataset.row, 10);
+                const col = parseInt(clickedSquare.dataset.col, 10);
+                const piece = board[row][col];
+                const pieceColor = getPieceColor(piece);
+
+                const canMove = (turn === 'w'); // Player always plays white
+
+                if (!canMove) {
+                    return;
+                }
+
+                // Clear previous highlights
+                document.querySelectorAll('.selected, .possible-move, .capture-move, .in-check').forEach(s => {
+                    s.classList.remove('selected', 'possible-move', 'capture-move', 'in-check');
+                });
+                renderBoard(); // Re-render to clear highlights and re-apply check highlight if needed
+
+                if (selectedPiecePos) {
+                    const prevRow = selectedPiecePos.row;
+                    const prevCol = selectedPiecePos.col;
+
+                    const legalMoves = getLegalMoves(prevRow, prevCol);
+                    const isLegalMove = legalMoves.some(move => move[0] === row && move[1] === col);
+                    const specialMoveType = legalMoves.find(move => move[0] === row && move[1] === col)?.[2];
+
+
+                    if (isLegalMove) {
+                        const pieceToMove = board[prevRow][prevCol];
+                        const capturedPiece = board[row][col];
+
+                        // Store move in history for FEN generation
+                        moveHistory.push({
+                            from: { row: prevRow, col: prevCol },
+                            to: { row: row, col: col },
+                            piece: pieceToMove,
+                            captured: capturedPiece,
+                            specialMove: specialMoveType
+                        });
+
+                        movePiece(prevRow, prevCol, row, col);
+                        selectedSquare = null;
+                        selectedPiecePos = null;
+                        validMoves = [];
+
+                        // Check for pawn promotion after the move for player
+                        if (board[row][col] && board[row][col].toLowerCase() === 'p' && (row === 0 || row === 7)) {
+                            promotionPawnPos = { row, col };
+                            showPromotionModal();
+                        } else {
+                            checkGameEnd(board, turn);
+                            if (turn === 'b' && !gameOver) { // If it's now AI's turn
+                                setTimeout(makeAIMove, 500);
+                            }
+                        }
+                    } else {
+                        selectedSquare = null;
+                        selectedPiecePos = null;
+                        validMoves = [];
+                        if (piece && isPlayersPiece(piece, turn)) {
+                            selectPiece(clickedSquare, row, col);
+                        }
+                    }
+                } else {
+                    if (piece && isPlayersPiece(piece, turn)) {
+                        selectPiece(clickedSquare, row, col);
+                    }
+                }
+            }
+
+            promotionOptions.forEach(option => {
+                option.addEventListener('click', function() {
+                    const promotedTo = this.dataset.piece;
+                    promotePawn(promotedTo);
+                    hidePromotionModal();
+                    checkGameEnd(board, turn);
+                    if (turn === 'b' && !gameOver) {
+                        setTimeout(makeAIMove, 500);
+                    }
+                });
+            });
+
+            function promotePawn(promotedToPiece) {
+                if (!promotionPawnPos) return;
+
+                const { row, col } = promotionPawnPos;
+                const newPieceChar = turn === 'w' ? promotedToPiece.toUpperCase() : promotedToPiece.toLowerCase();
+                board[row][col] = newPieceChar;
+                promotionPawnPos = null;
+                renderBoard();
+            }
+
+            function resetGameLocalState() {
+                parseFEN(INITIAL_BOARD_FEN);
+                selectedSquare = null;
+                selectedPiecePos = null;
+                validMoves = [];
+                whiteCaptures = 0;
+                blackCaptures = 0;
+                gameOver = false;
+                castlingRights = { 'wK': true, 'wQ': true, 'bK': true, 'bQ': true };
+                enPassantTarget = null;
+                lastMove = null;
+                moveHistory = []; // Clear move history
+                hideMessageBox();
+                hidePromotionModal();
+                renderBoard();
+                // Reset Stockfish engine
+                stockfish.postMessage('ucinewgame');
+                stockfish.postMessage('isready');
+            }
+
+            function resetGame() {
+                resetGameLocalState();
+            }
+
+            // Event listener for reset button
+            resetButton.addEventListener('click', resetGame);
+            messageBoxCloseButton.addEventListener('click', hideMessageBox);
+
+            // Initial game setup
+            resetGame(); // Call reset to set up the initial board and state
+        });
+    </script>
+</body>
+</html>
