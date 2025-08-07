@@ -10,18 +10,23 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <style>
+        /* Ensure the entire page (html and body) takes full viewport height and no scrolling */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* This is key to prevent scrolling */
+        }
+
         body {
             background-color: var(--background-color);
             color: var(--text-color);
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center; /* Center content vertically if space allows */
-            min-height: 100vh;
-            padding-top: 20px;
-            padding-bottom: 80px; /* Increased padding for the footer spacer */
+            justify-content: center; /* Center content vertically within the fixed viewport */
+            /* Removed padding-top/bottom from body as justify-content handles centering */
             box-sizing: border-box;
-            overflow-y: auto; /* Allow scrolling if content exceeds viewport */
         }
 
         .game-container {
@@ -36,9 +41,11 @@
             border-radius: 1rem;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
             position: relative;
-            margin-bottom: 20px; /* Space above the footer spacer */
             margin-left: auto; /* Center the container */
             margin-right: auto; /* Center the container */
+            /* Allow game container to shrink if needed to fit height */
+            flex-shrink: 1;
+            flex-grow: 0; /* Don't grow unnecessarily */
         }
 
         .scoreboard {
@@ -59,8 +66,11 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            width: 100%; /* Take full width of game-container */
-            aspect-ratio: 1 / 1; /* Keep board square */
+            /* Use min(viewport_width, viewport_height) to size the board */
+            width: min(90vw, 90vh); /* Take 90% of the smaller dimension (width or height) */
+            height: min(90vw, 90vh); /* Ensure it's square and fits both dimensions */
+            max-width: 700px; /* Still prevent it from getting too big on very large screens */
+            max-height: 700px; /* Cap max height too */
             border: 4px solid var(--text-color);
             box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
             border-radius: 0.5rem;
@@ -244,10 +254,10 @@
 
         /* Footer Spacer */
         .footer-spacer {
-            height: 60px; /* Adjust height as needed */
+            height: 60px; /* Adjust height as needed to push content up from the bottom */
             width: 100%;
             background-color: transparent; /* Or match your actual footer background */
-            /* This div simply ensures space at the bottom */
+            flex-shrink: 0; /* Prevent it from shrinking */
         }
     </style>
 </head>
@@ -1068,5 +1078,3 @@
         });
     </script>
 {% endblock %}
-
-{% block footer %}{% endblock %}
