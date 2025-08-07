@@ -12,10 +12,13 @@
     <div class="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         <!-- Racing Game Card -->
         <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
-            <div class="relative h-48 flex items-center justify-center bg-gray-900"> {# Increased height and centered content #}
-                <i class="fas fa-car-side text-blue-500 text-8xl"></i> {# Racing Game Icon #}
+            <div class="relative h-5 overflow-hidden">
+                <!-- Racing Game Icon -->
+                <div class="w-full h-full flex items-center justify-center bg-gray-900">
+                    <i class="fas fa-car text-white text-4xl"></i>
+                </div>
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
-                <div class="absolute bottom-4 left-4 text-white text-lg font-bold">Racing Game</div>
+                <div class="absolute bottom-1 left-2 text-white text-lg font-bold">Racing Game</div>
             </div>
             <div class="p-6">
                 <p class="text-gray-400 mb-4">Experience the thrill of high-speed racing. Compete against others or challenge yourself on various tracks.</p>
@@ -25,24 +28,29 @@
 
         <!-- Chess Game Card -->
         <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
-            <div class="relative h-48 flex items-center justify-center bg-gray-900"> {# Increased height and centered content #}
-                <i class="fas fa-chess-board text-indigo-500 text-8xl"></i> {# Chess Game Icon #}
+            <div class="relative h-5 overflow-hidden">
+                <!-- Chess Game Icon -->
+                <div class="w-full h-full flex items-center justify-center bg-gray-900">
+                    <i class="fas fa-chess text-white text-4xl"></i>
+                </div>
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
-                <div class="absolute bottom-4 left-4 text-white text-lg font-bold">Chess</div>
+                <div class="absolute bottom-1 left-2 text-white text-lg font-bold">Chess</div>
             </div>
             <div class="p-6">
                 <p class="text-gray-400 mb-4">A timeless game of strategy and tactics. Compete against a friend or the computer to checkmate your opponent's king.</p>
-                <!-- This button will now initiate a solo AI game -->
-                <a href="{{ url_for('chess_game') }}" class="block w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-indigo-700">Play Chess (Solo AI)</a>
+                <a href="{{ url_for('play_game', game_name='chess') }}" class="block w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-xl text-center transition duration-300 hover:bg-indigo-700">Play Chess (Solo AI)</a>
             </div>
         </div>
 
         <!-- Board Games Card -->
         <div class="bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-2xl">
-            <div class="relative h-48 flex items-center justify-center bg-gray-900"> {# Increased height and centered content #}
-                <i class="fas fa-dice text-green-500 text-8xl"></i> {# Board Games Icon #}
+            <div class="relative h-20 overflow-hidden">
+                <!-- Board Games Icon -->
+                <div class="w-full h-full flex items-center justify-center bg-gray-900">
+                    <i class="fas fa-dice text-white text-4xl"></i>
+                </div>
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
-                <div class="absolute bottom-4 left-4 text-white text-lg font-bold">Board Games</div>
+                <div class="absolute bottom-1 left-2 text-white text-lg font-bold">Board Games</div>
             </div>
             <div class="p-6">
                 <p class="text-gray-400 mb-4">A collection of various classic and modern board games for you and your family to enjoy together.</p>
