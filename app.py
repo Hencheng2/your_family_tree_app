@@ -1939,50 +1939,57 @@ def invite_game(game_name, recipient_id):
 
     return redirect(url_for('list_members'))
 
-# NEW ROUTE: For declining a Firestore-based game invitation
-@app.route('/decline_game_invite/<game_id>', methods=['POST'])
+@app.route('/accept_game_invite/<int:invitation_id>', methods=['POST'])
 @login_required
-def decline_game_invite(game_id):
-    if not firestore_db:
-        flash('Game services not initialized. Please try again later.', 'danger')
-        return redirect(url_for('inbox'))
-
+def accept_game_invite(invitation_id):
+    db = get_db()
     try:
-        game_doc_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public_games').document(game_id)
-        game_doc = game_doc_ref.get()
+        invite = db.execute('SELECT * FROM game_invitations WHERE id = ? AND recipient_id = ? AND status = ?',
+                            (invitation_id, current_user.id, 'pending')).fetchone()
 
-        if not game_doc.exists:
-            flash('Game invitation not found.', 'danger')
+        if not invite:
+            flash('Game invitation not found or already handled.', 'danger')
             return redirect(url_for('inbox'))
 
-        game_data = game_doc.to_dict()
-        current_user_id_str = str(current_user.id)
+        # Update invitation status to 'accepted'
+        db.execute('UPDATE game_invitations SET status = ? WHERE id = ?', ('accepted', invitation_id))
+        db.commit()
 
-        # Ensure the current user is one of the players in this game
-        if current_user_id_str not in [game_data.get('playerWhiteId'), game_data.get('playerBlackId')]:
-            flash('You are not authorized to decline this invitation.', 'danger')
-            return redirect(url_for('inbox'))
+        flash(f"You accepted the invitation to play {invite['game_name'].capitalize()}!", 'success')
 
-        # Determine the other player's ID for potential winner setting
-        other_player_id = None
-        if game_data.get('playerWhiteId') == current_user_id_str:
-            other_player_id = game_data.get('playerBlackId')
-        elif game_data.get('playerBlackId') == current_user_id_str:
-            other_player_id = game_data.get('playerWhiteId')
+        # Redirect to the specific game page, passing the invitation ID as gameId
+        return redirect(url_for('play_game', game_name=invite['game_name'], gameId=invitation_id))
 
-        # Update the game document to mark it as declined/over
-        game_doc_ref.update({
-            'gameOver': True,
-            'status': 'declined', # Add a status field for clarity
-            'winner': other_player_id, # The other player wins by forfeit
-            'lastUpdated': firestore.SERVER_TIMESTAMP
-        })
-        
-        flash('Game invitation declined.', 'info')
-
+    except sqlite3.Error as e:
+        flash(f"Error accepting invitation: {e}", 'danger')
     except Exception as e:
-        print(f"Error declining Firestore game invitation {game_id}: {e}")
-        flash('Failed to decline game invitation. Please try again.', 'danger')
+        flash(f"An unexpected error occurred: {e}", 'danger')
+
+    return redirect(url_for('inbox'))
+
+
+@app.route('/decline_game_invite/<int:invitation_id>', methods=['POST'])
+@login_required
+def decline_game_invite(invitation_id):
+    db = get_db()
+    try:
+        invite = db.execute('SELECT * FROM game_invitations WHERE id = ? AND recipient_id = ? AND status = ?',
+                            (invitation_id, current_user.id, 'pending')).fetchone()
+
+        if not invite:
+            flash('Game invitation not found or already handled.', 'danger')
+            return redirect(url_for('inbox'))
+
+        # Update invitation status to 'declined'
+        db.execute('UPDATE game_invitations SET status = ? WHERE id = ?', ('declined', invitation_id))
+        db.commit()
+
+        flash(f"You declined the invitation to play {invite['game_name'].capitalize()}.", 'info')
+
+    except sqlite3.Error as e:
+        flash(f"Error declining invitation: {e}", 'danger')
+    except Exception as e:
+        flash(f"An unexpected error occurred: {e}", 'danger')
 
     return redirect(url_for('inbox'))
 
