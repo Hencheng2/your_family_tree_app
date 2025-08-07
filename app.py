@@ -1909,8 +1909,8 @@ def invite_game(game_name, recipient_id):
             player_white_id = sender_id
             player_black_id = recipient_id_str
 
-            # Reference to the Firestore game document
-            game_doc_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games').document(game_id)
+            # Reference to the Firestore game document - Corrected collection path
+            game_doc_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public_games').document(game_id)
 
             # Initial Chess board state
             initial_board_state = [
