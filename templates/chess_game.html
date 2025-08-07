@@ -345,12 +345,9 @@
                             promotionPiece = move[4]; // e.g., 'q', 'r', 'b', 'n'
                         }
 
-                        // Simulate the click sequence for the AI move
-                        // Pass true to indicate this is an AI-initiated move
-                        simulateClick(startRow, startCol, true);
-                        setTimeout(() => {
-                            simulateClick(endRow, endCol, true, promotionPiece);
-                        }, 100); // Small delay between clicks
+                        console.log(`AI move: from (${startRow},${startCol}) to (${endRow},${endCol})`);
+                        // Directly apply the AI's move
+                        applyAIMove(startRow, startCol, endRow, endCol, promotionPiece);
                     }
                 }
             };
@@ -603,7 +600,7 @@
                     }
                 });
                 if (!isKingInCheck(currentBoard, isWhite)) {
-                    if (isWhite && castlingRights.wK && currentBoard[currentKingRow][5] === null && currentBoard[currentKingRow][6] === null && currentBoard[currentKingRow][7] === 'R' && !isSquareAttacked(currentKingRow, 5, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 6, !isWhite, currentBoard)) {
+                    if (isWhite && castlingRights.wK && currentBoard[currentKingRow][5] === null && currentKingRow[6] === null && currentBoard[currentKingRow][7] === 'R' && !isSquareAttacked(currentKingRow, 5, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 6, !isWhite, currentBoard)) {
                         moves.push([currentKingRow, 6, 'castlingK']);
                     } else if (!isWhite && castlingRights.bK && currentBoard[currentKingRow][5] === null && currentBoard[currentKingRow][6] === null && currentBoard[currentKingRow][7] === 'r' && !isSquareAttacked(currentKingRow, 5, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 6, !isWhite, currentBoard)) {
                         moves.push([currentKingRow, 6, 'castlingK']);
@@ -752,15 +749,16 @@
                 return allMoves;
             }
 
-            function movePiece(startRow, startCol, endRow, endCol) {
+            // Central function to apply a move (used by both player and AI)
+            function applyMove(startRow, startCol, endRow, endCol, promotionPiece = null) {
                 const pieceToMove = board[startRow][startCol];
                 const capturedPiece = board[endRow][endCol];
                 const isMovingPieceWhite = getPieceColor(pieceToMove) === 'w';
 
                 // Handle captures for scoreboard
                 if (capturedPiece) {
-                    if (isMovingPieceWhite) whiteCaptures++; // White captures black piece
-                    else blackCaptures++; // Black captures white piece
+                    if (isMovingPieceWhite) whiteCaptures++;
+                    else blackCaptures++;
                 }
 
                 // Handle En Passant Capture
@@ -768,8 +766,8 @@
                     endRow === enPassantTarget.row && endCol === enPassantTarget.col && !capturedPiece) {
                     const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
                     board[capturedPawnRow][endCol] = null;
-                    if (isMovingPieceWhite) whiteCaptures++; // White captures black pawn via en passant
-                    else blackCaptures++; // Black captures white pawn via en passant
+                    if (isMovingPieceWhite) whiteCaptures++;
+                    else blackCaptures++;
                 }
 
                 // Handle Castling
@@ -789,6 +787,12 @@
                 board[endRow][endCol] = pieceToMove;
                 board[startRow][startCol] = null;
 
+                // Handle promotion
+                if (pieceToMove.toLowerCase() === 'p' && (endRow === 0 || endRow === 7)) {
+                    const promoteTo = promotionPiece ? promotionPiece.toUpperCase() : 'Q'; // Default to Queen
+                    board[endRow][endCol] = isMovingPieceWhite ? promoteTo : promoteTo.toLowerCase();
+                }
+
                 updateCastlingRights(startRow, startCol, endRow, endCol, pieceToMove);
 
                 enPassantTarget = null;
@@ -796,9 +800,29 @@
                     enPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
                 }
                 
+                // Store move in history for FEN generation
+                moveHistory.push({
+                    from: { row: startRow, col: startCol },
+                    to: { row: endRow, col: endCol },
+                    piece: pieceToMove,
+                    captured: capturedPiece,
+                    promotion: promotionPiece // Store promotion for history if applicable
+                });
+
                 switchTurn();
                 renderBoard();
+                checkGameEnd(board, turn); // Check game end after every move
             }
+
+            // Function to apply AI move (called directly from Stockfish.onmessage)
+            function applyAIMove(startRow, startCol, endRow, endCol, promotionPiece = null) {
+                console.log(`Applying AI move: ${coordsToUci(startRow, startCol)}${coordsToUci(endRow, endCol)}${promotionPiece || ''}`);
+                applyMove(startRow, startCol, endRow, endCol, promotionPiece);
+                if (turn === 'w' && !gameOver) { // After AI moves, it's player's turn
+                    console.log('AI moved, now it is White\'s turn.');
+                }
+            }
+
 
             function updateCastlingRights(startRow, startCol, endRow, endCol, piece) {
                 const isWhite = getPieceColor(piece) === 'w';
@@ -895,71 +919,17 @@
                 stockfish.postMessage('go depth 10'); // AI thinks for depth 10
             }
 
-            // Function to handle Stockfish's bestmove
-            function handleStockfishMove(uciMove) {
-                const startCoords = uciToCoords(uciMove.substring(0, 2));
-                const endCoords = uciToCoords(uciMove.substring(2, 4));
-                const promotionChar = uciMove.length === 5 ? uciMove[4] : null;
-
-                const pieceToMove = board[startCoords.row][startCoords.col];
-                const capturedPiece = board[endCoords.row][endCoords.col];
-                const isMovingPieceWhite = getPieceColor(pieceToMove) === 'w';
-
-                // Store move in history for FEN generation
-                moveHistory.push({
-                    from: { row: startCoords.row, col: startCoords.col },
-                    to: { row: endCoords.row, col: endCoords.col },
-                    piece: pieceToMove,
-                    captured: capturedPiece,
-                    promotion: promotionChar
-                });
-
-                // Directly apply the move to the board state
-                movePiece(startCoords.row, startCol, endCoords.row, endCol);
-
-                // Handle AI pawn promotion explicitly
-                if (pieceToMove.toLowerCase() === 'p' && (endCoords.row === 0 || endCoords.row === 7)) {
-                    const promoteTo = promotionChar ? promotionChar.toUpperCase() : 'Q'; // Default to Queen
-                    board[endCoords.row][endCoords.col] = isMovingPieceWhite ? promoteTo : promoteTo.toLowerCase();
-                    renderBoard(); // Re-render after promotion
-                }
-
-                // After AI move, check game end
-                checkGameEnd(board, turn);
-            }
-
-            // Function to simulate a click on a square (used for AI moves)
-            // Now directly calls handleSquareClick with isAIMove flag
-            function simulateClick(row, col, isAIMove = false, promotionPiece = null) {
-                if (promotionPiece) {
-                    promotionPawnPos = { row, col };
-                    promotePawn(promotionPiece);
-                    promotionPawnPos = null;
-                }
-                handleSquareClick(null, row, col, isAIMove); // Pass null for event, then row, col, isAIMove
-            }
-
 
             // Modified handleSquareClick to accept row, col directly and an isAIMove flag
-            function handleSquareClick(event, row, col, isAIMove = false) {
+            function handleSquareClick(event, row, col) {
                 if (gameOver) return;
-
-                // If it's a real click, get row/col from dataset
-                if (event) { // Check if event object is provided (i.e., not an AI simulated click)
-                    row = parseInt(event.currentTarget.dataset.row, 10);
-                    col = parseInt(event.currentTarget.dataset.col, 10);
-                    isAIMove = false; // Ensure it's false for player clicks
-                }
 
                 const piece = board[row][col];
                 const pieceColor = getPieceColor(piece);
 
-                // Allow move if it's the player's turn (White) AND not an AI move
-                // OR if it's an AI-initiated move (Black's turn)
-                const canMove = (turn === 'w' && !isAIMove) || (isAIMove && turn === 'b');
-
-                if (!canMove) {
-                    console.log("Move blocked: Not correct turn or invalid AI call. Current turn:", turn, "isAIMove:", isAIMove);
+                // Player can only move on their turn (White)
+                if (turn !== 'w') {
+                    console.log("Move blocked: Not White's turn.");
                     return;
                 }
 
@@ -979,19 +949,8 @@
 
 
                     if (isLegalMove) {
-                        const pieceToMove = board[prevRow][prevCol];
-                        const capturedPiece = board[row][col];
-
-                        // Store move in history for FEN generation
-                        moveHistory.push({
-                            from: { row: prevRow, col: prevCol },
-                            to: { row: row, col: col },
-                            piece: pieceToMove,
-                            captured: capturedPiece,
-                            specialMove: specialMoveType
-                        });
-
-                        movePiece(prevRow, prevCol, row, col);
+                        // Apply the player's move
+                        applyMove(prevRow, prevCol, row, col, null); // No promotion piece for player's initial move
                         selectedSquare = null;
                         selectedPiecePos = null;
                         validMoves = [];
@@ -1001,8 +960,8 @@
                             promotionPawnPos = { row, col };
                             showPromotionModal();
                         } else {
-                            checkGameEnd(board, turn);
-                            if (turn === 'b' && !gameOver) { // If it's now AI's turn
+                            // After player moves, trigger AI move if game not over
+                            if (turn === 'b' && !gameOver) {
                                 console.log('Player moved, now triggering AI move.');
                                 setTimeout(makeAIMove, 500);
                             }
@@ -1011,14 +970,14 @@
                         selectedSquare = null;
                         selectedPiecePos = null;
                         validMoves = [];
-                        // Only re-select if it's a player's piece and not an AI-initiated click
-                        if (piece && isPlayersPiece(piece, turn) && !isAIMove) {
+                        // Re-select if clicking on another of player's pieces
+                        if (piece && isPlayersPiece(piece, turn)) {
                             selectPiece(boardElement.querySelector(`[data-row="${row}"][data-col="${col}"]`), row, col);
                         }
                     }
                 } else {
-                    // Only select if it's a player's piece and not an AI-initiated click
-                    if (piece && isPlayersPiece(piece, turn) && !isAIMove) {
+                    // Select piece if it's player's piece
+                    if (piece && isPlayersPiece(piece, turn)) {
                         selectPiece(boardElement.querySelector(`[data-row="${row}"][data-col="${col}"]`), row, col);
                     }
                 }
@@ -1029,6 +988,7 @@
                     const promotedTo = this.dataset.piece;
                     promotePawn(promotedTo);
                     hidePromotionModal();
+                    // After promotion, check game end and trigger AI if it's their turn
                     checkGameEnd(board, turn);
                     if (turn === 'b' && !gameOver) {
                         console.log('Pawn promoted, now triggering AI move.');
