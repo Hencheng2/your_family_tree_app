@@ -3,6 +3,227 @@
 {% block title %}Chess Game{% endblock %}
 
 {% block content %}
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Bootstrap for Modals (Pawn Promotion) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <style>
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding-top: 70px; /* Space for navbar */
+            padding-bottom: 60px; /* Space for footer */
+            box-sizing: border-box;
+            overflow-y: auto; /* Allow scrolling if content exceeds viewport */
+        }
+
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            max-width: 90vw;
+            width: 100%;
+            padding: 20px;
+            background-color: var(--card-bg);
+            border-radius: 1rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            position: relative; /* For loading spinner overlay */
+        }
+
+        .scoreboard {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 500px;
+            padding: 15px;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 0.75rem;
+            font-weight: bold;
+            font-size: 1.2em;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .board-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 600px; /* Max width for the board */
+            aspect-ratio: 1 / 1; /* Keep board square */
+            border: 4px solid var(--text-color);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+            border-radius: 0.5rem;
+            overflow: hidden; /* Ensures rounded corners */
+        }
+
+        .chess-board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            width: 100%;
+            height: 100%;
+        }
+
+        .square {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3.5vw; /* Responsive font size for pieces */
+            cursor: pointer;
+            user-select: none; /* Prevent text selection */
+            transition: background-color 0.1s ease-in-out;
+            min-width: 40px; /* Ensure squares have a minimum size */
+            min-height: 40px; /* Ensure squares have a minimum size */
+        }
+
+        /* Chess board colors */
+        .light { background-color: #f0d9b5; color: #b58863; } /* Light wood color */
+        .dark { background-color: #b58863; color: #f0d9b5; } /* Dark wood color */
+
+        /* Highlight colors */
+        .selected { background-color: #ffcc00 !important; } /* Yellow for selected piece */
+        .possible-move { background-color: #88ff88 !important; } /* Green for possible moves */
+        .capture-move { background-color: #ff8888 !important; } /* Red for capture moves */
+        .in-check { background-color: #ff4444 !important; } /* Red for king in check */
+
+
+        /* Piece styling */
+        .piece {
+            font-family: 'Arial Unicode MS', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif; /* Fallback for chess symbols */
+            font-size: 4.5vw; /* Larger for pieces */
+            line-height: 1;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+        .white-piece { color: #fff; }
+        .black-piece { color: #000; }
+
+        /* Responsive font size for pieces */
+        @media (min-width: 768px) {
+            .square {
+                font-size: 2.5vw;
+            }
+            .piece {
+                font-size: 3.5vw;
+            }
+        }
+        @media (min-width: 1024px) {
+            .square {
+                font-size: 2vw;
+            }
+            .piece {
+                font-size: 2.5vw;
+            }
+        }
+
+        .game-controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .game-controls button {
+            padding: 10px 20px;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.2s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .game-controls button:hover {
+            transform: translateY(-2px);
+        }
+        .btn-reset {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-reset:hover {
+            background-color: #c82333;
+        }
+        .btn-back {
+            background-color: #6c757d;
+            color: white;
+        }
+        .btn-back:hover {
+            background-color: #5a6268;
+        }
+
+        /* Message box for game end */
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: var(--card-bg);
+            border: 2px solid var(--primary-color);
+            padding: 30px;
+            border-radius: 1rem;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+            text-align: center;
+            z-index: 1001;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: var(--text-color);
+            display: none; /* Hidden by default */
+        }
+        .message-box button {
+            margin-top: 20px;
+            padding: 10px 25px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        .message-box button:hover {
+            background-color: #368a3a;
+            transform: translateY(-2px);
+        }
+
+        /* Pawn Promotion Modal */
+        .promotion-modal-content {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+            border-radius: 1rem;
+            border: 2px solid var(--primary-color);
+        }
+        .promotion-modal-header {
+            border-bottom: 1px solid var(--card-border);
+        }
+        .promotion-option {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 15px;
+            margin: 5px;
+            border: 1px solid var(--card-border);
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.2s;
+            font-size: 2em; /* Larger piece symbol */
+            font-weight: bold;
+        }
+        .promotion-option:hover {
+            background-color: var(--nav-link-hover-bg);
+            transform: translateY(-2px);
+        }
+        .promotion-option .piece {
+            font-size: 1.5em; /* Adjust piece size within option */
+        }
+    </style>
+</head>
+<body>
     <!-- Home Button -->
     <a href="{{ url_for('home') }}" class="absolute top-4 left-4 text-blue-400 hover:text-blue-200 transition duration-300">
         <i class="fas fa-home text-2xl"></i>
@@ -90,9 +311,10 @@
             let enPassantTarget = null;
             let lastMove = null;
             let promotionPawnPos = null;
-            let moveHistory = [];
+            let moveHistory = []; // To store moves for Stockfish
 
             // Initialize Stockfish as a Web Worker
+            // Ensure the path to stockfish.js is correct. It should be in static/js/
             const stockfish = new Worker('{{ url_for("static", filename="js/stockfish.js") }}');
             let stockfishReady = false;
 
@@ -102,10 +324,31 @@
                 if (message === 'readyok') {
                     stockfishReady = true;
                     console.log('Stockfish is ready.');
+                    // If it's AI's turn immediately after loading (e.g., after a reset), trigger move
+                    if (turn === 'b' && !gameOver) {
+                        setTimeout(makeAIMove, 500); // Small delay before AI moves
+                    }
                 } else if (message.startsWith('bestmove')) {
                     const move = message.split(' ')[1];
                     if (move && !gameOver && turn === 'b') {
-                        handleStockfishMove(move);
+                        // Convert UCI move (e.g., 'e2e4') to board coordinates
+                        const startCol = move.charCodeAt(0) - 'a'.charCodeAt(0);
+                        const startRow = 8 - parseInt(move[1], 10);
+                        const endCol = move.charCodeAt(2) - 'a'.charCodeAt(0);
+                        const endRow = 8 - parseInt(move[3], 10);
+
+                        // Handle promotion for Stockfish move
+                        let promotionPiece = null;
+                        if (move.length === 5) {
+                            promotionPiece = move[4]; // e.g., 'q', 'r', 'b', 'n'
+                        }
+
+                        // Simulate the click sequence for the AI move
+                        // This will trigger our existing handleSquareClick logic
+                        simulateClick(startRow, startCol);
+                        setTimeout(() => {
+                            simulateClick(endRow, endCol, promotionPiece);
+                        }, 100); // Small delay between clicks
                     }
                 }
             };
@@ -494,28 +737,14 @@
                 }
             }
 
-                        function getAllLegalMovesForPlayer(currentBoard, playerTurn) {
+            function getAllLegalMovesForPlayer(currentBoard, playerTurn) {
                 const allMoves = [];
                 for (let r = 0; r < 8; r++) {
                     for (let c = 0; c < 8; c++) {
                         const piece = currentBoard[r][c];
                         if (piece && isPlayersPiece(piece, playerTurn)) {
-                            // getLegalMoves uses the global 'board' and 'turn'
-                            // We need to temporarily set the global board/turn for this check,
-                            // or pass them explicitly to getLegalMoves.
-                            // For simplicity, let's assume getLegalMoves can take board/turn as args,
-                            // or we simulate the context.
-                            // Given the existing getLegalMoves signature, it relies on global 'board' and 'turn'.
-                            // To make this robust for `getAllLegalMovesForPlayer` without modifying `getLegalMoves`,
-                            // we would ideally pass a simulated board state to a modified `getLegalMoves`
-                            // or have `getLegalMoves` accept a board parameter.
-                            // For now, let's make a direct call assuming `getLegalMoves` can simulate correctly
-                            // if it were passed the currentBoard.
-                            // However, since getLegalMoves itself calls isKingInCheck which uses the global 'board',
-                            // a proper simulation would be more complex.
-                            // Let's stick to the pattern of `getLegalMoves` relying on the global `board`
-                            // and `turn` for simplicity, as it was in the original context.
-                            // This means `getAllLegalMovesForPlayer` will work on the *current global board state*.
+                            // Call getLegalMoves with the current global board and turn
+                            // (getLegalMoves internally uses the global 'board' and 'turn' variables)
                             allMoves.push(...getLegalMoves(r, c));
                         }
                     }
@@ -598,6 +827,105 @@
                 turn = (turn === 'w') ? 'b' : 'w';
             }
 
+            // Helper function to convert board coordinates to UCI string (e.g., {row: 6, col: 4} -> 'e2')
+            function coordsToUci(row, col) {
+                return String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row);
+            }
+
+            // Helper function to convert UCI string to board coordinates (e.g., 'e2' -> {row: 6, col: 4})
+            function uciToCoords(uci) {
+                const col = uci.charCodeAt(0) - 'a'.charCodeAt(0);
+                const row = 8 - parseInt(uci[1], 10);
+                return { row, col };
+            }
+
+            // Function to make AI move
+            function makeAIMove() {
+                if (!stockfishReady || gameOver || turn !== 'b') return;
+
+                // Construct FEN from current board state
+                let fen = '';
+                let emptyCount = 0;
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        const piece = board[r][c];
+                        if (piece) {
+                            if (emptyCount > 0) {
+                                fen += emptyCount;
+                                emptyCount = 0;
+                            }
+                            fen += piece;
+                        } else {
+                            emptyCount++;
+                        }
+                    }
+                    if (emptyCount > 0) {
+                        fen += emptyCount;
+                        emptyCount = 0;
+                    }
+                    if (r < 7) fen += '/';
+                }
+
+                fen += ` ${turn}`; // Current turn
+                
+                // Castling rights
+                let castlingFen = '';
+                if (castlingRights.wK) castlingFen += 'K';
+                if (castlingRights.wQ) castlingFen += 'Q';
+                if (castlingRights.bK) castlingFen += 'k';
+                if (castlingRights.bQ) castlingFen += 'q';
+                fen += ` ${castlingFen || '-'}`;
+
+                // En passant target
+                if (enPassantTarget) {
+                    fen += ` ${coordsToUci(enPassantTarget.row, enPassantTarget.col)}`;
+                } else {
+                    fen += ' -';
+                }
+
+                // Halfmove clock (moves since last capture or pawn advance - simplified to 0)
+                fen += ' 0';
+                // Fullmove number (simplified to 1 + half of total moves)
+                fen += ` ${Math.floor(moveHistory.length / 2) + 1}`;
+
+                console.log("Sending FEN to Stockfish:", fen);
+                stockfish.postMessage('position fen ' + fen);
+                stockfish.postMessage('go depth 10'); // AI thinks for depth 10
+            }
+
+            // Function to handle Stockfish's bestmove
+            function handleStockfishMove(uciMove) {
+                const startCoords = uciToCoords(uciMove.substring(0, 2));
+                const endCoords = uciToCoords(uciMove.substring(2, 4));
+                const promotionChar = uciMove.length === 5 ? uciMove[4] : null;
+
+                const pieceToMove = board[startCoords.row][startCoords.col];
+                const capturedPiece = board[endCoords.row][endCoords.col];
+                const isMovingPieceWhite = getPieceColor(pieceToMove) === 'w';
+
+                // Store move in history for FEN generation
+                moveHistory.push({
+                    from: { row: startCoords.row, col: startCoords.col },
+                    to: { row: endCoords.row, col: endCoords.col },
+                    piece: pieceToMove,
+                    captured: capturedPiece,
+                    promotion: promotionChar
+                });
+
+                // Directly apply the move to the board state
+                movePiece(startCoords.row, startCol, endCoords.row, endCol);
+
+                // Handle AI pawn promotion explicitly
+                if (pieceToMove.toLowerCase() === 'p' && (endCoords.row === 0 || endCoords.row === 7)) {
+                    const promoteTo = promotionChar ? promotionChar.toUpperCase() : 'Q'; // Default to Queen
+                    board[endCoords.row][endCoords.col] = isMovingPieceWhite ? promoteTo : promoteTo.toLowerCase();
+                    renderBoard(); // Re-render after promotion
+                }
+
+                // After AI move, check game end
+                checkGameEnd(board, turn);
+            }
+
             // Function to simulate a click on a square (used for AI moves)
             function simulateClick(row, col, promotionPiece = null) {
                 const squareElement = boardElement.querySelector(`[data-row="${row}"][data-col="${col}"]`);
@@ -612,6 +940,7 @@
                     squareElement.click(); // Trigger the click handler
                 }
             }
+
 
             function handleSquareClick(event) {
                 if (gameOver) return;
@@ -740,6 +1069,5 @@
             resetGame(); // Call reset to set up the initial board and state
         });
     </script>
-{% endblock %}
 </body>
 </html>
