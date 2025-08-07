@@ -346,10 +346,10 @@
                         }
 
                         // Simulate the click sequence for the AI move
-                        // This will trigger our existing handleSquareClick logic
-                        simulateClick(startRow, startCol);
+                        // Pass true to indicate this is an AI-initiated move
+                        simulateClick(startRow, startCol, true);
                         setTimeout(() => {
-                            simulateClick(endRow, endCol, promotionPiece);
+                            simulateClick(endRow, endCol, true, promotionPiece);
                         }, 100); // Small delay between clicks
                     }
                 }
@@ -929,7 +929,8 @@
             }
 
             // Function to simulate a click on a square (used for AI moves)
-            function simulateClick(row, col, promotionPiece = null) {
+            // Added isAIMove parameter to bypass player turn check
+            function simulateClick(row, col, isAIMove = false, promotionPiece = null) {
                 const squareElement = boardElement.querySelector(`[data-row="${row}"][data-col="${col}"]`);
                 if (squareElement) {
                     // Temporarily store promotion choice for simulated click
@@ -939,11 +940,17 @@
                         promotePawn(promotionPiece);
                         promotionPawnPos = null; // Clear state
                     }
-                    squareElement.click(); // Trigger the click handler
+                    // Create a synthetic event object for the click handler
+                    const event = {
+                        currentTarget: squareElement,
+                        isAIMove: isAIMove // Pass the AI flag
+                    };
+                    handleSquareClick(event); // Trigger the click handler
                 }
             }
 
 
+            // Modified handleSquareClick to accept an event object and check for isAIMove
             function handleSquareClick(event) {
                 if (gameOver) return;
 
@@ -953,10 +960,11 @@
                 const piece = board[row][col];
                 const pieceColor = getPieceColor(piece);
 
-                const canMove = (turn === 'w'); // Player always plays white
+                // Allow move if it's the player's turn (White) OR if it's an AI-initiated move
+                const canMove = (turn === 'w') || (event.isAIMove && turn === 'b');
 
                 if (!canMove) {
-                    console.log("Not player's turn to move.");
+                    console.log("Not player's turn to move, or invalid AI call.");
                     return;
                 }
 
@@ -1008,12 +1016,14 @@
                         selectedSquare = null;
                         selectedPiecePos = null;
                         validMoves = [];
-                        if (piece && isPlayersPiece(piece, turn)) {
+                        // Only re-select if it's a player's piece and not an AI-initiated click
+                        if (piece && isPlayersPiece(piece, turn) && !event.isAIMove) {
                             selectPiece(clickedSquare, row, col);
                         }
                     }
                 } else {
-                    if (piece && isPlayersPiece(piece, turn)) {
+                    // Only select if it's a player's piece and not an AI-initiated click
+                    if (piece && isPlayersPiece(piece, turn) && !event.isAIMove) {
                         selectPiece(clickedSquare, row, col);
                     }
                 }
