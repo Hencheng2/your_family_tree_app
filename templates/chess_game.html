@@ -6,10 +6,17 @@
     <title>Chess Game with Stockfish AI</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- Load chessboard.js and chess.js from CDN -->
+    
+    <!-- Load jQuery FIRST, as chessboard.js depends on it -->
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    
+    <!-- Load chessboard.js CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessboard-js@1.0.0/dist/chessboard-1.0.0.min.css">
+    
+    <!-- Load chessboard.js JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/chessboard-js@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    
+    <!-- Load chess.js JavaScript -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
     <style>
@@ -58,7 +65,8 @@
 
         .board-wrapper {
             width: 100%;
-            max-width: 600px;
+            max-width: 600px; /* Max width for the board */
+            margin-top: 20px; /* Add some space above the board */
         }
 
         /* Message box for game end */
@@ -106,14 +114,12 @@
 
         <h1 class="text-4xl font-extrabold text-blue-500">Chess Game</h1>
 
-        {# Removed AI Thinking Indicator HTML #}
-
         <div class="scoreboard">
             <span id="turnIndicator">White's Turn</span>
         </div>
 
         <div class="board-wrapper">
-            <div id="board"></div>
+            <div id="board"></div> {# This is where chessboard.js will render the board #}
         </div>
 
         <div class="game-controls">
@@ -132,18 +138,17 @@
         document.addEventListener('DOMContentLoaded', function() {
             // --- Game State and UI Elements ---
             const game = new Chess();
-            let board = null;
+            let board = null; // This will hold the chessboard.js instance
             const turnIndicator = document.getElementById('turnIndicator');
             const messageBox = document.getElementById('messageBox');
             const messageText = document.getElementById('messageText');
             const messageBoxCloseButton = document.getElementById('messageBoxCloseButton');
             const resetButton = document.getElementById('resetButton');
-            {# Removed aiThinkingIndicator reference #}
 
             // --- Stockfish Web Worker ---
-            // IMPORTANT: You MUST download stockfish.js and place it in your static/js/ directory.
-            // Get it from: https://github.com/official-stockfish/Stockfish/blob/master/js/stockfish.js
-            let stockfish = new Worker('/static/js/stockfish.js'); // Corrected path
+            // IMPORTANT: You MUST have stockfish.js in your static/js/ directory.
+            // Path: your_project_name/static/js/stockfish.js
+            let stockfish = new Worker('/static/js/stockfish.js');
             let engineStatus = 'loading'; // 'loading', 'ready', 'thinking'
             let stockfishLevel = 3; // AI difficulty level (higher is harder, 1-20 is common range for depth)
 
@@ -153,7 +158,7 @@
                 stockfish.postMessage('isready'); // Request engine to be ready
                 stockfish.onmessage = function(event) {
                     const line = event.data;
-                    console.log('Stockfish:', line);
+                    // console.log('Stockfish:', line); // Uncomment for detailed Stockfish logs if needed
                     if (line === 'uciok' || line === 'readyok') {
                         engineStatus = 'ready';
                         console.log('Stockfish engine is ready.');
@@ -162,8 +167,7 @@
                             setTimeout(makeAIMove, 500); // Small delay before AI moves
                         }
                     } else if (line.startsWith('info depth')) {
-                        // AI is thinking, you could update a progress bar in the turn indicator here if desired
-                        // For now, we're removing the explicit modal, so this is just for console logging.
+                        // Stockfish is thinking. This part is now silent, no modal.
                     } else if (line.startsWith('bestmove')) {
                         // The bestmove is returned
                         const bestMove = line.split(' ')[1];
@@ -176,23 +180,20 @@
                             promotion: promotion || 'q' // Default to queen if not specified
                         }, { sloppy: true }); // Use sloppy for UCI moves
                         
-                        board.position(game.fen());
-                        updateStatus();
-                        {# Removed hideAIThinking() #}
+                        board.position(game.fen()); // Update the visual board
+                        updateStatus(); // Update game status and check for AI turn
                     }
                 };
             }
 
-            // --- UI Update Functions (removed AI thinking specific ones) ---
-            {# Removed showAIThinking() and hideAIThinking() #}
-
+            // --- UI Update Functions ---
             function updateStatus() {
                 let status = '';
                 const moveColor = (game.turn() === 'w') ? 'White' : 'Black';
 
                 if (game.game_over()) {
                     if (game.in_checkmate()) {
-                        status = `Game over, ${moveColor} is in checkmate.`;
+                        status = `Game over, ${moveColor} is in checkmate!`;
                         showMessageBox(status);
                     } else if (game.in_draw()) {
                         status = 'Game over, drawn position.';
@@ -229,7 +230,7 @@
                 // Do not pick up pieces if the game is over
                 if (game.game_over()) return false;
                 // Only pick up pieces for the side to move (White)
-                if (game.turn() === 'b') return false;
+                if (game.turn() === 'b') return false; // Prevent dragging black pieces
             }
 
             function onDrop(source, target) {
@@ -264,12 +265,12 @@
             }
 
             function resetGame() {
-                game.reset();
-                board.start();
-                updateStatus();
-                hideMessageBox();
-                {# Removed hideAIThinking() #}
-                // Reinitialize Stockfish to clear its internal state
+                game.reset(); // Reset chess.js game state
+                board.start(); // Reset chessboard.js visual board
+                updateStatus(); // Update UI status
+                hideMessageBox(); // Hide any game over messages
+                
+                // Reinitialize Stockfish to clear its internal state and start fresh
                 stockfish.postMessage('ucinewgame');
                 stockfish.postMessage('isready');
             }
@@ -277,20 +278,22 @@
             // --- Initialize Game ---
             const config = {
                 draggable: true,
-                position: 'start',
+                position: 'start', // Start with the initial chess position
                 onDragStart: onDragStart,
                 onDrop: onDrop,
                 onSnapEnd: onSnapEnd,
                 // Optional: set a custom piece theme if you have images
                 // pieceTheme: 'img/chesspieces/wikipedia/{piece}.png'
             };
+            
+            // Initialize the chessboard
             board = Chessboard('board', config);
 
             // --- Event Listeners ---
             resetButton.addEventListener('click', resetGame);
             messageBoxCloseButton.addEventListener('click', hideMessageBox);
 
-            // Initial setup for Stockfish
+            // Initial setup for Stockfish and game status
             initStockfish();
             updateStatus(); // Initial status update
         });
