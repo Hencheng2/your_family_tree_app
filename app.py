@@ -360,6 +360,7 @@ firestore_db = None
 try:
     if not firebase_admin._apps:
         cred_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), config.FIREBASE_ADMIN_CREDENTIALS_PATH)
+        print(f"DEBUG: Attempting to load Firebase credentials from: {cred_path}")
         cred = credentials.Certificate(cred_path)
         initialize_app(cred)
     firestore_db = firestore.client()
