@@ -224,7 +224,6 @@
                     <div class="member-actions">
                         <a href="{{ url_for('member_detail', member_id=0) }}${member.id}" class="btn btn-info">View Profile</a>
                         ${member.user_id && member.user_id != currentUserId ? `
-                            <a href="{{ url_for('messages_with', other_user_id=0) }}${member.user_id}" class="btn btn-primary">Message</a>
                             <div class="dropdown">
                                 <button class="btn btn-success dropdown-toggle" type="button" id="dropdownMenuButton${member.id}" data-bs-toggle="dropdown" aria-expanded="false">
                                     Invite to Game
@@ -258,6 +257,87 @@
             const query = memberSearchInput.value.toLowerCase();
             let filteredMembers = allMembers.filter(member => {
                 const fullName = member.fullName ? member.fullName.toLowerCase() : '';
+                const username = member.username ? member.username.toLowerCase() : '';
+                const association = member.association ? member.association.toLowerCase() : '';
+                return fullName.includes(query) || username.includes(query) || association.includes(query);
+            });
+
+            // Sort logic (prioritize exact matches, then starts with, then contains, then alphabetical)
+            filteredMembers.sort((a, b) => {
+                const aFullName = a.fullName || '';
+                const bFullName = b.fullName || '';
+                const aUsername = a.username || '';
+                const bUsername = b.username || '';
+
+                const aFullNameExact = aFullName === query;
+                const bFullNameExact = bFullName === query;
+                const aUsernameExact = aUsername === query;
+                const bUsernameExact = bUsername === query;
+
+                const aFullNameStarts = aFullName.startsWith(query);
+                const bFullNameStarts = bFullName.startsWith(query);
+                const aUsernameStarts = aUsername.startsWith(query);
+                const bUsernameStarts = bUsername.startsWith(query);
+
+                const aFullNameIncludes = aFullName.includes(query);
+                const bFullNameIncludes = bFullName.includes(query);
+                const aUsernameIncludes = aUsername.includes(query);
+                const bUsernameIncludes = aUsername.includes(query);
+
+                // Priority 1: Exact match on full name or username
+                if (aFullNameExact && !bFullNameExact) return -1;
+                if (!aFullNameExact && bFullNameExact) return 1;
+                if (aUsernameExact && !bUsernameExact) return -1;
+                if (!aUsernameExact && bUsernameExact) return 1;
+
+                // Priority 2: Starts with on full name or username
+                if (aFullNameStarts && !bFullNameStarts) return -1;
+                if (!aFullNameStarts && bFullNameStarts) return 1;
+                if (aUsernameStarts && !bUsernameStarts) return -1;
+                if (!aUsernameStarts && bUsernameStarts) return 1;
+
+                // Priority 3: Full name contains
+                if (aFullNameIncludes && !bFullNameIncludes) return -1;
+                if (!aFullNameIncludes && bFullNameIncludes) return 1;
+
+                // Priority 4: Username contains
+                if (aUsernameIncludes && !bUsernameIncludes) return -1;
+                if (!aUsernameIncludes && bUsernameIncludes) return 1;
+
+                // Default: alphabetical by full name if no other criteria differentiate
+                return aFullName.localeCompare(bFullName);
+            });
+
+            renderMembers(filteredMembers);
+        }
+
+        // Event listener for input changes in the search box
+        memberSearchInput.addEventListener('input', filterAndSortMembers);
+
+        // Initial render of all members when the page loads
+        // Sort initially by full name
+        const sortedInitialMembers = [...allMembers].sort((a, b) => {
+            const aFullName = a.fullName || '';
+            const bFullName = b.fullName || '';
+            return aFullName.localeCompare(bFullName);
+        });
+        renderMembers(sortedInitialMembers);
+
+        // Auto-hide flash messages (copied from base.html for consistency)
+        const flashMessages = document.querySelectorAll('.flash');
+        flashMessages.forEach(function(flash) {
+            setTimeout(function() {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s ease-out';
+                setTimeout(function() {
+                    flash.remove();
+                }, 500);
+            }, 5000);
+        });
+    });
+</script>
+{% endblock %}
+ullName.toLowerCase() : '';
                 const username = member.username ? member.username.toLowerCase() : '';
                 const association = member.association ? member.association.toLowerCase() : '';
                 return fullName.includes(query) || username.includes(query) || association.includes(query);
@@ -338,3 +418,4 @@
     });
 </script>
 {% endblock %}
+
