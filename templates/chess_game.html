@@ -44,7 +44,7 @@
             width: 100%;
             max-width: 500px;
             padding: 15px;
-            background-color: var(--primary-color);
+            background-color: #3f51b5; /* Blue */
             color: white;
             border-radius: 0.75rem;
             font-weight: bold;
@@ -320,16 +320,18 @@
 
             stockfish.onmessage = function(event) {
                 const message = event.data;
-                console.log('Stockfish message:', message);
+                console.log('Stockfish message:', message); // Log all messages from Stockfish
                 if (message === 'readyok') {
                     stockfishReady = true;
                     console.log('Stockfish is ready.');
                     // If it's AI's turn immediately after loading (e.g., after a reset), trigger move
                     if (turn === 'b' && !gameOver) {
+                        console.log('Stockfish is ready and it is Black\'s turn. Triggering AI move.');
                         setTimeout(makeAIMove, 500); // Small delay before AI moves
                     }
                 } else if (message.startsWith('bestmove')) {
                     const move = message.split(' ')[1];
+                    console.log('Stockfish bestmove received:', move);
                     if (move && !gameOver && turn === 'b') {
                         // Convert UCI move (e.g., 'e2e4') to board coordinates
                         const startCol = move.charCodeAt(0) - 'a'.charCodeAt(0);
@@ -743,8 +745,6 @@
                     for (let c = 0; c < 8; c++) {
                         const piece = currentBoard[r][c];
                         if (piece && isPlayersPiece(piece, playerTurn)) {
-                            // Call getLegalMoves with the current global board and turn
-                            // (getLegalMoves internally uses the global 'board' and 'turn' variables)
                             allMoves.push(...getLegalMoves(r, c));
                         }
                     }
@@ -759,8 +759,8 @@
 
                 // Handle captures for scoreboard
                 if (capturedPiece) {
-                    if (turn === 'w') whiteCaptures++;
-                    else blackCaptures++;
+                    if (isMovingPieceWhite) whiteCaptures++; // White captures black piece
+                    else blackCaptures++; // Black captures white piece
                 }
 
                 // Handle En Passant Capture
@@ -768,8 +768,8 @@
                     endRow === enPassantTarget.row && endCol === enPassantTarget.col && !capturedPiece) {
                     const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
                     board[capturedPawnRow][endCol] = null;
-                    if (isMovingPieceWhite) whiteCaptures++;
-                    else blackCaptures++;
+                    if (isMovingPieceWhite) whiteCaptures++; // White captures black pawn via en passant
+                    else blackCaptures++; // Black captures white pawn via en passant
                 }
 
                 // Handle Castling
@@ -825,6 +825,7 @@
 
             function switchTurn() {
                 turn = (turn === 'w') ? 'b' : 'w';
+                console.log('Turn switched to:', turn); // Log turn switch
             }
 
             // Helper function to convert board coordinates to UCI string (e.g., {row: 6, col: 4} -> 'e2')
@@ -841,6 +842,7 @@
 
             // Function to make AI move
             function makeAIMove() {
+                console.log('Attempting to make AI move. stockfishReady:', stockfishReady, 'gameOver:', gameOver, 'turn:', turn);
                 if (!stockfishReady || gameOver || turn !== 'b') return;
 
                 // Construct FEN from current board state
@@ -954,6 +956,7 @@
                 const canMove = (turn === 'w'); // Player always plays white
 
                 if (!canMove) {
+                    console.log("Not player's turn to move.");
                     return;
                 }
 
@@ -997,6 +1000,7 @@
                         } else {
                             checkGameEnd(board, turn);
                             if (turn === 'b' && !gameOver) { // If it's now AI's turn
+                                console.log('Player moved, now triggering AI move.');
                                 setTimeout(makeAIMove, 500);
                             }
                         }
@@ -1022,6 +1026,7 @@
                     hidePromotionModal();
                     checkGameEnd(board, turn);
                     if (turn === 'b' && !gameOver) {
+                        console.log('Pawn promoted, now triggering AI move.');
                         setTimeout(makeAIMove, 500);
                     }
                 });
@@ -1069,6 +1074,4 @@
             resetGame(); // Call reset to set up the initial board and state
         });
     </script>
-</body>
-</html>
- {% endblock %}
+{% endblock %}
