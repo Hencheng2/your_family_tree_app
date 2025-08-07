@@ -18,8 +18,8 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            padding-top: 70px; /* Space for navbar */
-            padding-bottom: 60px; /* Space for footer */
+            padding-top: 20px; /* Reduced padding as home button is gone */
+            padding-bottom: 20px; /* Reduced padding */
             box-sizing: border-box;
             overflow-y: auto; /* Allow scrolling if content exceeds viewport */
         }
@@ -56,7 +56,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            width: 100%;
+            width: 95%; /* Adjusted to be slightly less than 100% of parent for padding */
             max-width: 600px; /* Max width for the board */
             aspect-ratio: 1 / 1; /* Keep board square */
             border: 4px solid var(--text-color);
@@ -224,10 +224,7 @@
     </style>
 </head>
 <body>
-    <!-- Home Button -->
-    <a href="{{ url_for('home') }}" class="absolute top-4 left-4 text-blue-400 hover:text-blue-200 transition duration-300">
-        <i class="fas fa-home text-2xl"></i>
-    </a>
+    <!-- Home Button has been removed as requested -->
 
     <div class="game-container">
         <h1 class="text-4xl font-extrabold text-blue-500">Chess Game</h1>
@@ -600,7 +597,7 @@
                     }
                 });
                 if (!isKingInCheck(currentBoard, isWhite)) {
-                    if (isWhite && castlingRights.wK && currentBoard[currentKingRow][5] === null && currentKingRow[6] === null && currentBoard[currentKingRow][7] === 'R' && !isSquareAttacked(currentKingRow, 5, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 6, !isWhite, currentBoard)) {
+                    if (isWhite && castlingRights.wK && currentBoard[currentKingRow][5] === null && currentBoard[currentKingRow][6] === null && currentBoard[currentKingRow][7] === 'R' && !isSquareAttacked(currentKingRow, 5, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 6, !isWhite, currentBoard)) {
                         moves.push([currentKingRow, 6, 'castlingK']);
                     } else if (!isWhite && castlingRights.bK && currentBoard[currentKingRow][5] === null && currentBoard[currentKingRow][6] === null && currentBoard[currentKingRow][7] === 'r' && !isSquareAttacked(currentKingRow, 5, !isWhite, currentBoard) && !isSquareAttacked(currentKingRow, 6, !isWhite, currentBoard)) {
                         moves.push([currentKingRow, 6, 'castlingK']);
@@ -747,240 +744,6 @@
                     }
                 }
                 return allMoves;
-            }
-
-            // Central function to apply a move (used by both player and AI)
-            function applyMove(startRow, startCol, endRow, endCol, promotionPiece = null) {
-                const pieceToMove = board[startRow][startCol];
-                const capturedPiece = board[endRow][endCol];
-                const isMovingPieceWhite = getPieceColor(pieceToMove) === 'w';
-
-                // Handle captures for scoreboard
-                if (capturedPiece) {
-                    if (isMovingPieceWhite) whiteCaptures++;
-                    else blackCaptures++;
-                }
-
-                // Handle En Passant Capture
-                if (pieceToMove.toLowerCase() === 'p' && enPassantTarget &&
-                    endRow === enPassantTarget.row && endCol === enPassantTarget.col && !capturedPiece) {
-                    const capturedPawnRow = isMovingPieceWhite ? endRow + 1 : endRow - 1;
-                    board[capturedPawnRow][endCol] = null;
-                    if (isMovingPieceWhite) whiteCaptures++;
-                    else blackCaptures++;
-                }
-
-                // Handle Castling
-                if (pieceToMove.toLowerCase() === 'k' && Math.abs(startCol - endCol) === 2) {
-                    const currentKingRow = startRow;
-                    if (endCol === 6) { // King-side castling
-                        const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                        board[currentKingRow][5] = rookChar;
-                        board[currentKingRow][7] = null;
-                    } else if (endCol === 2) { // Queen-side castling
-                        const rookChar = isMovingPieceWhite ? 'R' : 'r';
-                        board[currentKingRow][3] = rookChar;
-                        board[currentKingRow][0] = null;
-                    }
-                }
-
-                board[endRow][endCol] = pieceToMove;
-                board[startRow][startCol] = null;
-
-                // Handle promotion
-                if (pieceToMove.toLowerCase() === 'p' && (endRow === 0 || endRow === 7)) {
-                    const promoteTo = promotionPiece ? promotionPiece.toUpperCase() : 'Q'; // Default to Queen
-                    board[endRow][endCol] = isMovingPieceWhite ? promoteTo : promoteTo.toLowerCase();
-                }
-
-                updateCastlingRights(startRow, startCol, endRow, endCol, pieceToMove);
-
-                enPassantTarget = null;
-                if (pieceToMove.toLowerCase() === 'p' && Math.abs(startRow - endRow) === 2) {
-                    enPassantTarget = { row: (startRow + endRow) / 2, col: endCol };
-                }
-                
-                // Store move in history for FEN generation
-                moveHistory.push({
-                    from: { row: startRow, col: startCol },
-                    to: { row: endRow, col: endCol },
-                    piece: pieceToMove,
-                    captured: capturedPiece,
-                    promotion: promotionPiece // Store promotion for history if applicable
-                });
-
-                switchTurn();
-                renderBoard();
-                checkGameEnd(board, turn); // Check game end after every move
-            }
-
-            // Function to apply AI move (called directly from Stockfish.onmessage)
-            function applyAIMove(startRow, startCol, endRow, endCol, promotionPiece = null) {
-                console.log(`Applying AI move: ${coordsToUci(startRow, startCol)}${coordsToUci(endRow, endCol)}${promotionPiece || ''}`);
-                applyMove(startRow, startCol, endRow, endCol, promotionPiece);
-                if (turn === 'w' && !gameOver) { // After AI moves, it's player's turn
-                    console.log('AI moved, now it is White\'s turn.');
-                }
-            }
-
-
-            function updateCastlingRights(startRow, startCol, endRow, endCol, piece) {
-                const isWhite = getPieceColor(piece) === 'w';
-                if (piece.toLowerCase() === 'k') {
-                    if (isWhite) { castlingRights.wK = false; castlingRights.wQ = false; }
-                    else { castlingRights.bK = false; castlingRights.bQ = false; }
-                } else if (piece.toLowerCase() === 'r') {
-                    if (isWhite) {
-                        if (startRow === 7 && startCol === 7) castlingRights.wK = false;
-                        if (startRow === 7 && startCol === 0) castlingRights.wQ = false;
-                    } else {
-                        if (startRow === 0 && startCol === 7) castlingRights.bK = false;
-                        if (startRow === 0 && startCol === 0) castlingRights.bQ = false;
-                    }
-                }
-                // Also invalidate castling rights if a rook is captured on its original square
-                // This is a simplified check and might not cover all edge cases perfectly.
-                // A more robust system would track captured pieces more directly.
-                if (endRow === 7 && endCol === 7 && getPieceColor(board[7][7]) === 'b' && board[7][7].toLowerCase() === 'r') castlingRights.wK = false;
-                if (endRow === 7 && endCol === 0 && getPieceColor(board[7][0]) === 'b' && board[7][0].toLowerCase() === 'r') castlingRights.wQ = false;
-                if (endRow === 0 && endCol === 7 && getPieceColor(board[0][7]) === 'w' && board[0][7].toLowerCase() === 'r') castlingRights.bK = false;
-                if (endRow === 0 && endCol === 0 && getPieceColor(board[0][0]) === 'w' && board[0][0].toLowerCase() === 'r') castlingRights.bQ = false;
-            }
-
-            function switchTurn() {
-                turn = (turn === 'w') ? 'b' : 'w';
-                console.log('Turn switched to:', turn); // Log turn switch
-            }
-
-            // Helper function to convert board coordinates to UCI string (e.g., {row: 6, col: 4} -> 'e2')
-            function coordsToUci(row, col) {
-                return String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row);
-            }
-
-            // Helper function to convert UCI string to board coordinates (e.g., 'e2' -> {row: 6, col: 4})
-            function uciToCoords(uci) {
-                const col = uci.charCodeAt(0) - 'a'.charCodeAt(0);
-                const row = 8 - parseInt(uci[1], 10);
-                return { row, col };
-            }
-
-            // Function to make AI move
-            function makeAIMove() {
-                console.log('Attempting to make AI move. stockfishReady:', stockfishReady, 'gameOver:', gameOver, 'turn:', turn);
-                if (!stockfishReady || gameOver || turn !== 'b') return;
-
-                // Construct FEN from current board state
-                let fen = '';
-                let emptyCount = 0;
-                for (let r = 0; r < 8; r++) {
-                    for (let c = 0; c < 8; c++) {
-                        const piece = board[r][c];
-                        if (piece) {
-                            if (emptyCount > 0) {
-                                fen += emptyCount;
-                                emptyCount = 0;
-                            }
-                            fen += piece;
-                        } else {
-                            emptyCount++;
-                        }
-                    }
-                    if (emptyCount > 0) {
-                        fen += emptyCount;
-                        emptyCount = 0;
-                    }
-                    if (r < 7) fen += '/';
-                }
-
-                fen += ` ${turn}`; // Current turn
-                
-                // Castling rights
-                let castlingFen = '';
-                if (castlingRights.wK) castlingFen += 'K';
-                if (castlingRights.wQ) castlingFen += 'Q';
-                if (castlingRights.bK) castlingFen += 'k';
-                if (castlingRights.bQ) castlingFen += 'q';
-                fen += ` ${castlingFen || '-'}`;
-
-                // En passant target
-                if (enPassantTarget) {
-                    fen += ` ${coordsToUci(enPassantTarget.row, enPassantTarget.col)}`;
-                } else {
-                    fen += ' -';
-                }
-
-                // Halfmove clock (moves since last capture or pawn advance - simplified to 0)
-                fen += ' 0';
-                // Fullmove number (simplified to 1 + half of total moves)
-                fen += ` ${Math.floor(moveHistory.length / 2) + 1}`;
-
-                console.log("Sending FEN to Stockfish:", fen);
-                stockfish.postMessage('position fen ' + fen);
-                stockfish.postMessage('go depth 10'); // AI thinks for depth 10
-            }
-
-
-            // Modified handleSquareClick to accept row, col directly and an isAIMove flag
-            function handleSquareClick(event, row, col) {
-                if (gameOver) return;
-
-                const piece = board[row][col];
-                const pieceColor = getPieceColor(piece);
-
-                // Player can only move on their turn (White)
-                if (turn !== 'w') {
-                    console.log("Move blocked: Not White's turn.");
-                    return;
-                }
-
-                // Clear previous highlights
-                document.querySelectorAll('.selected, .possible-move, .capture-move, .in-check').forEach(s => {
-                    s.classList.remove('selected', 'possible-move', 'capture-move', 'in-check');
-                });
-                renderBoard(); // Re-render to clear highlights and re-apply check highlight if needed
-
-                if (selectedPiecePos) {
-                    const prevRow = selectedPiecePos.row;
-                    const prevCol = selectedPiecePos.col;
-
-                    const legalMoves = getLegalMoves(prevRow, prevCol);
-                    const isLegalMove = legalMoves.some(move => move[0] === row && move[1] === col);
-                    const specialMoveType = legalMoves.find(move => move[0] === row && move[1] === col)?.[2];
-
-
-                    if (isLegalMove) {
-                        // Apply the player's move
-                        applyMove(prevRow, prevCol, row, col, null); // No promotion piece for player's initial move
-                        selectedSquare = null;
-                        selectedPiecePos = null;
-                        validMoves = [];
-
-                        // Check for pawn promotion after the move for player
-                        if (board[row][col] && board[row][col].toLowerCase() === 'p' && (row === 0 || row === 7)) {
-                            promotionPawnPos = { row, col };
-                            showPromotionModal();
-                        } else {
-                            // After player moves, trigger AI move if game not over
-                            if (turn === 'b' && !gameOver) {
-                                console.log('Player moved, now triggering AI move.');
-                                setTimeout(makeAIMove, 500);
-                            }
-                        }
-                    } else {
-                        selectedSquare = null;
-                        selectedPiecePos = null;
-                        validMoves = [];
-                        // Re-select if clicking on another of player's pieces
-                        if (piece && isPlayersPiece(piece, turn)) {
-                            selectPiece(boardElement.querySelector(`[data-row="${row}"][data-col="${col}"]`), row, col);
-                        }
-                    }
-                } else {
-                    // Select piece if it's player's piece
-                    if (piece && isPlayersPiece(piece, turn)) {
-                        selectPiece(boardElement.querySelector(`[data-row="${row}"][data-col="${col}"]`), row, col);
-                    }
-                }
             }
 
             promotionOptions.forEach(option => {
