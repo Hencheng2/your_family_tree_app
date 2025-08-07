@@ -16,9 +16,9 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: flex-start; /* Align to top to allow scrolling */
+            justify-content: center; /* Center content vertically if space allows */
             min-height: 100vh;
-            padding-top: 20px; /* Reduced padding as home button is gone */
+            padding-top: 20px;
             padding-bottom: 80px; /* Increased padding for the footer spacer */
             box-sizing: border-box;
             overflow-y: auto; /* Allow scrolling if content exceeds viewport */
@@ -29,14 +29,16 @@
             flex-direction: column;
             align-items: center;
             gap: 20px;
-            width: 95%; /* Make it more fluid, almost full width */
-            max-width: 700px; /* Increased max-width for larger screens */
+            width: 95vw; /* Take 95% of viewport width */
+            max-width: 900px; /* Increased max-width for larger screens */
             padding: 20px;
             background-color: var(--card-bg);
             border-radius: 1rem;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
             position: relative;
             margin-bottom: 20px; /* Space above the footer spacer */
+            margin-left: auto; /* Center the container */
+            margin-right: auto; /* Center the container */
         }
 
         .scoreboard {
@@ -79,7 +81,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 4vw; /* Slightly larger base font for pieces */
+            font-size: 6vw; /* Larger base font for pieces, scales with viewport */
             cursor: pointer;
             user-select: none; /* Prevent text selection */
             transition: background-color 0.1s ease-in-out;
@@ -101,31 +103,31 @@
         /* Piece styling */
         .piece {
             font-family: 'Arial Unicode MS', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif; /* Fallback for chess symbols */
-            font-size: 5vw; /* Larger for pieces */
+            font-size: 7vw; /* Even larger for pieces, scales with viewport */
             line-height: 1;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
         }
         .white-piece { color: #fff; }
         .black-piece { color: #000; }
 
-        /* Responsive font size for pieces */
+        /* Responsive font size for pieces - adjusting breakpoints for larger scaling */
         @media (min-width: 480px) { /* For small tablets and larger phones */
             .square {
-                font-size: 3vw;
+                font-size: 4vw;
             }
             .piece {
-                font-size: 4vw;
+                font-size: 5vw;
             }
         }
 
         @media (min-width: 768px) { /* For tablets and desktops */
             .square {
-                font-size: 2.5vw;
+                font-size: 3vw;
                 min-width: 50px; /* Larger min size for desktop */
                 min-height: 50px;
             }
             .piece {
-                font-size: 3.5vw;
+                font-size: 4vw;
             }
             .game-container {
                 padding: 30px; /* More padding on larger screens */
@@ -133,12 +135,12 @@
         }
         @media (min-width: 1024px) { /* For larger desktops */
             .square {
-                font-size: 2vw;
+                font-size: 2.5vw;
                 min-width: 60px; /* Even larger min size */
                 min-height: 60px;
             }
             .piece {
-                font-size: 2.5vw;
+                font-size: 3vw;
             }
         }
 
