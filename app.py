@@ -4,927 +4,628 @@ from datetime import datetime, timedelta, timezone
 import random
 import string
 import json
-import uuid # Import uuid for generating unique game IDs
+import uuid # Import uuid for generating unique IDs
+import base64 # Needed for base64 decoding camera/voice note data
+import re # Needed for process_mentions_and_links
 
-import google.generativeai as genai
+# Removed: import google.generativeai as genai
 import firebase_admin
-from firebase_admin import credentials, initialize_app, firestore
-
+from firebase_admin import credentials, firestore, initialize_app # initialize_app is needed if credentials path exists
 
 from flask import Flask, render_template, Blueprint, request, redirect, url_for, g, flash, session, abort, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash # Corrected: Removed extra 'werk'
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_moment import Moment
+from functools import wraps # For admin_required decorator
 
-import config
+import config # Your configuration file
 
 app = Flask(__name__)
-# Use environment variable for SECRET_KEY or fall back to config.py
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', config.SECRET_KEY)
 
+# Use environment variable for SECRET_KEY or fall back to config.py
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', config.SECRET_KEY)
+
+# Database path
 DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'family_tree.db')
 
-app.config['UPLOAD_FOLDER'] = os.path.join('static', 'img', 'profile_photos')
-app.config['UPLOAD_VIDEO_FOLDER'] = os.path.join('static', 'videos', 'status_videos')
-app.config['UPLOAD_CHAT_PHOTO_FOLDER'] = os.path.join('static', 'chat_media', 'photos')
-app.config['UPLOAD_CHAT_VIDEO_FOLDER'] = os.path.join('static', 'chat_media', 'videos')
-app.config['UPLOAD_CHAT_BACKGROUND_FOLDER'] = os.path.join('static', 'img', 'chat_backgrounds')
+# Upload folders configuration
+app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads') # General upload folder
+app.config['PROFILE_PHOTOS_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'profile_photos')
+app.config['POSTS_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'posts')
+app.config['REEL_MEDIA_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'reel_media')
+app.config['STORY_MEDIA_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'story_media')
+app.config['VOICE_NOTES_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'voice_notes')
+app.config['CHAT_MEDIA_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'chat_media')
+app.config['CHAT_BACKGROUND_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'chat_backgrounds')
 
-app.config['ADMIN_USERNAME'] = config.ADMIN_USERNAME
-app.config['ADMIN_PASS'] = config.ADMIN_PASS
-
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'webm'}
-ALLOWED_CHAT_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-ALLOWED_CHAT_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'webm'}
-ALLOWED_BACKGROUND_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
-os.makedirs(os.path.join(app.root_path, app.config['UPLOAD_FOLDER']), exist_ok=True)
-os.makedirs(os.path.join(app.root_path, app.config['UPLOAD_VIDEO_FOLDER']), exist_ok=True)
-os.makedirs(os.path.join(app.root_path, app.config['UPLOAD_CHAT_PHOTO_FOLDER']), exist_ok=True)
-os.makedirs(os.path.join(app.root_path, app.config['UPLOAD_CHAT_VIDEO_FOLDER']), exist_ok=True)
-os.makedirs(os.path.join(app.root_path, app.config['UPLOAD_CHAT_BACKGROUND_FOLDER']), exist_ok=True)
+# Ensure upload directories exist
+for folder in [
+    app.config['PROFILE_PHOTOS_FOLDER'],
+    app.config['POSTS_FOLDER'],
+    app.config['REEL_MEDIA_FOLDER'],
+    app.config['STORY_MEDIA_FOLDER'],
+    app.config['VOICE_NOTES_FOLDER'],
+    app.config['CHAT_MEDIA_FOLDER'],
+    app.config['CHAT_BACKGROUND_FOLDER']
+]:
+    os.makedirs(folder, exist_ok=True)
 
 
-# --- SQLite3 Database Functions ---
+# Allowed extensions for uploads
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv'}
+ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'wav', 'ogg'}
+
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login' # Redirect to login page if user is not authenticated
+
+# Initialize Flask-Moment for date/time formatting
+moment = Moment(app) # Use Moment object
+
+# --- Firebase Admin SDK Initialization ---
+# Only initialize if firebase_admin_key.json exists and is valid.
+# No active Firestore/Storage operations are implemented in user-facing routes as per user's request.
+db_firestore = None # Initialize to None by default
+if config.FIREBASE_ADMIN_CREDENTIALS_PATH and os.path.exists(config.FIREBASE_ADMIN_CREDENTIALS_PATH):
+    try:
+        # Check if Firebase app is already initialized to prevent re-initialization
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(config.FIREBASE_ADMIN_CREDENTIALS_PATH)
+            firebase_admin.initialize_app(cred, {
+                'projectId': config.FIREBASE_CLIENT_CONFIG['projectId'],
+                'storageBucket': config.FIREBASE_CLIENT_CONFIG['storageBucket']
+            })
+            # db_firestore = firestore.client() # Firestore client not actively used for data ops
+            app.logger.info("Firebase Admin SDK initialized successfully.")
+        else:
+            app.logger.info("Firebase Admin SDK already initialized.")
+    except Exception as e:
+        app.logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
+else:
+    app.logger.warning("Firebase Admin SDK credentials file not found or path not configured. Firebase Admin SDK not initialized.")
+
+# Removed: Gemini API Setup (as per user's explicit request to ignore AI)
+
+
+# --- Database Helper Functions ---
 def get_db():
     if 'db' not in g:
-        g.db = sqlite3.connect(
-            DATABASE,
-            detect_types=sqlite3.PARSE_DECLTYPES
-        )
-        g.db.row_factory = sqlite3.Row
+        g.db = sqlite3.connect(DATABASE)
+        g.db.row_factory = sqlite3.Row # Return rows as dict-like objects
     return g.db
 
-@app.teardown_appcontext
-def close_connection(exception):
+def close_db(e=None):
     db = g.pop('db', None)
     if db is not None:
         db.close()
 
+# --- Helper Function for Unique Keys ---
+def generate_unique_key():
+    """Generates a 4-character unique key (2 letters, 2 numbers)."""
+    letters = random.choices(string.ascii_uppercase, k=2)
+    numbers = random.choices(string.digits, k=2)
+    key_chars = letters + numbers
+    random.shuffle(key_chars)
+    return "".join(key_chars)
+
+
 def init_db():
     with app.app_context():
         db = get_db()
-        # The schema.sql content is embedded here for clarity and to ensure consistency.
-        # If you modify schema.sql as a separate file, you MUST ensure this embedded string matches.
-        schema_sql_content = """
-            -- schema.sql
+        with app.open_resource('schema.sql', mode='r') as f:
+            db.executescript(f.read())
+        
+        # --- Create Admin User if not exists ---
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE username = ?", (config.ADMIN_USERNAME,))
+        admin_exists = cursor.fetchone()
 
-            -- Drop existing tables (order matters due to foreign keys)
-            DROP TABLE IF EXISTS game_invitations; -- NEW TABLE
-            DROP TABLE IF EXISTS chat_messages;
-            DROP TABLE IF EXISTS chat_room_members;
-            DROP TABLE IF EXISTS chat_rooms;
-            DROP TABLE IF EXISTS messages;
-            DROP TABLE IF EXISTS statuses;
-            DROP TABLE IF EXISTS members;
-            DROP TABLE IF EXISTS users;
+        if not admin_exists:
+            # Generate a unique key for the admin
+            admin_unique_key = generate_unique_key() # Reusing the helper for consistency
+            
+            # Hash the admin password from config.py
+            hashed_admin_password = generate_password_hash(config.ADMIN_PASSWORD_RAW) # Corrected to config.ADMIN_PASSWORD_RAW
 
-            -- Create users table
-            CREATE TABLE users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                originalName TEXT NOT NULL,
-                relationshipToRaphael TEXT, -- CHANGED: Removed NOT NULL
-                password_hash TEXT NOT NULL,
-                is_admin INTEGER DEFAULT 0,
-                theme_preference TEXT DEFAULT 'light',
-                chat_background_image_path TEXT,
-                unique_key TEXT UNIQUE NOT NULL,
-                password_reset_pending INTEGER DEFAULT 0,
-                reset_request_timestamp TIMESTAMP,
-                last_login_at TIMESTAMP,
-                last_seen_at TIMESTAMP
-            );
+            cursor.execute(
+                """
+                INSERT INTO users (username, originalName, password_hash, unique_key, is_admin)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (config.ADMIN_USERNAME, "SociaFam Admin", hashed_admin_password, admin_unique_key, 1) # is_admin = 1
+            )
+            admin_user_id = cursor.lastrowid
+            
+            # Also create a member profile for the admin
+            db.execute(
+                """
+                INSERT INTO members (user_id, fullName, gender)
+                VALUES (?, ?, ?)
+                """,
+                (admin_user_id, "SociaFam Admin", "Prefer not to say") # Default gender for admin
+            )
+            app.logger.info(f"Admin user '{config.ADMIN_USERNAME}' created with unique key '{admin_unique_key}'.")
+        else:
+            app.logger.info(f"Admin user '{config.ADMIN_USERNAME}' already exists.")
 
-            -- Create members table
-            CREATE TABLE members (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fullName TEXT NOT NULL,
-                association TEXT NOT NULL,
-                gender TEXT NOT NULL,
-                dateOfBirth TEXT,
-                maritalStatus TEXT,
-                spouseNames TEXT,
-                childrenNames TEXT,
-                schoolName TEXT,
-                whereabouts TEXT,
-                contact TEXT,
-                bio TEXT,
-                personalRelationshipDescription TEXT,
-                profilePhoto TEXT,
-                isRaphaelDescendant INTEGER DEFAULT 0,
-                user_id INTEGER UNIQUE,
-                needs_details_update INTEGER DEFAULT 0,
-                added_by_user_id INTEGER NOT NULL,
-                can_message INTEGER DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-                FOREIGN KEY (added_by_user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
+        db.commit() # Commit all changes after script and admin creation
+    app.logger.info("Database initialized/updated from schema.sql.")
 
-            -- Create messages table (for private messages/admin notifications)
-            CREATE TABLE messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sender_id INTEGER NOT NULL,
-                recipient_id INTEGER NOT NULL, -- RENAMED from receiver_id
-                content TEXT NOT NULL,          -- RENAMED from body
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_read INTEGER DEFAULT 0,
-                is_admin_message INTEGER DEFAULT 0,
-                FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE -- RENAMED from receiver_id
-            );
+# Register close_db with the app context
+app.teardown_appcontext(close_db)
 
-            -- Create statuses table (renamed from temporary_videos)
-            CREATE TABLE statuses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                member_id INTEGER UNIQUE NOT NULL,
-                file_path TEXT NOT NULL,
-                upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_video INTEGER DEFAULT 0,
-                uploader_user_id INTEGER NOT NULL,
-                FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
-                FOREIGN KEY (uploader_user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
+# Run init_db once when the app starts if tables don't exist
+with app.app_context():
+    db = get_db()
+    cursor = db.cursor()
+    # Check for a critical table like 'users'
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
+    if not cursor.fetchone():
+        init_db()
+    else: # If tables exist, still ensure admin is present, useful for existing databases
+        # This handles cases where a database exists but the admin user might have been manually deleted
+        # or wasn't created in previous versions.
+        cursor.execute("SELECT id FROM users WHERE username = ?", (config.ADMIN_USERNAME,))
+        if not cursor.fetchone():
+            init_db() # Call init_db to create admin even if tables exist
+    db.close()
 
-            -- NEW TABLES FOR CHAT ROOMS AND MESSAGES (including AI chat history)
-            CREATE TABLE chat_rooms (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_group_chat INTEGER DEFAULT 0
-            );
 
-            CREATE TABLE chat_room_members (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_room_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_admin INTEGER DEFAULT 0,
-                FOREIGN KEY (chat_room_id) REFERENCES chat_rooms(id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                UNIQUE (chat_room_id, user_id)
-            );
-
-            CREATE TABLE chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_room_id INTEGER NOT NULL,
-                sender_id INTEGER NOT NULL,
-                content TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                media_path TEXT,
-                media_type TEXT,
-                is_ai_message INTEGER DEFAULT 0,
-                FOREIGN KEY (chat_room_id) REFERENCES chat_rooms(id) ON DELETE CASCADE,
-                FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
-            );
-
-            -- NEW TABLE FOR GAME INVITATIONS (Kept for other games, but Chess will use Firestore)
-            CREATE TABLE game_invitations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sender_id INTEGER NOT NULL,
-                recipient_id INTEGER NOT NULL,
-                game_name TEXT NOT NULL,
-                status TEXT DEFAULT 'pending', -- 'pending', 'accepted', 'declined'
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
-            );
-        """
-        db.executescript(schema_sql_content)
-        db.commit()
-        print("Database initialized.")
-
-# --- Custom Model Classes ---
+# --- User Model for Flask-Login ---
 class User(UserMixin):
-    def __init__(self, id, username, originalName, password_hash, relationshipToRaphael, is_admin=False, theme_preference='light', chat_background_image_path=None, unique_key=None, password_reset_pending=0, reset_request_timestamp=None, last_login_at=None, last_seen_at=None):
+    def __init__(self, id, username, password_hash, is_admin=0, theme_preference='light', chat_background_image_path=None, unique_key=None, password_reset_pending=0, reset_request_timestamp=None, last_login_at=None, last_seen_at=None, original_name=None, email=None):
         self.id = id
         self.username = username
-        self.originalName = originalName
         self.password_hash = password_hash
-        self.relationshipToRaphael = relationshipToRaphael
-        self.is_admin = is_admin
+        self.is_admin = bool(is_admin) # Convert to boolean
         self.theme_preference = theme_preference
         self.chat_background_image_path = chat_background_image_path
         self.unique_key = unique_key
-        self.password_reset_pending = password_reset_pending
+        self.password_reset_pending = bool(password_reset_pending)
         self.reset_request_timestamp = reset_request_timestamp
         self.last_login_at = last_login_at
         self.last_seen_at = last_seen_at
+        self.original_name = original_name
+        self.email = email # Allow email to be stored for login
 
     def get_id(self):
         return str(self.id)
 
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
-
-    @staticmethod
-    def get(user_id):
+    def get_member_profile(self):
         db = get_db()
-        user_data = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
-        if user_data:
-            is_admin_status = (user_data['username'] == app.config['ADMIN_USERNAME'])
-
-            theme_preference = user_data['theme_preference'] if 'theme_preference' in user_data.keys() else 'light'
-            chat_background_image_path = user_data['chat_background_image_path'] if 'chat_background_image_path' in user_data.keys() else None
-            unique_key = user_data['unique_key'] if 'unique_key' in user_data.keys() else None
-            password_reset_pending = user_data['password_reset_pending'] if 'password_reset_pending' in user_data.keys() else 0
-            reset_request_timestamp = user_data['reset_request_timestamp'] if 'reset_request_timestamp' in user_data.keys() else None
-            last_login_at = user_data['last_login_at'] if 'last_login_at' in user_data.keys() else None
-            last_seen_at = user_data['last_seen_at'] if 'last_seen_at' in user_data.keys() else None
-
-            return User(user_data['id'], user_data['username'], user_data['originalName'],
-                        user_data['password_hash'], user_data['relationshipToRaphael'],
-                        is_admin_status, theme_preference,
-                        chat_background_image_path, unique_key,
-                        password_reset_pending, reset_request_timestamp,
-                        last_login_at, last_seen_at)
-        if user_id == 0 and app.config['ADMIN_USERNAME'] == 'Henry':
-            return User(0, app.config['ADMIN_USERNAME'], 'Admin User', generate_password_hash(config.ADMIN_PASS), 'Administrator', is_admin=True, theme_preference='dark', chat_background_image_path=None, unique_key='ADM0', password_reset_pending=0, reset_request_timestamp=None, last_login_at=datetime.utcnow(), last_seen_at=datetime.utcnow())
-        return None
-
-class Member:
-    def __init__(self, id, fullName, dateOfBirth, gender, association, maritalStatus, spouseNames, childrenNames, schoolName, whereabouts, contact, bio, personalRelationshipDescription, profilePhoto, user_id, can_message=1, added_by_user_id=None, needs_details_update=1, isRaphaelDescendant=0):
-        self.id = id
-        self.fullName = fullName
-        self.dateOfBirth = dateOfBirth
-        self.gender = gender
-        self.association = association
-        self.maritalStatus = maritalStatus
-        self.spouseNames = spouseNames
-        self.childrenNames = childrenNames
-        self.schoolName = schoolName
-        self.whereabouts = whereabouts
-        self.contact = contact
-        self.bio = bio
-        self.personalRelationshipDescription = personalRelationshipDescription
-        self.profilePhoto = profilePhoto
-        self.user_id = user_id
-        self.can_message = can_message
-        self.added_by_user_id = added_by_user_id
-        self.needs_details_update = needs_details_update
-        self.isRaphaelDescendant = isRaphaelDescendant
-
-    @property
-    def user(self):
-        if self.user_id:
-            return User.get(self.user_id)
-        return None
-
-class Status: # Represents an entry in the 'statuses' table
-    def __init__(self, id, file_path, upload_time, is_video, member_id, uploader_user_id):
-        self.id = id
-        self.file_path = file_path
-        self.upload_time = upload_time
-        self.is_video = is_video
-        self.member_id = member_id
-        self.uploader_user_id = uploader_user_id
-
-class Message: # Represents an entry in the 'messages' table (direct messages/admin notifications)
-    def __init__(self, id, sender_id, recipient_id, content, timestamp, is_read, is_admin_message):
-        self.id = id
-        self.sender_id = sender_id
-        self.recipient_id = recipient_id
-        self.content = content
-        self.timestamp = timestamp
-        self.is_read = is_read
-        self.is_admin_message = is_admin_message
-
-class ChatRoom:
-    def __init__(self, id, name, created_at, is_group_chat):
-        self.id = id
-        self.name = name
-        self.created_at = created_at
-        self.is_group_chat = is_group_chat
-
-class ChatRoomMember:
-    def __init__(self, id, chat_room_id, user_id, joined_at, is_admin):
-        self.id = id
-        self.chat_room_id = chat_room_id
-        self.user_id = user_id
-        self.joined_at = joined_at
-        self.is_admin = is_admin
-
-class ChatMessage:
-    def __init__(self, id, chat_room_id, sender_id, content, timestamp, media_path, media_type):
-        self.id = id
-        self.chat_room_id = chat_room_id
-        self.sender_id = sender_id
-        self.content = content
-        self.timestamp = timestamp
-        self.media_path = media_path
-        self.media_type = media_type
-
-# NEW CLASS for Game Invitation (SQLite, will be used for non-Firestore games)
-class GameInvitation:
-    def __init__(self, id, sender_id, recipient_id, game_name, status, timestamp):
-        self.id = id
-        self.sender_id = sender_id
-        self.recipient_id = recipient_id
-        self.game_name = game_name
-        self.status = status
-        self.timestamp = timestamp
-
-    @property
-    def sender(self):
-        return User.get(self.sender_id)
-
-    @property
-    def recipient(self):
-        return User.get(self.recipient_id)
-
-
-# --- Flask-Login Setup ---
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
+        member_profile = db.execute('SELECT * FROM members WHERE user_id = ?', (self.id,)).fetchone()
+        return member_profile
 
 @login_manager.user_loader
 def load_user(user_id):
-    if user_id is None:
-        return None
-    try:
-        return User.get(int(user_id))
-    except (ValueError, TypeError):
-        return None
-
-# --- Flask-Moment Setup ---
-moment = Moment(app)
-
-# --- Firebase Admin SDK Initialization ---
-firestore_db = None
-try:
-    if not firebase_admin._apps:
-        cred_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), config.FIREBASE_ADMIN_CREDENTIALS_PATH)
-        cred = credentials.Certificate(cred_path)
-        initialize_app(cred)
-    firestore_db = firestore.client()
-    print("Firebase Admin SDK initialized successfully.")
-except Exception as e:
-    print(f"Error initializing Firebase Admin SDK: {e}. Please ensure '{config.FIREBASE_ADMIN_CREDENTIALS_PATH}' is in your project directory and is a valid JSON key file.")
-
-
-# --- Gemini API Configuration ---
-GEMINI_API_KEY = config.GEMINI_API_KEY
-if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY_HERE":
-    print("WARNING: GEMINI_API_KEY is not set in config.py or is still a placeholder. AI chat will not function.")
-genai.configure(api_key=GEMINI_API_KEY)
-
-
-# --- Helper functions ---
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def allowed_video_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS
-
-def allowed_chat_image_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_CHAT_IMAGE_EXTENSIONS
-
-def allowed_chat_video_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_CHAT_VIDEO_EXTENSIONS
-
-def allowed_background_image_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_BACKGROUND_IMAGE_EXTENSIONS
-
-def generate_unique_key():
-    nums = ''.join(random.choices(string.digits, k=2))
-    chars = ''.join(random.choices(string.ascii_uppercase, k=2))
-    return f"{nums}{chars}"
-
-def calculate_age(dob):
-    if not dob:
-        return None
-    try:
-        if isinstance(dob, datetime):
-            birth_date = dob.date()
-        elif isinstance(dob, str):
-            if dob.strip() == '':
-                return None
-            birth_date = datetime.strptime(dob, '%Y-%m-%d').date()
-        else:
-            return None
-        today = datetime.now().date()
-        age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
-        return age
-    except ValueError:
-        return None
-    except Exception as e:
-        print(f"Error calculating age for DOB {dob}: {e}")
-        return None
-
-def get_child_association(parent_association):
-    parent_association_lower = parent_association.lower()
-    if 'son of Raphael Nyanga' in parent_association_lower or 'daughter of Raphael Nyanga' in parent_association_lower:
-        return 'Grandchild of Raphael Nyanga'
-    elif 'grandchild of Raphael Nyanga' in parent_association_lower:
-        return 'Great-grandchild of Raphael Nyanga'
-    elif 'great-grandchild of Raphael Nyanga' in parent_association_lower:
-        return 'Great-great-grandchild of Raphael Nyanga'
-    return 'Descendant of Raphael Nyanga'
-
-def get_current_user_member_profile():
-    if current_user.is_authenticated:
-        db = get_db()
-        member_data = db.execute('SELECT * FROM members WHERE user_id = ?', (current_user.id,)).fetchone()
-        if member_data:
-            return Member(
-                id=member_data['id'],
-                fullName=member_data['fullName'],
-                dateOfBirth=member_data['dateOfBirth'],
-                gender=member_data['gender'],
-                association=member_data['association'],
-                maritalStatus=member_data['maritalStatus'],
-                spouseNames=member_data['spouseNames'],
-                childrenNames=member_data['childrenNames'],
-                schoolName=member_data['schoolName'],
-                whereabouts=member_data['whereabouts'],
-                contact=member_data['contact'],
-                bio=member_data['bio'],
-                personalRelationshipDescription=member_data['personalRelationshipDescription'],
-                profilePhoto=member_data['profilePhoto'],
-                user_id=member_data['user_id'],
-                can_message=member_data['can_message'],
-                added_by_user_id=member_data['added_by_user_id'],
-                needs_details_update=member_data['needs_details_update'],
-                isRaphaelDescendant=member_data['isRaphaelDescendant'] if 'isRaphaelDescendant' in member_data.keys() else 0
-            )
+    db = get_db()
+    user_data = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+    if user_data:
+        # Fetch member details to get email if available
+        member_data = db.execute('SELECT email FROM members WHERE user_id = ?', (user_id,)).fetchone()
+        email = member_data['email'] if member_data else None
+        return User(
+            id=user_data['id'],
+            username=user_data['username'],
+            password_hash=user_data['password_hash'],
+            is_admin=user_data['is_admin'],
+            theme_preference=user_data['theme_preference'],
+            chat_background_image_path=user_data['chat_background_image_path'],
+            unique_key=user_data['unique_key'],
+            password_reset_pending=user_data['password_reset_pending'],
+            reset_request_timestamp=user_data['reset_request_timestamp'],
+            last_login_at=user_data['last_login_at'],
+            last_seen_at=user_data['last_seen_at'],
+            original_name=user_data['originalName'],
+            email=email
+        )
     return None
 
-def get_unread_messages_count():
-    if current_user.is_authenticated:
-        try:
-            db = get_db()
-            # Use 'recipient_id' and 'is_read' from the 'messages' table
-            count_messages = db.execute('SELECT COUNT(*) FROM messages WHERE recipient_id = ? AND is_read = 0', (current_user.id,)).fetchone()[0]
-            return count_messages
-        except sqlite3.OperationalError:
-            print("Skipping unread message count due to missing 'messages' table.")
-            return 0
-        except Exception as e:
-            print(f"Error getting unread messages count: {e}")
-            return 0
-    return 0
+# --- Decorator for Admin-Only Access ---
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin:
+            flash('You do not have administrative privileges to access this page.', 'danger')
+            return redirect(url_for('home'))
+        return f(*args, **kwargs)
+    return decorated_function
 
-# NEW HELPER FUNCTION: Get unread game invitations count from Firestore
-def get_unread_game_invite_count():
-    if current_user.is_authenticated and firestore_db:
-        try:
-            # Query Firestore for games where current user is a player, game is not over, and it's human vs human
-            games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games')
-            
-            # Check for games where current user is playerWhiteId
-            invites_as_white_query = games_ref.where('playerWhiteId', '==', str(current_user.id)).where('gameOver', '==', False).where('gameType', '==', 'human_vs_human')
-            invites_as_white_docs = invites_as_white_query.stream()
-            count_as_white = sum(1 for doc in invites_as_white_docs)
+# --- Helper Functions for File Uploads ---
+def allowed_file(filename, allowed_extensions):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in allowed_extensions
 
-            # Check for games where current user is playerBlackId
-            invites_as_black_query = games_ref.where('playerBlackId', '==', str(current_user.id)).where('gameOver', '==', False).where('gameType', '==', 'human_vs_human')
-            invites_as_black_docs = invites_as_black_query.stream()
-            count_as_black = sum(1 for doc in invites_as_black_docs)
-
-            # Total unread invites are the sum of games where they are a participant and it's not over
-            return count_as_white + count_as_black
-        except Exception as e:
-            print(f"Error getting unread game invite count from Firestore: {e}")
-            return 0
-    return 0
+def save_uploaded_file(file, upload_folder):
+    if file and allowed_file(file.filename, ALLOWED_IMAGE_EXTENSIONS.union(ALLOWED_VIDEO_EXTENSIONS).union(ALLOWED_AUDIO_EXTENSIONS)):
+        filename = secure_filename(file.filename)
+        unique_filename = str(uuid.uuid4()) + '_' + filename
+        file_path = os.path.join(upload_folder, unique_filename)
+        file.save(file_path)
+        # Store relative path for database, correctly structured
+        relative_path = os.path.join('static', 'uploads', os.path.basename(upload_folder), unique_filename)
+        return relative_path.replace("\\", "/") # Ensure forward slashes for URLs
+    return None
 
 
-def cleanup_expired_videos():
+def get_member_profile_pic(user_id):
     db = get_db()
-    now = datetime.utcnow()
-    expiration_threshold = now - timedelta(hours=12)
+    member = db.execute("SELECT profilePhoto FROM members WHERE user_id = ?", (user_id,)).fetchone()
+    if member and member['profilePhoto']:
+        # Ensure the path is relative to 'static/' as expected by url_for
+        # The stored path should already be like 'static/uploads/profile_photos/...'
+        if member['profilePhoto'].startswith('static/'):
+            # Only take the part after 'static/' for url_for's filename
+            return url_for('static', filename=member['profilePhoto'][len('static/'):])
+        # Fallback if path doesn't start with static/, though it should if saved by save_uploaded_file
+        return url_for('static', filename=member['profilePhoto'])
+    return url_for('static', filename='img/default_profile.png')
 
-    try:
-        # Use 'statuses' table and 'upload_time' column
-        expired_videos = db.execute('SELECT id, file_path FROM statuses WHERE upload_time < ?', (expiration_threshold,)).fetchall()
-
-        for video in expired_videos:
-            video_path = os.path.join(app.root_path, video['file_path'])
-            if os.path.exists(video_path):
-                try:
-                    os.remove(video_path)
-                    print(f"Deleted expired status file: {video_path}")
-                except OSError as e:
-                    print(f"Error deleting status file {video_path}: {e}")
-            else:
-                print(f"Expired status file not found on disk, removing DB entry: {video['id']}")
-
-            db.execute('DELETE FROM statuses WHERE id = ?', (video['id'],))
-            db.commit()
-            print(f"Removed expired status DB entry for ID: {video['id']}")
-    except sqlite3.OperationalError as e:
-        print(f"Skipping cleanup_expired_videos due to missing table: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred during cleanup_expired_videos: {e}")
-
-
-def cleanup_expired_chat_media():
+def get_member_from_user_id(user_id):
     db = get_db()
-    now = datetime.utcnow()
-    expiration_threshold = now - timedelta(days=5)
+    member = db.execute('SELECT * FROM members WHERE user_id = ?', (user_id,)).fetchone()
+    return member
 
-    try:
-        # Use 'chat_messages' table and 'media_path', 'timestamp' columns
-        expired_media_messages = db.execute('SELECT id, media_path FROM chat_messages WHERE media_path IS NOT NULL AND timestamp < ?', (expiration_threshold,)).fetchall()
+def get_user_from_member_id(member_id):
+    db = get_db()
+    user_id_row = db.execute('SELECT user_id FROM members WHERE id = ?', (member_id,)).fetchone()
+    if user_id_row:
+        return load_user(user_id_row['user_id'])
+    return None
 
-        for media_msg in expired_media_messages:
-            media_path = os.path.join(app.root_path, media_msg['media_path'])
-            if os.path.exists(media_path):
-                try:
-                    os.remove(media_path)
-                    print(f"Deleted expired chat media file: {media_path}")
-                except OSError as e:
-                    print(f"Error deleting chat media file {media_path}: {e}")
+def process_mentions_and_links(text):
+    """
+    Processes text to:
+    1. Replace @username with clickable links to user profiles.
+    2. Convert URLs to clickable links.
+    """
+    db = get_db()
+    
+    # 1. Process mentions
+    # Find all mentions like @username
+    def replace_mention(match):
+        username = match.group(1)
+        user = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+        if user:
+            return f'<a href="{url_for("profile", username=username)}">@{username}</a>'
+        return match.group(0) # If username not found, keep original text
+    
+    processed_text = re.sub(r'@([a-zA-Z0-9_]+)', replace_mention, text)
+
+    # 2. Process URLs
+    # Regular expression to find URLs
+    url_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+'
+    def replace_url(match):
+        url = match.group(0)
+        # Prepend http:// if missing (for www. links)
+        if not url.startswith('http'):
+            url = 'http://' + url
+        return f'<a href="{url}" target="_blank" rel="noopener noreferrer">{url}</a>'
+    
+    processed_text = re.sub(url_pattern, replace_url, processed_text)
+    
+    return processed_text
+
+# Add these helper functions to app.py (place them after other helpers like process_mentions_and_links)
+
+def get_relationship_status(current_id, other_id):
+    db = get_db()
+    friendship = db.execute(
+        """
+        SELECT status, user1_id FROM friendships
+        WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)
+        """,
+        (current_id, other_id, other_id, current_id)
+    ).fetchone()
+    if friendship:
+        if friendship['status'] == 'accepted':
+            return 'friend'
+        elif friendship['status'] == 'pending':
+            if friendship['user1_id'] == current_id:
+                return 'pending_sent'
             else:
-                print(f"Expired chat media file not found on disk, removing DB entry for message ID: {media_msg['id']}")
-    except sqlite3.OperationalError as e:
-        print(f"Skipping cleanup_expired_chat_media due to missing table: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred during cleanup_expired_chat_media: {e}")
+                return 'pending_received'
+        else:
+            return 'none'  # Treat declined as none for UI purposes
+    return 'none'
 
+def is_blocked(blocker_id, blocked_id):
+    db = get_db()
+    blocked = db.execute(
+        "SELECT id FROM blocked_users WHERE blocker_id = ? AND blocked_id = ?",
+        (blocker_id, blocked_id)
+    ).fetchone()
+    return bool(blocked)
 
-def create_ai_user_and_member():
-    db_conn = get_db()
-    ai_username = "AdminAI"
-    ai_original_name = "Admin AI"
-    ai_unique_key = "AI001"
-    ai_gender = "Other"
-
-    ai_user_data = db_conn.execute('SELECT id FROM users WHERE username = ?', (ai_username,)).fetchone()
-
-    if not ai_user_data:
-        ai_password_hash = generate_password_hash(config.AI_USER_PASSWORD)
-        # Provide a default value for relationshipToRaphael when creating AdminAI
-        db_conn.execute(
-            'INSERT INTO users (username, password_hash, originalName, relationshipToRaphael, is_admin, unique_key) VALUES (?, ?, ?, ?, ?, ?)',
-            (ai_username, ai_password_hash, ai_original_name, 'AI Assistant', 0, ai_unique_key)
+def get_mutual_friends_count(user1_id, user2_id):
+    db = get_db()
+    query = """
+        SELECT COUNT(*) FROM (
+            SELECT CASE WHEN user1_id = ? THEN user2_id ELSE user1_id END AS friend_id
+            FROM friendships WHERE (user1_id = ? OR user2_id = ?) AND status = 'accepted'
+            INTERSECT
+            SELECT CASE WHEN user1_id = ? THEN user2_id ELSE user1_id END AS friend_id
+            FROM friendships WHERE (user1_id = ? OR user2_id = ?) AND status = 'accepted'
         )
-        db_conn.commit()
-        ai_user_id = db_conn.execute('SELECT id FROM users WHERE username = ?', (ai_username,)).fetchone()[0]
-        print(f"Created new AI user with ID: {ai_user_id}")
-    else:
-        ai_user_id = ai_user_data[0]
-        print(f"AI user already exists with ID: {ai_user_id}")
+    """
+    count = db.execute(query, (user1_id, user1_id, user1_id, user2_id, user2_id, user2_id)).fetchone()[0]
+    return count
 
-    ai_member_data = db_conn.execute('SELECT id FROM members WHERE user_id = ?', (ai_user_id,)).fetchone()
-    if not ai_member_data:
-        db_conn.execute(
-            'INSERT INTO members (fullName, association, user_id, can_message, gender, added_by_user_id, profilePhoto) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            (ai_original_name, 'AI Assistant', ai_user_id, 1, ai_gender, ai_user_id, os.path.join(app.config['UPLOAD_FOLDER'], 'ai_icon.png').replace('\\', '/'))
-        )
-        db_conn.commit()
-        print(f"Created member profile for AI user {ai_user_id}.")
-    else:
-        current_ai_photo = db_conn.execute('SELECT profilePhoto FROM members WHERE user_id = ?', (ai_user_id,)).fetchone()
-        expected_ai_photo_path = os.path.join(app.config['UPLOAD_FOLDER'], 'ai_icon.png').replace('\\', '/')
-        if not current_ai_photo or current_ai_photo['profilePhoto'] != expected_ai_photo_path:
-            db_conn.execute('UPDATE members SET profilePhoto = ? WHERE user_id = ?', (expected_ai_photo_path, ai_user_id))
-            db_conn.commit()
-            print(f"Updated AI member profile photo for AI user {ai_user_id}.")
-
-
-# --- Run AI user creation and DB initialization on app startup ---
-with app.app_context():
-    db_file_exists = os.path.exists(DATABASE)
-    db_conn = get_db() # Get a connection
-
-    if not db_file_exists:
-        print("Database file not found, initializing fresh DB...")
-        init_db() # This will create the DB and all tables
-        print("Database initialized.")
-    else:
-        try:
-            # Attempt to access a table/column that would be missing if schema is old
-            db_conn.execute("SELECT id FROM statuses LIMIT 1")
-            db_conn.execute("SELECT recipient_id, content FROM messages LIMIT 1")
-            # NEW: Check for game_invitations table (even if not used for Chess, it's part of schema)
-            db_conn.execute("SELECT id FROM game_invitations LIMIT 1")
-            print("Database file exists and schema appears up-to-date.")
-        except sqlite3.OperationalError as e:
-            print(f"WARNING: Database schema might be outdated or incomplete ({e}).")
-            print("To apply the latest schema, please delete 'family_tree.db' manually from your PythonAnywhere 'Files' tab and then reload your web application.")
-            print("Note: This will delete all existing data.")
-        except Exception as e:
-            print(f"An unexpected error occurred during database schema check: {e}")
-
-    # Ensure AI user is created/updated after DB is confirmed to be initialized
-    create_ai_user_and_member()
-
-# --- Global context processor ---
+# --- Global Context Processor for Navbar Icons ---
 @app.context_processor
-def inject_global_template_vars():
-    client_firebase_config = config.FIREBASE_CLIENT_CONFIG
-    initial_auth_token = getattr(g, 'initial_auth_token', '')
-
-    unread_messages_count = 0
-    unread_game_invite_count = 0 # Initialize for game invites
-
+def inject_navbar_data():
     if current_user.is_authenticated:
-        try:
-            db = get_db()
-            # Existing unread messages count (from SQLite 'messages' table)
-            unread_msg_data = db.execute(
-                'SELECT COUNT(id) FROM messages WHERE recipient_id = ? AND is_read = 0',
-                (current_user.id,)
-            ).fetchone()
-            unread_messages_count = unread_msg_data[0] if unread_msg_data else 0
+        # Determine if current user has a member profile (for profile photo in navbar)
+        profile_photo_path = get_member_profile_pic(current_user.id)
 
-            # NEW: Unread game invitations count (from Firestore)
-            unread_game_invite_count = get_unread_game_invite_count()
+        # Check for unread notifications
+        db = get_db()
+        unread_notifications = db.execute(
+            "SELECT COUNT(*) FROM notifications WHERE receiver_id = ? AND is_read = 0",
+            (current_user.id,)
+        ).fetchone()[0]
 
-        except sqlite3.OperationalError:
-            print("Skipping unread counts due to missing tables during context processing.")
-            unread_messages_count = 0
-            unread_game_invite_count = 0
-        except Exception as e:
-            print(f"Error getting unread counts: {e}")
-            unread_messages_count = 0
-            unread_game_invite_count = 0
+        # Check for unread messages (assuming chat_room_members has unread status)
+        unread_messages_count = db.execute(
+            """
+            SELECT COUNT(DISTINCT crm.chat_room_id)
+            FROM chat_room_members crm
+            JOIN chat_messages cm ON crm.chat_room_id = cm.chat_room_id
+            WHERE crm.user_id = ? AND cm.sender_id != ? AND cm.timestamp > crm.last_read_message_timestamp
+            """,
+            (current_user.id, current_user.id)
+        ).fetchone()[0]
 
-
+        return {
+            'navbar_profile_photo': profile_photo_path,
+            'has_unread_notifications': unread_notifications > 0,
+            'has_unread_messages': unread_messages_count > 0,
+            'is_admin_user': current_user.is_admin
+        }
     return {
-        'now': datetime.utcnow(),
-        'config': app.config,
-        'firebase_config_json': json.dumps(client_firebase_config),
-        'initial_auth_token': initial_auth_token,
-        'current_user': current_user,
-        'unread_messages_count': unread_messages_count,
-        'unread_game_invite_count': unread_game_invite_count, # NEW: Pass game invite count
-        'canvas_app_id': config.CANVAS_APP_ID
+        'navbar_profile_photo': url_for('static', filename='img/default_profile.png'),
+        'has_unread_notifications': False,
+        'has_unread_messages': False,
+        'is_admin_user': False
     }
 
-# --- Before Request Hook ---
-@app.before_request
-def before_request_hook():
+
+# --- System Notification & Messaging Functions ---
+def send_system_notification(receiver_id, message, link=None, type='system_message'):
     db = get_db()
-
-    g.user_member = get_current_user_member_profile()
-    g.unread_messages_count = get_unread_messages_count()
-    g.unread_game_invite_count = get_unread_game_invite_count() # NEW: Fetch game invite count
-    cleanup_expired_videos()
-    cleanup_expired_chat_media()
-
-    if current_user.is_authenticated:
-        db.execute('UPDATE users SET last_seen_at = ? WHERE id = ?', (datetime.utcnow(), current_user.id))
-        db.commit()
-
-        g.user_theme = current_user.theme_preference
-        g.user_chat_background = current_user.chat_background_image_path
-        g.user_unique_key = current_user.unique_key
-    else:
-        g.user_theme = request.cookies.get('theme', 'light')
-        g.user_chat_background = None
-        g.user_unique_key = None
-
-# --- API Route for AI Chat (from v17) ---
-@app.route('/api/send_ai_message', methods=['POST'])
-@login_required
-def send_ai_message():
-    if not firestore_db:
-        print("Firestore DB not initialized, cannot send AI message.")
-        return jsonify({'error': 'AI service not available. Firestore not initialized.'}), 500
-
-    data = request.get_json()
-    user_message = data.get('message')
-    human_user_id = data.get('humanUserId')
-
-    if not user_message or not human_user_id:
-        return jsonify({'error': 'Message or human user ID missing.'}), 400
-
-    db_conn = get_db()
-    ai_user_data = db_conn.execute('SELECT id FROM users WHERE username = ?', ('AdminAI',)).fetchone()
-    if not ai_user_data:
-        print("AdminAI user not found in SQLite DB.")
-        return jsonify({'error': 'AI user not configured.'}), 500
-    ai_user_id = str(ai_user_data[0])
-
-    human_user_id_str = str(human_user_id)
-
-    chat_collection_path = f'artifacts/{config.CANVAS_APP_ID}/users/{human_user_id_str}/conversations/{ai_user_id}/messages'
-
     try:
-        firestore_db.collection(chat_collection_path).add({
-            'senderId': human_user_id_str,
-            'message': user_message,
-            'timestamp': firestore.SERVER_TIMESTAMP,
-            'isAI': False
-        })
-
-        history = []
-        messages_ref = firestore_db.collection(chat_collection_path).order_by('timestamp', direction=firestore.Query.DESCENDING).limit(5)
-        docs = messages_ref.get()
-        for doc in docs:
-            msg = doc.to_dict()
-            role = "model" if msg.get('isAI') else "user"
-            history.append({"role": role, "parts": [{"text": msg.get('message', '')}]})
-        history.reverse()
-
-        model = genai.GenerativeModel('gemini-pro')
-        gemini_response = model.generate_content(history)
-        ai_response_text = gemini_response.text
-
-        firestore_db.collection(chat_collection_path).add({
-            'senderId': ai_user_id,
-            'message': ai_response_text,
-            'timestamp': firestore.SERVER_TIMESTAMP,
-            'isAI': True
-        })
-
-        return jsonify({'success': True, 'response': ai_response_text})
-
+        db.execute(
+            "INSERT INTO notifications (receiver_id, type, message, timestamp, link, is_read) VALUES (?, ?, ?, ?, ?, ?)",
+            (receiver_id, type, message, datetime.now(timezone.utc), link, 0)
+        )
+        db.commit()
+        app.logger.info(f"System notification sent to user {receiver_id}: {message}")
     except Exception as e:
-        print(f"Error communicating with AI or Firestore: {e}")
-        return jsonify({'error': f'Failed to get AI response: {e}'}), 500
+        app.logger.error(f"Error sending system notification to {receiver_id}: {e}")
 
+def get_admin_user_id():
+    db = get_db()
+    admin_user = db.execute("SELECT id FROM users WHERE username = ?", (config.ADMIN_USERNAME,)).fetchone()
+    if admin_user:
+        return admin_user['id']
+    return None
 
 # --- ROUTES ---
 
 @app.route('/')
-def root_redirect():
-    if not current_user.is_authenticated:
-        return redirect(url_for('login'))
-    return redirect(url_for('home'))
-
-@app.route('/get-ai-user-id') # From v17
-@login_required
-def get_ai_user_id():
-    db = get_db()
-    ai_user_data = db.execute('SELECT id FROM users WHERE username = ?', ('AdminAI',)).fetchone()
-    if ai_user_data:
-        return jsonify({'ai_user_id': ai_user_data['id']})
-    return jsonify({'ai_user_id': None}), 404
-
 @app.route('/home')
 @login_required
 def home():
-    background_image = url_for('static', filename='img/Nyangabackground.jpg')
-    return render_template('index.html',
-                           background_image=background_image,
-                           member=g.user_member,
-                           unread_messages_count=g.unread_messages_count,
-                           unread_game_invite_count=g.unread_game_invite_count) # Pass game invite count
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    # Removed dummy post data here as it will be fetched by AJAX
+    return render_template('index.html', current_year=current_year)
 
-# --- User Authentication Routes ---
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if current_user.is_authenticated:
-        flash('You are already logged in.', 'info')
-        return redirect(url_for('home'))
 
-    form_data = {} # Initialize form_data for all cases
+# --- API Route to Get Posts ---
+@app.route('/api/get_posts')
+@login_required
+def api_get_posts():
+    db = get_db()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    offset = (page - 1) * per_page
 
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        is_admin_attempt = request.form.get('admin_login_checkbox')
+    posts_query = """
+        SELECT
+            p.id,
+            p.user_id,
+            p.description,
+            p.media_path,
+            p.media_type,
+            p.timestamp,
+            p.likes_count,
+            p.comments_count,
+            u.username,
+            u.originalName,
+            m.profilePhoto AS author_profile_pic
+        FROM posts p
+        JOIN users u ON p.user_id = u.id
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE (
+            p.visibility = 'public'
+            OR
+            (p.visibility = 'friends' AND EXISTS (
+                SELECT 1 FROM friendships
+                WHERE ((user1_id = ? AND user2_id = p.user_id) OR (user1_id = p.user_id AND user2_id = ?))
+                AND status = 'accepted'
+            ))
+            OR
+            (p.visibility = 'private' AND p.user_id = ?)
+        )
+        ORDER BY p.timestamp DESC
+        LIMIT ? OFFSET ?
+    """
+    
+    # Execute the query to get posts for the current page
+    posts_data = db.execute(posts_query, (current_user.id, current_user.id, current_user.id, per_page, offset)).fetchall()
 
-        db = get_db()
+    posts_list = []
+    for post in posts_data:
+        post_dict = dict(post)
+        post_dict['profile_pic'] = get_member_profile_pic(post_dict['user_id'])
+        # Ensure timestamp is ISO format for moment.js
+        if post_dict['timestamp']:
+            post_dict['timestamp'] = datetime.fromisoformat(post_dict['timestamp']).isoformat()
+        posts_list.append(post_dict)
 
-        if is_admin_attempt:
-            if username == app.config['ADMIN_USERNAME'] and password == app.config['ADMIN_PASS']:
-                admin_user = User(0, app.config['ADMIN_USERNAME'], 'Admin User', generate_password_hash(app.config['ADMIN_PASS']), 'Administrator', is_admin=True, theme_preference='dark', chat_background_image_path=None, unique_key='ADM0', password_reset_pending=0, reset_request_timestamp=None, last_login_at=datetime.utcnow(), last_seen_at=datetime.utcnow())
-                login_user(admin_user)
-                flash('Logged in as Admin successfully!', 'success')
-                return redirect(url_for('home'))
-            else:
-                flash('Invalid admin username or password.', 'danger')
-                form_data['username'] = username # Preserve username on failed attempt
-                return render_template('login.html', form_data=form_data) # Pass form_data
+    # Check if there are more posts for the next page
+    has_more_query = """
+        SELECT COUNT(*)
+        FROM posts p
+        JOIN users u ON p.user_id = u.id
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE (
+            p.visibility = 'public'
+            OR
+            (p.visibility = 'friends' AND EXISTS (
+                SELECT 1 FROM friendships
+                WHERE ((user1_id = ? AND user2_id = p.user_id) OR (user1_id = p.user_id AND user2_id = ?))
+                AND status = 'accepted'
+            ))
+            OR
+            (p.visibility = 'private' AND p.user_id = ?)
+        )
+    """
+    total_posts = db.execute(has_more_query, (current_user.id, current_user.id, current_user.id)).fetchone()[0]
+    has_more = (offset + per_page) < total_posts
 
-        user_data = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-        if user_data:
-            user = User.get(user_data['id'])
+    return jsonify({
+        'posts': posts_list,
+        'has_more': has_more
+    })
 
-            if user.password_reset_pending == 1:
-                session['reset_username'] = user.username
-                flash('Your password reset has been initiated by an administrator. Please set a new password.', 'info')
-                return redirect(url_for('set_new_password'))
 
-            if user.reset_request_timestamp and user.password_reset_pending == 0:
-                time_since_request = datetime.utcnow() - user.reset_request_timestamp
-                if time_since_request <= timedelta(minutes=1):
-                    db.execute('UPDATE users SET password_reset_pending = 1, reset_request_timestamp = NULL WHERE id = ?', (user.id,))
-                    db.commit()
-                    session['reset_username'] = user.username
-                    flash('Your password reset has been automatically initiated. Please set a new password.', 'info')
-                    return redirect(url_for('set_new_password'))
-                else:
-                    db.execute('UPDATE users SET reset_request_timestamp = NULL WHERE id = ?', (user.id,))
-                    db.commit()
-                    flash('Your password reset request has expired. Please submit a new request if needed.', 'warning')
-
-            if check_password_hash(user_data['password_hash'], password):
-                member_profile = db.execute('SELECT can_message FROM members WHERE user_id = ?', (user.id,)).fetchone()
-                # Check for 'can_message' from the members table
-                if not member_profile or member_profile['can_message'] == 0:
-                    flash('Your account is not yet enabled for login. Please contact an administrator.', 'danger')
-                    form_data['username'] = username # Preserve username
-                    return render_template('login.html', form_data=form_data) # Pass form_data
-
-                login_user(user)
-
-                db.execute('UPDATE users SET last_login_at = ?, last_seen_at = ? WHERE id = ?', (datetime.utcnow(), datetime.utcnow(), user.id))
-                db.commit()
-
-                member_exists = db.execute('SELECT id FROM members WHERE user_id = ?', (user.id,)).fetchone()
-                if not member_exists:
-                    flash('Welcome! Please add your personal details to complete your family profile.', 'info')
-                    return redirect(url_for('add_my_details'))
-                else:
-                    flash('Logged in successfully.', 'success')
-                    return redirect(url_for('home'))
-            else:
-                flash('Invalid username or password.', 'danger')
-                form_data['username'] = username # Preserve username
-                return render_template('login.html', form_data=form_data) # Pass form_data
-        else:
-            flash('Invalid username or password.', 'danger')
-            form_data['username'] = username # Preserve username
-            return render_template('login.html', form_data=form_data) # Pass form_data
-
-    return render_template('login.html', form_data=form_data)
-
+# --- Authentication Routes ---
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('home'))
-
-    form_data = {} # Initialize form_data for all cases
-
+    form_data = request.form.to_dict() # Capture form data for re-populating on error
     if request.method == 'POST':
-        username = request.form.get('username')
-        original_name = request.form.get('originalName')
-        gender = request.form.get('gender') # <--- NEW: Get gender from form
-        # relationship_to_raphael is no longer taken from form for users table
-        password = request.form.get('password')
-        confirm_password = request.form.get('confirmPassword')
+        username = request.form['username'].strip()
+        original_name = request.form['originalName'].strip()
+        gender = request.form['gender']
+        password = request.form['password']
+        confirm_password = request.form['confirmPassword']
 
-        form_data = { # Populate form_data with submitted values
-            'username': username,
-            'originalName': original_name,
-            'gender': gender, # <--- NEW: Add gender to form_data
-            # 'relationshipToRaphael': relationship_to_raphael # REMOVED from form_data for users table
-        }
-
-        if not original_name or not gender: # <--- NEW: Validate gender
-            flash('Full Name (Original Name) and Gender are required.', 'danger')
+        db = get_db()
+        # Check if username already exists
+        existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+        if existing_user:
+            flash('Username already taken. Please choose a different one.', 'danger')
             return render_template('register.html', form_data=form_data)
 
+        # Prevent registration with admin credentials
+        if username == config.ADMIN_USERNAME:
+            flash('This username is reserved. Please choose a different one.', 'danger')
+            return render_template('register.html', form_data=form_data)
+
+        # Password validation
         if password != confirm_password:
             flash('Passwords do not match.', 'danger')
             return render_template('register.html', form_data=form_data)
-
-        db = get_db()
-        existing_user_data = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
-        if existing_user_data:
-            flash('Username already exists. Please choose a different one.', 'danger')
+        if len(password) < 6:
+            flash('Password must be at least 6 characters long.', 'danger')
+            return render_template('register.html', form_data=form_data)
+        # Check for numbers, alphabets, and special characters
+        if not (any(char.isdigit() for char in password) and
+                any(char.isalpha() for char in password) and
+                any(not char.isalnum() for char in password)):
+            flash('Password must include at least one number, one letter, and one special character.', 'danger')
             return render_template('register.html', form_data=form_data)
 
-        unique_key = generate_unique_key()
-        password_hash = generate_password_hash(password)
+        hashed_password = generate_password_hash(password)
+        unique_key = generate_unique_key() # Generate unique key
 
         try:
-            # Insert into users table. relationshipToRaphael is now NULLable.
+            cursor = db.execute(
+                'INSERT INTO users (username, originalName, password_hash, unique_key) VALUES (?, ?, ?, ?)',
+                (username, original_name, hashed_password, unique_key)
+            )
+            user_id = cursor.lastrowid
+
+            # Create an associated member profile automatically
             db.execute(
-                'INSERT INTO users (username, originalName, relationshipToRaphael, password_hash, theme_preference, chat_background_image_path, unique_key, password_reset_pending, reset_request_timestamp, last_login_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (username, original_name, None, password_hash, 'light', None, unique_key, 0, None, datetime.utcnow(), datetime.utcnow()) # Passed None for relationshipToRaphael
+                'INSERT INTO members (user_id, fullName, gender) VALUES (?, ?, ?)',
+                (user_id, original_name, gender)
             )
             db.commit()
 
-            new_user_id = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()[0]
-
-            total_users = db.execute('SELECT COUNT(id) FROM users').fetchone()[0]
-            if total_users == 1: # First user registered becomes admin
-                db.execute('UPDATE users SET is_admin = 1 WHERE id = ?', (new_user_id,))
-                db.commit()
-
-            # Create a basic member profile for the new user, with can_message enabled
-            # For personalRelationshipDescription in members table, provide an empty string or default
-            db.execute(
-                'INSERT INTO members (fullName, association, gender, user_id, can_message, added_by_user_id, needs_details_update, personalRelationshipDescription) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                (original_name, 'New Member', gender, new_user_id, 1, new_user_id, 1, '') # Provided empty string for personalRelationshipDescription
-            )
-            db.commit()
-
-            flash(f'Registration successful! Your unique key is: <strong>{unique_key}</strong>. Please keep it safe for password recovery. You can now log in.', 'success')
+            flash(f'Account created successfully for {username}! Your unique key for password recovery is: <strong>{unique_key}</strong>. Please save it.', 'success')
             return redirect(url_for('login'))
-        except sqlite3.Error as e:
-            flash(f'An error occurred during registration: {e}', 'danger')
+        except sqlite3.IntegrityError:
+            flash('An unexpected error occurred (e.g., unique key collision). Please try again.', 'danger')
+            db.rollback()
+            return render_template('register.html', form_data=form_data)
+        except Exception as e:
+            flash(f'An error occurred: {e}', 'danger')
+            db.rollback()
             return render_template('register.html', form_data=form_data)
 
-    return render_template('register.html', form_data=form_data)
+    return render_template('register.html', form_data=None)
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('home'))
+
+    username_or_email = request.form.get('username')
+    password = request.form.get('password')
+    admin_login_checkbox = request.form.get('admin_login_checkbox')
+
+    if request.method == 'POST':
+        if not username_or_email or not password:
+            flash('Please enter both username/email and password.', 'danger')
+            return render_template('login.html', username=username_or_email)
+
+        db = get_db()
+        user_data = None
+
+        # Try to find user by username
+        user_data = db.execute('SELECT * FROM users WHERE username = ?', (username_or_email,)).fetchone()
+
+        # If not found by username, try to find by email in members table
+        if not user_data:
+            member_with_email = db.execute('SELECT user_id FROM members WHERE email = ?', (username_or_email,)).fetchone()
+            if member_with_email:
+                user_data = db.execute('SELECT * FROM users WHERE id = ?', (member_with_email['user_id'],)).fetchone()
+
+        if user_data:
+            user = load_user(user_data['id'])
+            if user and check_password_hash(user.password_hash, password):
+                # Check admin login flag
+                if admin_login_checkbox and not user.is_admin:
+                    flash('You checked "Login as Admin" but you do not have admin privileges.', 'danger')
+                    return render_template('login.html', username=username_or_email)
+                if not admin_login_checkbox and user.is_admin:
+                    flash('Please check "Login as Admin" to log in with this account.', 'danger')
+                    return render_template('login.html', username=username_or_email)
+
+                # Update last login and last seen timestamps
+                now_utc = datetime.now(timezone.utc)
+                db.execute('UPDATE users SET last_login_at = ?, last_seen_at = ? WHERE id = ?', (now_utc, now_utc, user.id))
+                db.commit()
+
+                login_user(user)
+                flash('Logged in successfully!', 'success')
+                if user.is_admin:
+                    return redirect(url_for('admin_dashboard'))
+                return redirect(url_for('home'))
+            else:
+                flash('Invalid username/email or password.', 'danger')
+        else:
+            flash('Invalid username/email or password.', 'danger')
+
+    return render_template('login.html', username=username_or_email)
 
 
 @app.route('/logout')
@@ -934,2206 +635,2505 @@ def logout():
     flash('You have been logged out.', 'info')
     return redirect(url_for('login'))
 
-@app.route('/forgot-password', methods=['GET', 'POST']) # Added GET method from new.py
+
+@app.route('/forgot_password', methods=['GET', 'POST']) # Updated to handle POST
 def forgot_password():
+    current_year = datetime.now(timezone.utc).year
+    form_data = request.form.to_dict() # Capture form data for repopulation
+
     if request.method == 'POST':
         username = request.form.get('username')
-        unique_key = request.form.get('unique_key', '').upper()
+        unique_key = request.form.get('unique_key')
+
+        if not username or not unique_key:
+            flash('Username and unique key are required.', 'danger')
+            return render_template('forgot_password.html', current_year=current_year, form_data=form_data)
 
         db = get_db()
-
-        user_data = db.execute('SELECT id, username, unique_key FROM users WHERE LOWER(username) = LOWER(?)', (username,)).fetchone()
-
-        if not user_data:
-            return jsonify({'success': False, 'message': 'Username not found.'})
-        if user_data['unique_key'] != unique_key:
-            return jsonify({'success': False, 'message': 'Incorrect unique key.'})
-
-        ai_user_data = db.execute('SELECT id FROM users WHERE username = ?', ('AdminAI',)).fetchone()
-        if not ai_user_data:
-            return jsonify({'success': False, 'message': 'Admin AI account not found. Cannot process password reset request.'})
-        admin_ai_user_id = ai_user_data['id']
-
-        message_body = f"Password reset request for user: {username}. Unique Key provided: {unique_key}. Please verify this key and initiate a password reset for this user from the Manage Users page if correct."
-        try:
-            # Using recipient_id and content as per v17 schema
-            db.execute(
-                'INSERT INTO messages (sender_id, recipient_id, content, timestamp, is_read, is_admin_message) VALUES (?, ?, ?, ?, ?, ?)',
-                (user_data['id'], admin_ai_user_id, message_body, datetime.utcnow(), 0, 1)
-            )
-            db.execute('UPDATE users SET password_reset_pending = 1, reset_request_timestamp = ? WHERE id = ?',
-                       (datetime.utcnow(), user_data['id']))
-            db.commit()
-
-            return jsonify({'success': True, 'message': 'Your password reset request has been sent to the administrator. You will be redirected to set a new password in 2 minutes if the admin does not act sooner.'})
-        except sqlite3.Error as e:
-            db.rollback()
-            print(f"Database error during password reset request: {e}")
-            return jsonify({'success': False, 'message': f"Database error during request: {e}"})
-        except Exception as e:
-            db.rollback()
-            print(f"An unexpected error occurred during password reset request: {e}")
-            return jsonify({'success': False, 'message': f"An unexpected error occurred: {e}"})
-
-    # For GET request, display a message (from new.py)
-    flash('Please use the "Forgot Password?" link on the login page to request a reset.', 'info')
-    return redirect(url_for('login'))
-
-
-@app.route('/my-profile')
-@login_required
-def my_profile():
-    db = get_db()
-    member_data = db.execute('SELECT * FROM members WHERE user_id = ?', (current_user.id,)).fetchone()
-
-    if not member_data:
-        flash('Please add your personal details to create your family profile.', 'info')
-        return redirect(url_for('add_my_details'))
-
-    # Convert to Member object for consistency
-    member_profile = Member(
-        id=member_data['id'],
-        fullName=member_data['fullName'],
-        dateOfBirth=member_data['dateOfBirth'],
-        gender=member_data['gender'],
-        association=member_data['association'],
-        maritalStatus=member_data['maritalStatus'],
-        spouseNames=member_data['spouseNames'],
-        childrenNames=member_data['childrenNames'],
-        schoolName=member_data['schoolName'],
-        whereabouts=member_data['whereabouts'],
-        contact=member_data['contact'],
-        bio=member_data['bio'],
-        personalRelationshipDescription=member_data['personalRelationshipDescription'],
-        profilePhoto=member_data['profilePhoto'],
-        user_id=member_data['user_id'],
-        can_message=member_data['can_message'],
-        added_by_user_id=member_data['added_by_user_id'],
-        needs_details_update=member_data['needs_details_update'],
-        isRaphaelDescendant=member_data['isRaphaelDescendant'] if 'isRaphaelDescendant' in member_data.keys() else 0
-    )
-
-    age = calculate_age(member_profile.dateOfBirth)
-
-    # Status video logic (adapted from new.py to use 'statuses' table)
-    temp_video_data_for_template = None
-    latest_status_data = db.execute('SELECT * FROM statuses WHERE member_id = ? ORDER BY upload_time DESC LIMIT 1', (member_profile.id,)).fetchone()
-    if latest_status_data:
-        try:
-            upload_time_dt = latest_status_data['upload_time']
-            if isinstance(upload_time_dt, str):
-                upload_time_dt = datetime.strptime(upload_time_dt, '%Y-%m-%d %H:%M:%S.%f')
-
-            expires_at_dt = upload_time_dt + timedelta(hours=12)
-            is_active_status = (datetime.now(timezone.utc) < expires_at_dt)
-
-            if is_active_status: # Only show if active
-                temp_video_data_for_template = {
-                    'file_path': latest_status_data['file_path'],
-                    'upload_time': upload_time_dt,
-                    'expires_at': expires_at_dt,
-                    'is_active': is_active_status
-                }
-        except Exception as e:
-            print(f"Error processing status for my_profile: {e}")
-            temp_video_data_for_template = None
-
-    return render_template('my_profile.html', member=member_profile, age=age, temp_video=temp_video_data_for_template)
-
-
-@app.route('/edit-my-profile', methods=['GET', 'POST'])
-@login_required
-def edit_my_profile():
-    db = get_db()
-    member_data = db.execute('SELECT * FROM members WHERE user_id = ?', (current_user.id,)).fetchone()
-    if not member_data:
-        flash("No member profile linked to your account. Please contact an admin.", "danger")
-        return redirect(url_for('my_profile'))
-
-    member = Member(
-        id=member_data['id'],
-        fullName=member_data['fullName'],
-        dateOfBirth=member_data['dateOfBirth'],
-        gender=member_data['gender'],
-        association=member_data['association'],
-        maritalStatus=member_data['maritalStatus'],
-        spouseNames=member_data['spouseNames'],
-        childrenNames=member_data['childrenNames'],
-        schoolName=member_data['schoolName'],
-        whereabouts=member_data['whereabouts'],
-        contact=member_data['contact'],
-        bio=member_data['bio'],
-        personalRelationshipDescription=member_data['personalRelationshipDescription'],
-        profilePhoto=member_data['profilePhoto'],
-        user_id=member_data['user_id'],
-        can_message=member_data['can_message'],
-        added_by_user_id=member_data['added_by_user_id'],
-        needs_details_update=member_data['needs_details_update'],
-        isRaphaelDescendant=member_data['isRaphaelDescendant'] if 'isRaphaelDescendant' in member_data.keys() else 0
-    )
-
-    if not current_user.is_admin and (member.user_id is None or current_user.id != member.user_id):
-        flash("You do not have permission to edit this profile.", "danger")
-        return redirect(url_for('home'))
-
-    # Initialize form_data with existing member data for GET request
-    form_data = {
-        'fullName': member.fullName,
-        'dateOfBirth': str(member.dateOfBirth) if member.dateOfBirth else '',
-        'gender': member.gender,
-        'association': member.association,
-        'maritalStatus': member.maritalStatus,
-        'spouseNames': member.spouseNames,
-        'childrenNames': member.childrenNames,
-        'schoolName': member.schoolName,
-        'whereabouts': member.whereabouts,
-        'contact': member.contact,
-        'bio': member.bio,
-        'personalRelationshipDescription': member.personalRelationshipDescription,
-        # profilePhoto is handled separately via member.profilePhoto
-    }
-
-    if request.method == 'POST':
-        member.fullName = request.form.get('fullName')
-        member.dateOfBirth = datetime.strptime(request.form.get('dateOfBirth'), '%Y-%m-%d').date() if request.form.get('dateOfBirth') else None
-        member.gender = request.form.get('gender')
-        member.association = request.form.get('association')
-        member.maritalStatus = request.form.get('maritalStatus')
-        member.spouseNames = request.form.get('spouseNames')
-        member.childrenNames = request.form.get('childrenNames')
-        member.schoolName = request.form.get('schoolName')
-        member.whereabouts = request.form.get('whereabouts')
-        member.contact = request.form.get('contact')
-        member.bio = request.form.get('bio')
-        member.personalRelationshipDescription = request.form.get('personalRelationshipDescription')
-
-        profile_photo_file = request.files.get('profilePhoto')
-        if profile_photo_file and profile_photo_file.filename != '':
-            filename = secure_filename(profile_photo_file.filename)
-            filepath = os.path.join(app.root_path, app.config['UPLOAD_FOLDER'], filename)
-            profile_photo_file.save(filepath)
-            member.profilePhoto = os.path.join(app.config['UPLOAD_FOLDER'], filename).replace('\\', '/')
-        elif request.form.get('remove_profile_photo'):
-            if member.profilePhoto and os.path.exists(os.path.join(app.root_path, member.profilePhoto)):
-                os.remove(os.path.join(app.root_path, member.profilePhoto))
-            member.profilePhoto = None
-
-        needs_details_update = 0
-        if not all([member.fullName, member.dateOfBirth, member.gender, member.association, member.maritalStatus,
-                    member.whereabouts, member.contact, member.bio, member.personalRelationshipDescription]):
-            needs_details_update = 1
-            # Populate form_data with submitted values if validation fails
-            form_data = request.form.to_dict() # Update form_data with current submission
-
-        if needs_details_update == 1: # If validation failed, re-render with form_data
-            flash('Please fill in all required fields.', 'danger')
-            return render_template('edit_member.html', member=member, form_data=form_data)
-
-
-        db.execute('''
-            UPDATE members SET
-                fullName = ?, dateOfBirth = ?, gender = ?, association = ?, maritalStatus = ?,
-                spouseNames = ?, childrenNames = ?, schoolName = ?, whereabouts = ?, contact = ?,
-                bio = ?, personalRelationshipDescription = ?, profilePhoto = ?, needs_details_update = ?
-            WHERE id = ?
-        ''', (
-            member.fullName, member.dateOfBirth, member.gender, member.association, member.maritalStatus,
-            member.spouseNames, member.childrenNames, member.schoolName, member.whereabouts, member.contact,
-            member.bio, member.personalRelationshipDescription, member.profilePhoto, needs_details_update,
-            member.id
-        ))
-        db.commit()
-        flash('Profile updated successfully!', 'success')
-        return redirect(url_for('member_detail', member_id=member.id))
-
-    return render_template('edit_member.html', member=member, form_data=form_data)
-
-
-@app.route('/delete_member/<int:member_id>', methods=['POST'])
-@login_required
-def delete_member(member_id):
-    if not current_user.is_admin:
-        flash("You do not have administrative access to delete members.", "danger")
-        return redirect(url_for('home'))
-
-    db = get_db()
-    member_data = db.execute('SELECT user_id, profilePhoto FROM members WHERE id = ?', (member_id,)).fetchone()
-    if not member_data:
-        flash("Member not found.", "danger")
-        return redirect(url_for('admin_manage_users'))
-
-    linked_user_id = member_data['user_id']
-    profile_photo_path = member_data['profilePhoto']
-
-    try:
-        # Delete associated status (from statuses table)
-        db.execute('DELETE FROM statuses WHERE member_id = ?', (member_id,))
-
-        if linked_user_id:
-            # Delete user's messages (direct messages)
-            db.execute('DELETE FROM messages WHERE sender_id = ? OR recipient_id = ?', (linked_user_id, linked_user_id))
-            # Delete user's chat room memberships and messages in chat_messages table
-            db.execute('DELETE FROM chat_room_members WHERE user_id = ?', (linked_user_id,))
-            db.execute('DELETE FROM chat_messages WHERE sender_id = ?', (linked_user_id,))
-            # NEW: Delete game invitations where this user is sender or recipient (from SQLite)
-            db.execute('DELETE FROM game_invitations WHERE sender_id = ? OR recipient_id = ?', (linked_user_id, linked_user_id))
-
-            # Delete game documents from Firestore where this user is playerWhiteId or playerBlackId
-            if firestore_db:
-                games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games')
-                # Query for games where user is playerWhiteId
-                games_as_white = games_ref.where('playerWhiteId', '==', str(linked_user_id)).stream()
-                for game_doc in games_as_white:
-                    game_doc.reference.delete()
-                    print(f"Deleted Firestore game {game_doc.id} (user was white).")
-                
-                # Query for games where user is playerBlackId
-                games_as_black = games_ref.where('playerBlackId', '==', str(linked_user_id)).stream()
-                for game_doc in games_as_black:
-                    game_doc.reference.delete()
-                    print(f"Deleted Firestore game {game_doc.id} (user was black).")
-
-
-            db.execute('DELETE FROM users WHERE id = ?', (linked_user_id,))
-
-        db.execute('DELETE FROM members WHERE id = ?', (member_id,))
-        db.commit()
-
-        if profile_photo_path and os.path.exists(os.path.join(app.root_path, profile_photo_path)):
-            os.remove(os.path.join(app.root_path, profile_photo_path))
-
-        flash(f"Member and associated data deleted successfully.", "success")
-
-    except sqlite3.Error as e:
-        flash(f"Database error deleting member: {e}", "danger")
-    except Exception as e:
-        flash(f"An unexpected error occurred deleting member: {e}", 'danger')
-
-    return redirect(url_for('admin_manage_users'))
-
-
-@app.route('/chat_rooms') # From v17
-@login_required
-def chat_rooms():
-    db = get_db()
-    user_memberships_data = db.execute('SELECT chat_room_id FROM chat_room_members WHERE user_id = ?', (current_user.id,)).fetchall()
-    room_ids = [m['chat_room_id'] for m in user_memberships_data]
-
-    chat_rooms_data = []
-    if room_ids:
-        placeholders = ','.join('?' * len(room_ids))
-        chat_rooms_data = db.execute(f'''
-            SELECT id, name, created_at, is_group_chat
-            FROM chat_rooms
-            WHERE id IN ({placeholders})
-            ORDER BY name ASC
-        ''', room_ids).fetchall()
-
-    rooms_for_template = []
-    for room_data in chat_rooms_data:
-        room = ChatRoom(
-            id=room_data['id'],
-            name=room_data['name'],
-            created_at=room_data['created_at'],
-            is_group_chat=room_data['is_group_chat']
-        )
-        last_message_data = db.execute('SELECT content, timestamp FROM chat_messages WHERE chat_room_id = ? ORDER BY timestamp DESC LIMIT 1', (room.id,)).fetchone()
-        last_message = None
-        if last_message_data:
-            last_message = Message(
-                id=None,
-                sender_id=None,
-                recipient_id=None,
-                content=last_message_data['content'],
-                timestamp=last_message_data['timestamp'],
-                is_read=None,
-                is_admin_message=None
-            )
-
-        unread_count_data = db.execute('SELECT COUNT(id) FROM chat_messages WHERE chat_room_id = ? AND sender_id != ?', (room.id, current_user.id)).fetchone()
-        unread_count = unread_count_data[0] if unread_count_data else 0
-
-        rooms_for_template.append({
-            'room': room,
-            'last_message': last_message,
-            'unread_count': unread_count
-        })
-
-    sorted_rooms = sorted(rooms_for_template, key=lambda x: x['last_message'].timestamp if x['last_message'] else datetime.min, reverse=True)
-
-
-    return render_template('chat_rooms.html', chat_rooms=sorted_rooms)
-
-
-@app.route('/create_chat_room', methods=['GET', 'POST']) # From v17
-@login_required
-def create_chat_room():
-    db = get_db()
-
-    form_data = {}
-
-    if request.method == 'POST':
-        room_name = request.form.get('room_name')
-        member_ids = request.form.getlist('members')
-
-        if not room_name:
-            flash('Chat room name is required.', 'danger')
-            form_data = request.form.to_dict()
-            return render_template('create_chat_room.html', all_users=get_all_users_for_chat_creation(), form_data=form_data)
-
-        existing_room_data = db.execute('SELECT id FROM chat_rooms WHERE name = ?', (room_name,)).fetchone()
-        if existing_room_data:
-            flash('A chat room with this name already exists.', 'danger')
-            form_data = request.form.to_dict()
-            return render_template('create_chat_room.html', all_users=get_all_users_for_chat_creation(), form_data=form_data)
-
-        db.execute(
-            'INSERT INTO chat_rooms (name, created_at, is_group_chat) VALUES (?, ?, ?)',
-            (room_name, datetime.utcnow(), 1)
-        )
-        db.commit()
-        new_room_id = db.execute('SELECT id FROM chat_rooms WHERE name = ?', (room_name,)).fetchone()[0]
-
-        db.execute(
-            'INSERT INTO chat_room_members (chat_room_id, user_id, joined_at, is_admin) VALUES (?, ?, ?, ?)',
-            (new_room_id, current_user.id, datetime.utcnow(), 1)
-        )
-
-        for user_id_str in member_ids:
-            user_id = int(user_id_str)
-            existing_member = db.execute('SELECT id FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?', (new_room_id, user_id)).fetchone()
-            if not existing_member:
-                db.execute(
-                    'INSERT INTO chat_room_members (chat_room_id, user_id, joined_at, is_admin) VALUES (?, ?, ?, ?)',
-                    (new_room_id, user_id, datetime.utcnow(), 0)
-                )
-        db.commit()
-
-        flash(f'Chat room "{room_name}" created successfully!', 'success')
-        return redirect(url_for('chat_rooms'))
-
-    def get_all_users_for_chat_creation():
-        all_users_data = db.execute('SELECT id, username, originalName FROM users WHERE id != ? ORDER BY username ASC', (current_user.id,)).fetchall()
-        users_list = []
-        for u_data in all_users_data:
-            users_list.append(User(
-                id=u_data['id'],
-                username=u_data['username'],
-                originalName=u_data['originalName'],
-                password_hash=None, relationshipToRaphael=None, is_admin=None, theme_preference=None, chat_background_image_path=None, unique_key=None, password_reset_pending=None, reset_request_timestamp=None, last_login_at=None, last_seen_at=None
-            ))
-        return users_list
-
-    return render_template('create_chat_room.html', all_users=get_all_users_for_chat_creation(), form_data=form_data)
-
-
-@app.route('/chat_room/<int:room_id>', methods=['GET', 'POST']) # From v17
-@login_required
-def chat_room(room_id):
-    db = get_db()
-    room_data = db.execute('SELECT id, name, is_group_chat FROM chat_rooms WHERE id = ?', (room_id,)).fetchone()
-    if not room_data:
-        flash("Chat room not found.", "danger")
-        return redirect(url_for('chat_rooms'))
-
-    room = ChatRoom(
-        id=room_data['id'],
-        name=room_data['name'],
-        created_at=None, is_group_chat=room_data['is_group_chat']
-    )
-
-    is_member_data = db.execute('SELECT id FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?', (room.id, current_user.id)).fetchone()
-    if not is_member_data:
-        flash("You are not a member of this chat room.", "danger")
-        return redirect(url_for('chat_rooms'))
-
-    if request.method == 'POST':
-        message_content = request.form.get('message_content')
-        media_file = request.files.get('media_file')
-
-        media_path = None
-        media_type = None
-
-        if media_file and media_file.filename != '':
-            filename = secure_filename(media_file.filename)
-            file_extension = filename.rsplit('.', 1)[1].lower()
-
-            if file_extension in app.config['ALLOWED_CHAT_IMAGE_EXTENSIONS']:
-                upload_folder = app.config['UPLOAD_CHAT_PHOTO_FOLDER']
-                media_type = 'image'
-            elif file_extension in app.config['ALLOWED_CHAT_VIDEO_EXTENSIONS']:
-                upload_folder = app.config['UPLOAD_CHAT_VIDEO_FOLDER']
-                media_type = 'video'
-            else:
-                flash('Unsupported media file type.', 'danger')
-                return redirect(url_for('chat_room', room_id=room_id))
-
-            filepath = os.path.join(app.root_path, upload_folder, filename)
-            media_file.save(filepath)
-            relative_filepath = os.path.join(upload_folder, filename).replace('\\', '/')
-            media_path = relative_filepath
-
-        if message_content or media_path:
-            db.execute(
-                'INSERT INTO chat_messages (chat_room_id, sender_id, content, timestamp, media_path, media_type) VALUES (?, ?, ?, ?, ?, ?)',
-                (room.id, current_user.id, message_content, datetime.utcnow(), media_path, media_type)
-            )
-            db.commit()
-            return redirect(url_for('chat_room', room_id=room.id))
+        user_data = db.execute('SELECT id, unique_key FROM users WHERE username = ?', (username,)).fetchone()
+
+        if user_data and user_data['unique_key'] == unique_key:
+            # Set a session variable to indicate password reset is pending for this user
+            session['password_reset_user_id'] = user_data['id']
+            flash('Unique key verified. You can now set a new password.', 'success')
+            return redirect(url_for('set_new_password', unique_id=user_data['id']))
         else:
-            flash('Message content or media file is required.', 'danger')
+            flash('Invalid username or unique key.', 'danger')
+            return render_template('forgot_password.html', current_year=current_year, form_data=form_data)
 
-    messages_data = db.execute('SELECT * FROM chat_messages WHERE chat_room_id = ? ORDER BY timestamp', (room.id,)).fetchall()
-    messages = []
-    for msg_data in messages_data:
-        messages.append(ChatMessage(
-            id=msg_data['id'],
-            chat_room_id=msg_data['chat_room_id'],
-            sender_id=msg_data['sender_id'],
-            content=msg_data['content'],
-            timestamp=msg_data['timestamp'],
-            media_path=msg_data['media_path'],
-            media_type=msg_data['media_type']
-        ))
-
-    room_members_data = db.execute('SELECT user_id FROM chat_room_members WHERE chat_room_id = ?', (room.id,)).fetchall()
-    member_user_ids = [m['user_id'] for m in room_members_data]
-    placeholders = ','.join('?' * len(member_user_ids)) if member_user_ids else 'NULL'
-    users_in_room_data = db.execute(f'SELECT id, username, originalName FROM users WHERE id IN ({placeholders})', users_list_for_query(member_user_ids)).fetchall() # Fixed query
-    users_dict = {}
-    for u_data in users_in_room_data:
-        users_dict[u_data['id']] = User(
-            id=u_data['id'],
-            username=u_data['username'],
-            originalName=u_data['originalName'],
-            password_hash=None, relationshipToRaphael=None, is_admin=None, theme_preference=None, chat_background_image_path=None, unique_key=None, password_reset_pending=None, reset_request_timestamp=None, last_login_at=None, last_seen_at=None
-        )
-    return render_template('chat_room.html', room=room, messages=messages, users_dict=users_dict)
-
-# Helper function to handle empty list for IN clause
-def users_list_for_query(ids):
-    return ids if ids else [-1] # Return a non-empty list for the query
-
-@app.route('/delete_chat_message/<int:message_id>', methods=['POST']) # From v17
-@login_required
-def delete_chat_message(message_id):
-    db = get_db()
-    message_data = db.execute('SELECT chat_room_id, sender_id, media_path FROM chat_messages WHERE id = ?', (message_id,)).fetchone()
-    if not message_data:
-        flash("Message not found.", "danger")
-        return redirect(url_for('home'))
-
-    room_id = message_data['chat_room_id']
-    sender_id = message_data['sender_id']
-    media_path = message_data['media_path']
-
-    if sender_id != current_user.id and not current_user.is_admin:
-        flash("You do not have permission to delete this message.", "danger")
-        return redirect(url_for('chat_room', room_id=room_id))
-
-    try:
-        if media_path and os.path.exists(os.path.join(app.root_path, media_path)):
-            os.remove(os.path.join(app.root_path, media_path))
-
-        db.execute('DELETE FROM chat_messages WHERE id = ?', (message_id,))
-        db.commit()
-        flash('Message deleted.', 'success')
-    except sqlite3.Error as e:
-        flash(f'Database error deleting message: {e}', 'danger')
-    except Exception as e:
-        flash(f"An unexpected error occurred: {e}", 'danger')
-
-    return redirect(url_for('chat_room', room_id=room_id))
+    return render_template('forgot_password.html', current_year=current_year, form_data=None) # GET request
 
 
-@app.route('/add_chat_room_member/<int:room_id>', methods=['GET', 'POST']) # From v17
-@login_required
-def add_chat_room_member(room_id):
-    db = get_db()
-    room_data = db.execute('SELECT id FROM chat_rooms WHERE id = ?', (room_id,)).fetchone()
-    if not room_data:
-        flash("Chat room not found.", "danger")
-        return redirect(url_for('chat_rooms'))
-
-    room = ChatRoom(id=room_data['id'], name=None, created_at=None, is_group_chat=None)
-
-    is_room_admin_data = db.execute('SELECT is_admin FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?', (room.id, current_user.id)).fetchone()
-    is_room_admin = is_room_admin_data['is_admin'] if is_room_admin_data else 0
-
-    if not current_user.is_admin and not is_room_admin:
-        flash("You do not have permission to add members to this chat room.", "danger")
-        return redirect(url_for('chat_room', room_id=room_id))
-
-    form_data = {}
-
-    if request.method == 'POST':
-        user_ids_to_add = request.form.getlist('user_ids')
-
-        if not user_ids_to_add:
-            flash('No members selected to add.', 'danger')
-            form_data = request.form.to_dict()
-            return render_template('add_chat_room_member.html', room=room, users_not_in_room=get_users_not_in_room(room.id), form_data=form_data)
-
-
-        for user_id_str in user_ids_to_add:
-            user_id = int(user_id_str)
-            existing_member = db.execute('SELECT id FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?', (room.id, user_id)).fetchone()
-            if not existing_member:
-                db.execute(
-                    'INSERT INTO chat_room_members (chat_room_id, user_id, joined_at, is_admin) VALUES (?, ?, ?, ?)',
-                    (room.id, user_id, datetime.utcnow(), 0)
-                )
-        db.commit()
-        flash('Members added to chat room.', 'success')
-        return redirect(url_for('chat_room', room_id=room.id))
-
-    def get_users_not_in_room(room_id):
-        current_member_ids_data = db.execute('SELECT user_id FROM chat_room_members WHERE chat_room_id = ?', (room_id,)).fetchall()
-        current_member_ids = [m['user_id'] for m in current_member_ids_data]
-
-        placeholders = ','.join('?' * len(current_member_ids)) if current_member_ids else 'NULL'
-        all_users_not_in_room_data = db.execute(f'''
-            SELECT id, username, originalName FROM users
-            WHERE id NOT IN ({placeholders}) AND id != ?
-            ORDER BY username ASC
-        ''', current_member_ids + [current_user.id] if current_member_ids else [current_user.id]).fetchall()
-
-        users_not_in_room = []
-        for u_data in all_users_not_in_room_data:
-            users_not_in_room.append(User(
-                id=u_data['id'],
-                username=u_data['username'],
-                originalName=u_data['originalName'],
-                password_hash=None, relationshipToRaphael=None, is_admin=None, theme_preference=None, chat_background_image_path=None, unique_key=None, password_reset_pending=None, reset_request_timestamp=None, last_login_at=None, last_seen_at=None
-            ))
-        return users_not_in_room
-
-    return render_template('add_chat_room_member.html', room=room, users_not_in_room=get_users_not_in_room(room.id), form_data=form_data)
-
-
-@app.route('/set_new_password', methods=['GET', 'POST'])
-def set_new_password():
-    if 'reset_username' not in session:
-        flash('No pending password reset request. Please use the forgot password link.', 'warning')
+@app.route('/set_new_password/<int:unique_id>', methods=['GET', 'POST'])
+def set_new_password(unique_id):
+    # Ensure this request is linked to a verified forgot password flow
+    if 'password_reset_user_id' not in session or session['password_reset_user_id'] != unique_id:
+        flash('Unauthorized access to password reset. Please use the "Forgot Password" link.', 'danger')
         return redirect(url_for('login'))
 
-    username = session['reset_username']
     db = get_db()
-    user_data = db.execute('SELECT id, password_reset_pending FROM users WHERE username = ?', (username,)).fetchone()
-
-    if not user_data or user_data['password_reset_pending'] == 0:
-        flash('No pending password reset request for this user.', 'warning')
-        session.pop('reset_username', None)
-        return redirect(url_for('login'))
-
-    form_data = {}
-
-    if request.method == 'POST':
-        new_password = request.form.get('new_password')
-        confirm_password = request.form.get('confirm_password')
-
-        if new_password and confirm_password and new_password == confirm_password:
-            hashed_password = generate_password_hash(new_password)
-            db.execute('UPDATE users SET password_hash = ?, password_reset_pending = 0, reset_request_timestamp = NULL WHERE id = ?',
-                       (hashed_password, user_data['id']))
-            db.commit()
-            session.pop('reset_username', None)
-            flash('Your password has been reset successfully. You can now log in.', 'success')
-            return redirect(url_for('login'))
-        else:
-            flash('Passwords do not match or are invalid.', 'danger')
-            form_data = request.form.to_dict()
-            return render_template('set_new_password.html', username=username, form_data=form_data)
-
-    return render_template('set_new_password.html', username=username, form_data=form_data)
-
-
-@app.route('/download_chat_media/<path:filename>')
-@login_required
-def download_chat_media(filename):
-    # Determine the correct directory based on the filename path
-    if 'chat_media/photos/' in filename:
-        directory = os.path.join(app.root_path, app.config['UPLOAD_CHAT_PHOTO_FOLDER'])
-    elif 'chat_media/videos/' in filename:
-        directory = os.path.join(app.root_path, app.config['UPLOAD_CHAT_VIDEO_FOLDER'])
-    else:
-        # If the filename doesn't match expected chat media paths, it's an invalid request
-        abort(404)
-
-    # Extract just the basename from the full path provided in 'filename'
-    actual_filename = os.path.basename(filename)
-
-    db = get_db()
-    # Check if the current user is either the sender or recipient of a message containing this media
-    # This check now looks for the full path in the content, not just the basename
-    media_record = db.execute('''
-        SELECT id FROM messages
-        WHERE content LIKE ?
-        AND (sender_id = ? OR recipient_id = ?)
-    ''', ('%' + filename + '%', current_user.id, current_user.id)).fetchone()
-
-    if not media_record:
-        flash('You do not have permission to download this file.', 'danger')
-        abort(403)
-
-    try:
-        return send_from_directory(directory, actual_filename, as_attachment=True)
-    except FileNotFoundError:
-        abort(404)
-
-
-@app.route('/update_chat_background', methods=['POST'])
-@login_required
-def update_chat_background():
-    db = get_db()
-    action = request.form.get('action')
-
-    current_background_path = current_user.chat_background_image_path
-    new_background_path = None
-    message = "Chat background updated successfully!"
-
-    success = True
-    try:
-        if action == 'upload':
-            if 'background_file' not in request.files:
-                flash('No file part for background upload.', 'danger')
-                return redirect(url_for('settings'))
-
-            file = request.files['background_file']
-            if file.filename == '':
-                flash('No selected file for background.', 'danger')
-                return redirect(url_for('settings'))
-
-            if file and allowed_background_image_file(file.filename):
-                filename = secure_filename(f"{current_user.id}_chat_bg_{datetime.utcnow().timestamp()}_{file.filename}")
-                file_save_path = os.path.join(app.root_path, app.config['UPLOAD_CHAT_BACKGROUND_FOLDER'], filename)
-
-                file.save(file_save_path)
-                new_background_path = os.path.join(app.config['UPLOAD_CHAT_BACKGROUND_FOLDER'], filename).replace('\\', '/')
-                message = "Custom chat background uploaded and set!"
-            else:
-                flash('Invalid file type for background image. Allowed types: png, jpg, jpeg, gif.', 'danger')
-                return redirect(url_for('settings'))
-
-        elif action == 'use_profile_photo':
-            user_member_profile = db.execute('SELECT profilePhoto FROM members WHERE user_id = ?', (current_user.id,)).fetchone()
-            if user_member_profile and user_member_profile['profilePhoto']:
-                new_background_path = user_member_profile['profilePhoto']
-                message = "Profile photo set as chat background!"
-            else:
-                flash('You do not have a profile photo to use as background.', 'danger')
-                return redirect(url_for('settings'))
-
-        elif action == 'clear':
-            new_background_path = None
-            message = "Chat background cleared successfully!"
-
-        else:
-            flash('Invalid action for chat background.', 'danger')
-            return redirect(url_for('settings'))
-
-        if current_background_path and current_background_path != new_background_path and \
-                app.config['UPLOAD_CHAT_BACKGROUND_FOLDER'] in current_background_path:
-            old_background_full_path = os.path.join(app.root_path, current_background_path)
-            if os.path.exists(old_background_full_path):
-                try:
-                    os.remove(old_background_full_path)
-                    print(f"Deleted old chat background file: {old_background_full_path}")
-                except OSError as e:
-                    print(f"Error deleting old chat background file {old_background_full_path}: {e}")
-
-        db.execute('UPDATE users SET chat_background_image_path = ? WHERE id = ?', (new_background_path, current_user.id))
-        db.commit()
-        current_user.chat_background_image_path = new_background_path
-
-        flash(message, 'success')
-    except sqlite3.Error as e:
-        flash(f"Database error updating chat background: {e}", 'danger')
-        success = False
-    except Exception as e:
-        flash(f"An unexpected error occurred: {e}", 'danger')
-        success = False
-
-    return redirect(url_for('settings'))
-
-@app.route('/uploads/<path:filename>')
-def uploaded_file(filename):
-    return send_from_directory(os.path.join(app.root_path, app.config['UPLOAD_FOLDER']), filename)
-
-@app.route('/videos/<path:filename>')
-def uploaded_video(filename):
-    return send_from_directory(os.path.join(app.root_path, app.config['UPLOAD_VIDEO_FOLDER']), filename)
-
-@app.route('/chat_media/photos/<path:filename>')
-def chat_photo(filename):
-    return send_from_directory(os.path.join(app.root_path, app.config['UPLOAD_CHAT_PHOTO_FOLDER']), filename)
-
-@app.route('/chat_media/videos/<path:filename>')
-def chat_video(filename):
-    return send_from_directory(os.path.join(app.root_path, app.config['UPLOAD_CHAT_VIDEO_FOLDER']), filename)
-
-@app.route('/chat_backgrounds/<path:filename>')
-def chat_background(filename):
-    return send_from_directory(os.path.join(app.root_path, app.config['UPLOAD_CHAT_BACKGROUND_FOLDER']), filename)
-
-
-@app.route('/members')
-@login_required
-def list_members():
-    db = get_db()
-    # Updated query from new.py, adapted to 'statuses' table
-    members_data = db.execute('''
-        SELECT
-            m.*,
-            u.username AS linked_username,
-            s.file_path AS status_file_path,
-            s.upload_time AS status_upload_time
-        FROM members m
-        LEFT JOIN users u ON m.user_id = u.id
-        LEFT JOIN statuses s ON m.id = s.member_id
-        WHERE m.user_id IS NULL OR m.user_id != ?
-        ORDER BY m.fullName ASC
-    ''', (current_user.id,)).fetchall()
-
-    members_for_template = []
-    now = datetime.utcnow()
-    for member in members_data:
-        member_dict = dict(member)
-        member_dict['username'] = member_dict['linked_username'] if member_dict['linked_username'] else ''
-
-        # Status logic
-        upload_time_dt = None
-        if member_dict['status_upload_time']:
-            try:
-                upload_time_dt = member_dict['status_upload_time']
-                if isinstance(upload_time_dt, str):
-                    upload_time_dt = datetime.strptime(upload_time_dt, '%Y-%m-%d %H:%M:%S.%f')
-            except (ValueError, TypeError):
-                upload_time_dt = None
-
-        if upload_time_dt and now - upload_time_dt <= timedelta(hours=12):
-            member_dict['has_active_video'] = True
-        else:
-            member_dict['has_active_video'] = False
-
-        # Ensure profilePhoto path is correct for display
-        if member_dict['profilePhoto']:
-            member_dict['profilePhotoUrl'] = url_for('uploaded_file', filename=os.path.basename(member_dict['profilePhoto']))
-        else:
-            member_dict['profilePhotoUrl'] = url_for('static', filename='img/default_profile.png')
-
-        # Handle AdminAI profile photo if it's the AI user
-        if member_dict['username'] == 'AdminAI' and not member_dict['profilePhoto']:
-            member_dict['profilePhotoUrl'] = url_for('static', filename='img/ai_icon.png')
-
-        members_for_template.append(member_dict)
-
-    return render_template('members_list.html', members=members_for_template)
-
-@app.route('/members/detail/<int:member_id>') # Updated URL from new.py
-@login_required
-def member_detail(member_id):
-    db = get_db()
-
-    # Redirect to my_profile if it's the current user's own member_id
-    if g.user_member and member_id == g.user_member.id:
-        return redirect(url_for('my_profile'))
-
-    member_data = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
-
-    if not member_data:
-        flash("Member not found.", "danger")
-        return redirect(url_for('list_members'))
-
-    member_profile = Member(
-        id=member_data['id'],
-        fullName=member_data['fullName'],
-        dateOfBirth=member_data['dateOfBirth'],
-        gender=member_data['gender'],
-        association=member_data['association'],
-        maritalStatus=member_data['maritalStatus'],
-        spouseNames=member_data['spouseNames'],
-        childrenNames=member_data['childrenNames'],
-        schoolName=member_data['schoolName'],
-        whereabouts=member_data['whereabouts'],
-        contact=member_data['contact'],
-        bio=member_data['bio'],
-        personalRelationshipDescription=member_data['personalRelationshipDescription'],
-        profilePhoto=member_data['profilePhoto'],
-        user_id=member_data['user_id'],
-        can_message=member_data['can_message'],
-        added_by_user_id=member_data['added_by_user_id'],
-        needs_details_update=member_data['needs_details_update'],
-        isRaphaelDescendant=member_data['isRaphaelDescendant'] if 'isRaphaelDescendant' in member_data.keys() else 0
-    )
-
-    # Determine if the logged-in user can message this member
-    can_message_member = False
-    if member_profile.user_id and member_profile.can_message == 1:
-        can_message_member = True
-
-    age = calculate_age(member_profile.dateOfBirth)
-
-    # Status video logic (adapted from new.py to use 'statuses' table)
-    temp_video_data_for_template = None
-    latest_status_data = db.execute('SELECT * FROM statuses WHERE member_id = ? ORDER BY upload_time DESC LIMIT 1', (member_profile.id,)).fetchone()
-
-    if latest_status_data:
-        try:
-            upload_time_dt = latest_status_data['upload_time']
-            if isinstance(upload_time_dt, str):
-                upload_time_dt = datetime.strptime(upload_time_dt, '%Y-%m-%d %H:%M:%S.%f').replace(tzinfo=timezone.utc)
-            elif upload_time_dt.tzinfo is None:
-                upload_time_dt = upload_time_dt.replace(tzinfo=timezone.utc)
-
-            expires_at_dt = upload_time_dt + timedelta(hours=12)
-            is_active_status = (datetime.now(timezone.utc) < expires_at_dt)
-
-            if is_active_status: # Only show if active
-                temp_video_data_for_template = {
-                    'file_path': latest_status_data['file_path'],
-                    'upload_time': upload_time_dt,
-                    'expires_at': expires_at_dt,
-                    'is_active': is_active_status
-                }
-        except Exception as e:
-            print(f"Error processing status for member_detail: {e}")
-            temp_video_data_for_template = None
-
-    return render_template(
-        'member_detail.html',
-        member=member_profile,
-        age=age,
-        can_message_member=can_message_member,
-        temp_video=temp_video_data_for_template
-    )
-
-
-@app.route('/status') # From new.py
-@login_required
-def status_feed():
-    db = get_db()
-    now = datetime.utcnow().replace(tzinfo=timezone.utc)
-
-    active_statuses_raw = db.execute('''
-        SELECT
-            s.file_path,
-            s.upload_time,
-            m.fullName,
-            m.profilePhoto,
-            m.id AS member_id,
-            s.uploader_user_id
-        FROM statuses s
-        JOIN members m ON s.member_id = m.id
-        ORDER BY s.upload_time DESC
-    ''').fetchall()
-
-    statuses_for_template = []
-    for status_raw in active_statuses_raw:
-        try:
-            upload_time_dt = status_raw['upload_time']
-            if isinstance(upload_time_dt, str):
-                upload_time_dt = datetime.strptime(upload_time_dt, '%Y-%m-%d %H:%M:%S.%f').replace(tzinfo=timezone.utc)
-            elif upload_time_dt.tzinfo is None:
-                upload_time_dt = upload_time_dt.replace(tzinfo=timezone.utc)
-
-            expires_at_dt = upload_time_dt + timedelta(hours=12)
-            is_active = (now < expires_at_dt)
-
-            if is_active:
-                statuses_for_template.append({
-                    'file_path': status_raw['file_path'],
-                    'upload_time': upload_time_dt,
-                    'expires_at': expires_at_dt,
-                    'fullName': status_raw['fullName'],
-                    'profilePhoto': status_raw['profilePhoto'],
-                    'member_id': status_raw['member_id'],
-                    'uploader_user_id': status_raw['uploader_user_id']
-                })
-        except Exception as e:
-            print(f"ERROR: Failed to process status for {status_raw['fullName']} (Member ID: {status_raw['member_id']}). Error: {e}")
-            continue
-
-    return render_template('status_feed.html', statuses=statuses_for_template)
-
-
-@app.route('/games')
-@login_required
-def games_hub(): # Renamed function for clarity
-    return render_template('game_page.html')
-
-# NEW ROUTE: For playing a game (single player or accepted multiplayer)
-@app.route('/play_game/<game_name>', methods=['GET'])
-@login_required
-def play_game(game_name):
-    # This route will render the specific game.
-    # It can take a gameId query parameter for multiplayer games.
-    game_id = request.args.get('gameId') # Get gameId from query parameters
-    if game_name == 'chess':
-        return render_template('chess_game.html', game_id=game_id) # Pass game_id to template
-    elif game_name == 'racing':
-        return render_template('game_placeholder.html', game_name='racing')
-    elif game_name == 'board_games':
-        return render_template('game_placeholder.html', game_name='board_games')
-    else:
-        # Fallback for any other undefined game names
-        return render_template('game_placeholder.html', game_name=game_name)
-
-
-# NEW ROUTE: For inviting a user to a game (triggered from members_list)
-@app.route('/invite_game/<game_name>/<int:recipient_id>', methods=['POST'])
-@login_required
-def invite_game(game_name, recipient_id):
-    db_sqlite = get_db() # Use db_sqlite to avoid confusion with firestore_db
-    sender_id = str(current_user.id) # Convert to string for Firestore consistency
-    recipient_id_str = str(recipient_id) # Convert to string for Firestore consistency
-
-    # Prevent inviting self
-    if sender_id == recipient_id_str:
-        flash("You cannot invite yourself to a game.", "danger")
-        return redirect(url_for('list_members'))
-
-    # If it's a Chess game, use Firestore for game state
-    if game_name == 'chess':
-        if not firestore_db:
-            flash('Game services not initialized. Please try again later.', 'danger')
-            return redirect(url_for('list_members'))
-
-        try:
-            # Generate a unique game ID for this match
-            game_id = f"chess_{uuid.uuid4().hex}"
-            
-            # Determine players' roles (e.g., inviter is white, recipient is black)
-            # For simplicity, inviter is always white, recipient is black.
-            player_white_id = sender_id
-            player_black_id = recipient_id_str
-
-            # Reference to the Firestore game document
-            game_doc_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games').document(game_id)
-
-            # Initial Chess board state
-            initial_board_state = [
-                ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
-                ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
-                [None, None, None, None, None, None, None, None],
-                [None, None, None, None, None, None, None, None],
-                [None, None, None, None, None, None, None, None],
-                [None, None, None, None, None, None, None, None],
-                ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
-                ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
-            ]
-
-            game_data = {
-                'boardFen': json.dumps(initial_board_state), # Store as JSON string
-                'turn': 'w',
-                'whiteCaptures': 0,
-                'blackCaptures': 0,
-                'castlingRights': {'wK': True, 'wQ': True, 'bK': True, 'bQ': True},
-                'enPassantTarget': None,
-                'lastMove': None,
-                'gameOver': False,
-                'winner': None,
-                'createdAt': firestore.SERVER_TIMESTAMP,
-                'lastUpdated': firestore.SERVER_TIMESTAMP,
-                'playerWhiteId': player_white_id,
-                'playerBlackId': player_black_id,
-                'gameType': 'human_vs_human', # Explicitly human vs human for invites
-                'gameName': game_name # e.g., 'chess'
-            }
-            
-            game_doc_ref.set(game_data)
-            print(f"Created new Firestore game document: {game_id} for {player_white_id} vs {player_black_id}")
-
-            # Flash message for the inviter
-            recipient_member = db_sqlite.execute("SELECT fullName FROM members WHERE user_id = ?", (recipient_id,)).fetchone()
-            recipient_name = recipient_member['fullName'] if recipient_member else "their friend"
-            flash(f'You invited {recipient_name} to a {game_name} game! They can join by navigating to their inbox or directly to the game page.', 'success')
-
-            # Redirect the inviter to the game page with the game ID
-            return redirect(url_for('play_game', game_name=game_name, gameId=game_id))
-
-        except Exception as e:
-            print(f"Error inviting to Chess game via Firestore: {e}")
-            flash('Failed to send Chess game invitation. Please try again.', 'danger')
-            return redirect(url_for('list_members'))
-    
-    # For other games (racing, board_games), continue using SQLite game_invitations table
-    else:
-        # Check if a pending invitation already exists for this game between these users (SQLite)
-        existing_invite = db_sqlite.execute(
-            'SELECT id FROM game_invitations WHERE sender_id = ? AND recipient_id = ? AND game_name = ? AND status = ?',
-            (sender_id, recipient_id, game_name, 'pending')
-        ).fetchone()
-
-        if existing_invite:
-            flash(f"You already have a pending invitation for {game_name} with this user.", "warning")
-            return redirect(url_for('list_members'))
-
-        try:
-            db_sqlite.execute(
-                'INSERT INTO game_invitations (sender_id, recipient_id, game_name, status, timestamp) VALUES (?, ?, ?, ?, ?)',
-                (sender_id, recipient_id, game_name, 'pending', datetime.utcnow())
-            )
-            db_sqlite.commit()
-            recipient_member = db_sqlite.execute("SELECT fullName FROM members WHERE user_id = ?", (recipient_id,)).fetchone()
-            recipient_name = recipient_member['fullName'] if recipient_member else "their friend"
-            flash(f"Invitation to play {game_name.capitalize()} sent successfully to {recipient_name}!", 'success')
-        except sqlite3.Error as e:
-            flash(f"Error sending invitation: {e}", 'danger')
-        except Exception as e:
-            flash(f"An unexpected error occurred: {e}", 'danger')
-
-        return redirect(url_for('list_members'))
-
-
-# Removed accept_game_invite and decline_game_invite routes
-# These are no longer necessary for Firestore-managed games as the game loads directly.
-# For SQLite-managed games, you would implement explicit acceptance/declining if needed.
-
-
-@app.route('/message-member')
-@login_required
-def message_member():
-    db = get_db()
-
-    # Get the ID of the AdminAI user
-    ai_user_data = db.execute('SELECT id FROM users WHERE username = ?', ('AdminAI',)).fetchone()
-    ai_user_id = ai_user_data['id'] if ai_user_data else -1 # Default to -1 if not found
-
-    # Updated query to exclude current user AND AdminAI
-    members_data = db.execute('''
-        SELECT
-        m.id, m.fullName, m.profilePhoto, m.user_id, u.username AS linked_username,
-        s.file_path AS status_file_path, s.upload_time AS status_upload_time
-        FROM members m
-        LEFT JOIN users u ON m.user_id = u.id
-        LEFT JOIN statuses s ON m.id = s.member_id
-        WHERE m.user_id IS NOT NULL
-          AND m.user_id != ?
-          AND m.user_id != ? -- Exclude AdminAI user
-          AND m.can_message = 1
-        ORDER BY m.fullName ASC
-    ''', (current_user.id, ai_user_id)).fetchall() # Pass both current_user.id and ai_user_id
-
-    members_for_template = []
-    now = datetime.utcnow()
-    for member in members_data:
-        member_dict = dict(member)
-        member_dict['username'] = member_dict['linked_username'] if member_dict['linked_username'] else ''
-
-        # Status logic
-        upload_time_dt = None
-        if member_dict['status_upload_time']:
-            try:
-                upload_time_dt = member_dict['status_upload_time']
-                if isinstance(upload_time_dt, str):
-                    upload_time_dt = datetime.strptime(upload_time_dt, '%Y-%m-%d %H:%M:%S.%f')
-            except (ValueError, TypeError):
-                upload_time_dt = None
-
-        if upload_time_dt and now - upload_time_dt <= timedelta(hours=12):
-            member_dict['has_active_video'] = True
-        else:
-            member_dict['has_active_video'] = False
-
-        if member_dict['profilePhoto']:
-            member_dict['profilePhotoUrl'] = url_for('uploaded_file', filename=os.path.basename(member_dict['profilePhoto']))
-        else:
-            member_dict['profilePhotoUrl'] = url_for('static', filename='img/default_profile.png')
-
-        members_for_template.append(member_dict)
-
-    return render_template('message_member.html', messageable_members=members_for_template, ai_user_id=ai_user_id)
-
-
-
-@app.route('/add-my-details', methods=['GET', 'POST'])
-@login_required
-def add_my_details():
-    db = get_db()
-    member_data = db.execute('SELECT * FROM members WHERE user_id = ?', (current_user.id,)).fetchone()
-
-    if member_data:
-        flash("You already have a member profile. You can edit it from My Profile.", "info")
-        return redirect(url_for('my_profile'))
-
-    form_data = {}
-
-    if request.method == 'POST':
-        full_name = request.form.get('fullName')
-        gender = request.form.get('gender')
-        whereabouts = request.form.get('whereabouts')
-        contact = request.form.get('contact')
-        bio = request.form.get('bio')
-        date_of_birth = request.form.get('dateOfBirth')
-        marital_status = request.form.get('maritalStatus')
-        spouse_names = request.form.get('spouseNames', '')
-        # girlfriend_names removed, merged into spouse_names if marital_status is Engaged
-        children_names = request.form.get('childrenNames', '')
-        school_name = request.form.get('schoolName', '')
-        personal_relationship_description = request.form.get('personalRelationshipDescription', '')
-
-        if marital_status == 'Engaged' and request.form.get('girlfriendNames'): # Use girlfriendNames if exists
-            spouse_names = request.form.get('girlfriendNames')
-
-        if contact:
-            contacts_list = [c.strip() for c in contact.split(',') if c.strip()]
-            for c in contacts_list:
-                if '@' in c:
-                    if not (c.count('@') == 1 and '.' in c.split('@')[1]):
-                        flash('Invalid email format in contact information.', 'danger')
-                        form_data = request.form.to_dict()
-                        if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                            form_data['profilePhoto'] = ''
-                        return render_template('add_my_details.html', user=current_user, form_data=form_data)
-                else:
-                    if not (c.replace('+', '').replace('-', '').replace('(', '').replace(')', '').replace(' ', '').isdigit()):
-                        flash('Invalid phone number format in contact information.', 'danger')
-                        form_data = request.form.to_dict()
-                        if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                            form_data['profilePhoto'] = ''
-                        return render_template('add_my_details.html', user=current_user, form_data=form_data)
-
-        association = current_user.relationshipToRaphael # This will be None now from registration
-
-        if not full_name or not gender:
-            flash('Full Name and Gender are required.', 'danger')
-            form_data = request.form.to_dict()
-            if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                form_data['profilePhoto'] = ''
-            return render_template('add_my_details.html', user=current_user, form_data=form_data)
-
-        profile_photo_path = None # Initialize to None instead of empty string
-        if 'profilePhoto' in request.files:
-            file = request.files['profilePhoto']
-            if file and allowed_file(file.filename):
-                # Use current_user.id for filename to ensure uniqueness per user
-                filename = secure_filename(f"{current_user.id}_profile_{datetime.utcnow().timestamp()}_{file.filename}")
-                file_save_path = os.path.join(app.root_path, app.config['UPLOAD_FOLDER'], filename)
-                file.save(file_save_path)
-                profile_photo_path = os.path.join(app.config['UPLOAD_FOLDER'], filename).replace('\\', '/')
-
-        try:
-            is_raphael_descendant = 1 if association and association.lower() in ['son of raphael nyanga', 'daughter of raphael nyanga', 'grandchild of raphael nyanga', 'great-grandchild of raphael nyanga'] else 0
-
-            # Use 'can_message' instead of 'has_login_access' as per v17 schema
-            db.execute(
-                'INSERT INTO members (fullName, association, gender, whereabouts, contact, bio, profilePhoto, dateOfBirth, maritalStatus, spouseNames, childrenNames, isRaphaelDescendant, user_id, needs_details_update, added_by_user_id, schoolName, can_message, personalRelationshipDescription) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (full_name, association, gender, whereabouts, contact, bio, profile_photo_path,
-                 date_of_birth, marital_status, spouse_names, children_names, is_raphael_descendant, current_user.id, 0, current_user.id, school_name, 1, personal_relationship_description)
-            )
-            db.commit()
-
-            # Update the user's originalName and relationshipToRaphael
-            # Ensure relationshipToRaphael is updated here from the form input
-            db.execute('UPDATE users SET originalName = ?, relationshipToRaphael = ? WHERE id = ?',
-                       (full_name, personal_relationship_description, current_user.id)) # Use personal_relationship_description here
-            db.commit()
-
-            flash('Your personal details have been added successfully!', 'success')
-            return redirect(url_for('my_profile'))
-        except sqlite3.IntegrityError:
-            flash('A member profile already exists for this user. Please edit it instead.', 'danger')
-            return redirect(url_for('my_profile'))
-        except sqlite3.Error as e:
-            flash(f"Database error: {e}", 'danger')
-            form_data = request.form.to_dict()
-            if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                form_data['profilePhoto'] = ''
-            return render_template('add_my_details.html', user=current_user, form_data=form_data)
-        except Exception as e:
-            flash(f"An unexpected error occurred: {e}", 'danger')
-            form_data = request.form.to_dict()
-            if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                form_data['profilePhoto'] = ''
-            return render_template('add_my_details.html', user=current_user, form_data=form_data)
-
-    form_data = {
-        'fullName': current_user.originalName,
-        'association': current_user.relationshipToRaphael if current_user.relationshipToRaphael else '', # Handle potential None
-        'maritalStatus': 'Single',
-        'personalRelationshipDescription': ''
-    }
-    return render_template('add_my_details.html', user=current_user, form_data=form_data)
-
-
-@app.route('/add-member', methods=['GET', 'POST'])
-@login_required
-def add_member_form():
-    if not current_user.is_admin:
-        flash('You do not have permission to add new members.', 'danger')
-        return redirect(url_for('home'))
-
-    form_data = {}
-
-    if request.method == 'POST':
-        full_name = request.form['fullName']
-        association = request.form['association']
-        gender = request.form['gender']
-        whereabouts = request.form['whereabouts']
-        contact = request.form['contact']
-        bio = request.form['bio']
-        date_of_birth = request.form.get('dateOfBirth')
-        marital_status = request.form.get('maritalStatus')
-        spouse_names = request.form.get('spouseNames', '')
-        # girlfriend_names removed, merged into spouse_names if marital_status is Engaged
-        children_names = request.form.get('childrenNames', '')
-        personal_relationship_description = request.form.get('personalRelationshipDescription', '')
-        can_message = 1 if request.form.get('can_message') else 0 # From new.py
-
-        if marital_status == 'Engaged' and request.form.get('girlfriendNames'):
-            spouse_names = request.form.get('girlfriendNames')
-
-        if contact:
-            contacts_list = [c.strip() for c in contact.split(',') if c.strip()]
-            for c in contacts_list:
-                if '@' in c:
-                    if not (c.count('@') == 1 and '.' in c.split('@')[1]):
-                        flash('Invalid email format in contact information.', 'danger')
-                        form_data = request.form.to_dict()
-                        if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                            form_data['profilePhoto'] = ''
-                        return render_template('add-member.html', form_data=form_data)
-                else:
-                    if not (c.replace('+', '').replace('-', '').replace('(', '').replace(')', '').replace(' ', '').isdigit()):
-                        flash('Invalid phone number format in contact information.', 'danger')
-                        form_data = request.form.to_dict()
-                        if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                            form_data['profilePhoto'] = ''
-                        return render_template('add-member.html', form_data=form_data)
-
-        if not full_name or not association or not gender:
-            flash('Full Name, Association, and Gender are required.', 'danger')
-            form_data = request.form.to_dict()
-            if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                form_data['profilePhoto'] = ''
-            return render_template('add-member.html', form_data=form_data)
-
-        profile_photo_path = None # Initialize to None
-        if 'profilePhoto' in request.files:
-            file = request.files['profilePhoto']
-            if file and allowed_file(file.filename):
-                # Use a generic unique filename for new members
-                filename = secure_filename(f"new_member_{datetime.utcnow().timestamp()}_{file.filename}")
-                file_save_path = os.path.join(app.root_path, app.config['UPLOAD_FOLDER'], filename)
-                file.save(file_save_path)
-                profile_photo_path = os.path.join(app.config['UPLOAD_FOLDER'], filename).replace('\\', '/')
-
-        db = get_db()
-        try:
-            is_raphael_descendant = 1 if association.lower() in ['son of raphael nyanga', 'daughter of raphael nyanga', 'grandchild of raphael nyanga', 'great-grandchild of raphael nyanga'] else 0
-
-            # Use 'can_message' instead of 'has_login_access' as per v17 schema
-            cursor = db.execute(
-                'INSERT INTO members (fullName, association, gender, whereabouts, contact, bio, profilePhoto, dateOfBirth, maritalStatus, spouseNames, childrenNames, isRaphaelDescendant, user_id, needs_details_update, added_by_user_id, schoolName, can_message, personalRelationshipDescription) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (full_name, association, gender, whereabouts, contact, bio, profile_photo_path,
-                 date_of_birth, marital_status, spouse_names, children_names, is_raphael_descendant, None, 0, current_user.id, school_name, can_message, personal_relationship_description)
-            )
-            db.commit()
-            new_member_id = cursor.lastrowid
-
-            flash('Family member details added successfully!', 'success')
-            return redirect(url_for('member_added_success'))
-        except sqlite3.Error as e:
-            flash(f"Database error: {e}", 'danger')
-            form_data = request.form.to_dict()
-            if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                form_data['profilePhoto'] = ''
-            return render_template('add-member.html', form_data=form_data)
-        except Exception as e:
-            flash(f"An unexpected error occurred: {e}", 'danger')
-            form_data = request.form.to_dict()
-            if 'profilePhoto' in request.files and request.files['profilePhoto'].filename:
-                form_data['profilePhoto'] = ''
-            return render_template('add-member.html', form_data=form_data)
-
-    return render_template('add-member.html', form_data={})
-
-
-@app.route('/member-added-success') # From new.py
-@login_required
-def member_added_success():
-    return render_template('success.html', message="Family member details added successfully!")
-
-
-@app.route('/admin/show-user-status/<int:member_id>', methods=['GET']) # New route from new.py
-@login_required
-def admin_show_user_status(member_id):
-    if not current_user.is_admin:
-        flash('Unauthorized access.', 'danger')
-        return redirect(url_for('home')) # Changed from dashboard to home
-
-    db = get_db()
-    # Use 'statuses' table and 'upload_time' column
-    status_data = db.execute('SELECT file_path, upload_time FROM statuses WHERE member_id = ? ORDER BY upload_time DESC LIMIT 1', (member_id,)).fetchone()
-    member_name_data = db.execute('SELECT fullName FROM members WHERE id = ?', (member_id,)).fetchone()
-    member_name = member_name_data['fullName'] if member_name_data else "Unknown Member"
-
-    if status_data:
-        try:
-            upload_time_dt = status_data['upload_time']
-            if isinstance(upload_time_dt, str):
-                upload_time_dt = datetime.strptime(upload_time_dt, '%Y-%m-%d %H:%M:%S.%f').replace(tzinfo=timezone.utc)
-            elif upload_time_dt.tzinfo is None:
-                upload_time_dt = upload_time_dt.replace(tzinfo=timezone.utc)
-
-            expires_at_dt = upload_time_dt + timedelta(hours=12)
-            is_active = (datetime.now(timezone.utc) < expires_at_dt)
-
-            status_message = ""
-            if is_active:
-                status_message = "This is the current active video status for the user."
-            else:
-                status_message = "This video status has expired (older than 12 hours)."
-
-            return render_template('admin_view_status.html',
-                                   video_url=url_for('uploaded_video', filename=os.path.basename(status_data['file_path'])),
-                                   status_message=status_message,
-                                   member_id=member_id,
-                                   member_name=member_name,
-                                   upload_time=upload_time_dt,
-                                   expires_at=expires_at_dt)
-        except Exception as e:
-            print(f"Error loading status: {e}")
-            flash(f"Error loading status: {e}", 'danger')
-            return redirect(url_for('member_detail', member_id=member_id))
-    else:
-        flash('No video status found for this user.', 'info')
-        return redirect(url_for('member_detail', member_id=member_id))
-
-
-@app.route('/admin/delete-user-status/<int:member_id>', methods=['POST']) # New route from new.py
-@login_required
-def admin_delete_user_status(member_id):
-    db = get_db()
-
-    member_profile = db.execute('SELECT user_id FROM members WHERE id = ?', (member_id,)).fetchone()
-
-    if not member_profile:
-        flash('Member profile not found.', 'danger')
-        return redirect(url_for('home'))
-
-    if not (current_user.is_admin or (member_profile['user_id'] and current_user.id == member_profile['user_id'])):
-        flash('You do not have permission to delete this status.', 'danger')
-        if current_user.is_admin:
-            return redirect(url_for('admin_manage_users'))
-        else:
-            return redirect(url_for('my_profile'))
-
-    # Use 'statuses' table
-    status_data = db.execute('SELECT id, file_path FROM statuses WHERE member_id = ? ORDER BY upload_time DESC LIMIT 1', (member_id,)).fetchone()
-
-    if status_data:
-        file_path = os.path.join(app.root_path, status_data['file_path'])
-
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                print(f"Deleted status file: {file_path}")
-            except OSError as e:
-                flash(f"Error deleting file from disk: {e}", 'danger')
-                print(f"Error deleting status file {file_path}: {e}")
-        else:
-            print(f"Status file not found on disk, removing DB entry: {file_path}")
-
-        db.execute('DELETE FROM statuses WHERE id = ?', (status_data['id'],))
-        db.commit()
-        flash('Video status deleted successfully.', 'success')
-    else:
-        flash('No video status found for this member to delete.', 'info')
-
-    if current_user.is_admin:
-        return redirect(url_for('member_detail', member_id=member_id))
-    else:
-        return redirect(url_for('my_profile'))
-
-
-# --- Messaging Routes (Adapted from new.py for direct messages) ---
-@app.route('/inbox')
-@login_required
-def inbox():
-    db = get_db()
-
-    # Get the ID of the AdminAI user to pass to the template
-    ai_user_data = db.execute('SELECT id FROM users WHERE username = ?', ('AdminAI',)).fetchone()
-    ai_user_id = ai_user_data['id'] if ai_user_data else -1 # Default to -1 if not found
-
-    # Get all distinct users current_user has messaged or been messaged by using the 'messages' table
-    conversations_raw = db.execute('''
-        WITH CombinedActivity AS (
-            SELECT
-                CASE
-                    WHEN sender_id = ? THEN recipient_id
-                    ELSE sender_id
-                END AS other_user_id,
-                timestamp AS activity_timestamp
-            FROM messages
-            WHERE sender_id = ? OR recipient_id = ?
-        )
-        SELECT
-            other_user_id,
-            MAX(activity_timestamp) AS last_activity_timestamp
-        FROM CombinedActivity
-        WHERE other_user_id != ?
-        GROUP BY other_user_id
-        ORDER BY last_activity_timestamp DESC
-    ''', (current_user.id, current_user.id, current_user.id, current_user.id)).fetchall()
-
-    inbox_conversations = []
-    for conv_summary in conversations_raw:
-        other_user_id = conv_summary['other_user_id']
-
-        other_user_data = db.execute('SELECT id, username, originalName FROM users WHERE id = ?', (other_user_id,)).fetchone()
-        if not other_user_data:
-            continue
-
-        # Get the very latest message (text or media indication) for the snippet
-        latest_message = db.execute(
-            '''
-            SELECT
-                content,
-                timestamp,
-                sender_id,
-                is_read,
-                is_admin_message
-            FROM messages
-            WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
-            ORDER BY timestamp DESC
-            LIMIT 1
-            ''', (current_user.id, other_user_id, other_user_id, current_user.id)
-        ).fetchone()
-
-        latest_snippet = "No messages yet."
-        is_unread = False
-
-        if latest_message:
-            full_content = latest_message['content']
-            if full_content:
-                latest_snippet = full_content.split('\n')[0]
-                if len(latest_snippet) > 50:
-                    latest_snippet = latest_snippet[:47] + '...'
-            else:
-                latest_snippet = "(Empty message)"
-
-            if latest_message['sender_id'] == current_user.id:
-                latest_snippet = f"You: {latest_snippet}"
-            elif latest_message['is_admin_message'] == 1:
-                latest_snippet = f"System: {latest_snippet}"
-
-            # Check unread status (only if current user is recipient and it's not read)
-            unread_count_for_this_conv = db.execute('''
-                SELECT COUNT(*) FROM messages
-                WHERE sender_id = ? AND recipient_id = ? AND is_read = 0
-            ''', (other_user_id, current_user.id)).fetchone()[0]
-
-            if unread_count_for_this_conv > 0:
-                is_unread = True
-
-        inbox_conversations.append({
-            'other_user': other_user_data,
-            'latest_message_snippet': latest_snippet,
-            'timestamp': conv_summary['last_activity_timestamp'],
-            'is_unread': is_unread
-        })
-
-    # NEW: Fetch pending game invitations for the current user from Firestore
-    game_invitations_for_template = []
-    if firestore_db and current_user.is_authenticated:
-        try:
-            games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games')
-            
-            # Query for games where current user is playerWhiteId or playerBlackId, game is not over, and it's human vs human
-            # This covers invitations where they are either white or black
-            pending_games_query = games_ref.where('gameType', '==', 'human_vs_human').where('gameOver', '==', False)
-            
-            # Filter client-side for games where current user is a player
-            all_pending_games = pending_games_query.stream()
-            
-            for game_doc in all_pending_games:
-                game_data = game_doc.to_dict()
-                if (game_data.get('playerWhiteId') == str(current_user.id) or 
-                    game_data.get('playerBlackId') == str(current_user.id)):
-                    
-                    # Determine who the sender is (the other player)
-                    sender_user_id = None
-                    if game_data.get('playerWhiteId') == str(current_user.id):
-                        sender_user_id = int(game_data.get('playerBlackId'))
-                    elif game_data.get('playerBlackId') == str(current_user.id):
-                        sender_user_id = int(game_data.get('playerWhiteId'))
-                    
-                    sender_user_data = db.execute('SELECT username, originalName FROM users WHERE id = ?', (sender_user_id,)).fetchone()
-                    sender_name = sender_user_data['originalName'] if sender_user_data and sender_user_data['originalName'] else sender_user_data['username'] if sender_user_data else "Unknown User"
-
-                    game_invitations_for_template.append({
-                        'id': game_doc.id, # Use Firestore document ID as the game ID
-                        'game_name': game_data.get('gameName', 'Chess'), # Default to Chess if not specified
-                        'timestamp': game_data.get('createdAt').isoformat() if game_data.get('createdAt') else datetime.utcnow().isoformat(),
-                        'sender': {'username': sender_name, 'originalName': sender_name} # Simplified sender info
-                    })
-        except Exception as e:
-            print(f"Error fetching game invitations from Firestore in inbox: {e}")
-
-
-    return render_template('inbox.html',
-                           conversations=inbox_conversations,
-                           ai_user_id=ai_user_id,
-                           game_invitations=game_invitations_for_template) # NEW: Pass game invitations
-
-
-@app.route('/messages/<int:other_user_id>', methods=['GET', 'POST'])
-@login_required
-def messages_with(other_user_id):
-    db = get_db()
-    other_user = db.execute('SELECT id, username, originalName FROM users WHERE id = ?', (other_user_id,)).fetchone()
-
-    if not other_user:
+    user_data = db.execute('SELECT username, originalName FROM users WHERE id = ?', (unique_id,)).fetchone()
+    if not user_data:
         flash('User not found.', 'danger')
-        return redirect(url_for('inbox'))
+        session.pop('password_reset_user_id', None) # Clear session
+        return redirect(url_for('login'))
 
-    # Check if the other_user is the AdminAI. If so, redirect to the dedicated AI chat route.
-    ai_user_data = db.execute('SELECT id FROM users WHERE username = ?', ('AdminAI',)).fetchone()
-    if ai_user_data and other_user['id'] == ai_user_data['id']:
-        return redirect(url_for('ai_chat_page')) # Redirect to the new AI chat route
-
-    other_member_profile = db.execute('SELECT can_message FROM members WHERE user_id = ?', (other_user['id'],)).fetchone()
-    if not other_member_profile or other_member_profile['can_message'] == 0:
-        flash(f"Messaging is not enabled for {other_user['originalName']}.", 'danger')
-        return redirect(url_for('inbox'))
-
-    # Fetch messages from the 'messages' table
-    conversation_messages = db.execute('''
-        SELECT m.id, m.sender_id, m.recipient_id, m.content, m.timestamp, m.is_read, m.is_admin_message
-        FROM messages m
-        WHERE (m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?)
-        ORDER BY m.timestamp ASC
-    ''', (current_user.id, other_user['id'], other_user['id'], current_user.id)).fetchall()
-
-    # Process messages to include media details if applicable
-    combined_feed = []
-    for msg_data in conversation_messages:
-        msg_dict = dict(msg_data)
-        content = msg_dict['content']
-
-        # Check for media content pattern: [Type: path]
-        if content and (content.startswith('[Image:') or content.startswith('[Video:')):
-            try:
-                # Extract path from content string, e.g., "[Image: static/path/to/image.png]"
-                # This assumes the format is always "[Type: full/path/to/file.ext]"
-                parts = content.split(':', 1) # Split only on the first colon
-                media_type_str = parts[0].strip('[').strip() # "Image" or "Video"
-                file_path_full = parts[1].strip(']').strip() # "static/path/to/file.ext"
-
-                msg_dict['type'] = 'media'
-                msg_dict['media_type'] = media_type_str.lower()
-                msg_dict['file_path'] = file_path_full
-                msg_dict['content'] = '' # Clear original content for media messages to avoid double display
-
-            except IndexError:
-                # Fallback if parsing fails, treat as a regular message
-                msg_dict['type'] = 'message'
-                print(f"Warning: Failed to parse media content for message ID {msg_dict['id']}: {content}")
-            except Exception as e:
-                # Catch any other unexpected errors during parsing
-                msg_dict['type'] = 'message'
-                print(f"Error parsing media content for message ID {msg_dict['id']}: {e} - Content: {content}")
-        else:
-            msg_dict['type'] = 'message'
-
-        combined_feed.append(msg_dict)
-
-    combined_feed.sort(key=lambda x: x['timestamp']) # Sort by timestamp
-
-    # Mark messages as read for the current user
-    db.execute('UPDATE messages SET is_read = 1 WHERE sender_id = ? AND recipient_id = ? AND is_read = 0',
-               (other_user['id'], current_user.id))
-    db.commit()
-    g.unread_messages_count = get_unread_messages_count() # Update global count
+    username = user_data['username']
+    current_year = datetime.now(timezone.utc).year # Pass current year
 
     if request.method == 'POST':
-        message_body = request.form['message_body'].strip()
-        if not message_body:
-            flash('Message body cannot be empty.', 'danger')
-        else:
-            try:
-                is_admin_message = 1 if current_user.is_admin else 0
+        new_password = request.form['new_password']
+        confirm_password = request.form['confirm_password']
 
-                db.execute(
-                    'INSERT INTO messages (sender_id, recipient_id, content, timestamp, is_read, is_admin_message) VALUES (?, ?, ?, ?, ?, ?)',
-                    (current_user.id, other_user['id'], message_body, datetime.utcnow(), 0, is_admin_message)
-                )
-                db.commit()
-            except sqlite3.Error as e:
-                flash(f"Error sending message: {e}", 'danger')
-        return redirect(url_for('messages_with', other_user_id=other_user['id']))
-
-    current_user_chat_background = current_user.chat_background_image_path
-
-    return render_template('view_conversation.html',
-                           other_user=other_user,
-                           combined_feed=combined_feed,
-                           current_user_chat_background=current_user_chat_background)
-
-@app.route('/ai-chat') # NEW DEDICATED AI CHAT ROUTE
-@login_required
-def ai_chat_page():
-    db = get_db()
-    ai_user_data = db.execute('SELECT id, username, originalName FROM users WHERE username = ?', ('AdminAI',)).fetchone()
-    if not ai_user_data:
-        flash('Admin AI user not found. AI chat is unavailable.', 'danger')
-        return redirect(url_for('home'))
-
-    ai_user = {
-        'id': ai_user_data['id'],
-        'username': ai_user_data['username'],
-        'originalName': ai_user_data['originalName']
-    }
-
-    # For now, we're not fetching chat history from Firestore here.
-    # The ai_chat.html will handle fetching and sending via AJAX/Firestore.
-    return render_template('ai_chat.html', other_user=ai_user, current_user_chat_background=current_user.chat_background_image_path)
-
-
-@app.route('/search-members', methods=['GET']) # From new.py
-@login_required
-def search_members():
-    search_query = request.args.get('q', '').strip()
-    db = get_db()
-
-    results = []
-
-    if search_query:
-        search_pattern = '%' + search_query + '%'
-
-        members_data = db.execute('''
-            SELECT
-                m.id,
-                m.fullName,
-                m.profilePhoto,
-                m.association,
-                m.user_id,
-                u.username AS linked_username
-            FROM members m
-            LEFT JOIN users u ON m.user_id = u.id
-            WHERE
-                (LOWER(m.fullName) LIKE LOWER(?) OR LOWER(u.username) LIKE LOWER(?))
-                AND (m.user_id IS NULL OR m.user_id != ?)
-            LIMIT 10
-        ''', (search_pattern, search_pattern, current_user.id if current_user.is_authenticated else -1)).fetchall()
-
-        for member in members_data:
-            profile_photo_url = url_for('uploaded_file', filename=os.path.basename(member['profilePhoto'])) if member['profilePhoto'] else url_for('static', filename='img/default_profile.png')
-
-            results.append({
-                'id': member['id'],
-                'fullName': member['fullName'],
-                'username': member['linked_username'] if member['linked_username'] else '',
-                'profilePhoto': profile_photo_url,
-                'association': member['association'],
-                'isLinkedUser': True if member['user_id'] else False
-            })
-    return jsonify(results)
-
-
-@app.route('/upload-status-video', methods=['POST']) # From new.py
-@login_required
-def upload_status_video():
-    db = get_db()
-    member = g.user_member
-
-    if not member:
-        return jsonify({'success': False, 'message': 'Please complete your profile details first.'}), 400
-
-    if 'video_file' not in request.files:
-        return jsonify({'success': False, 'message': 'No video file part.'}), 400
-
-    file = request.files['video_file']
-
-    if file.filename == '':
-        return jsonify({'success': False, 'message': 'No selected video file.'}), 400
-
-    if file and allowed_video_file(file.filename):
-        filename = secure_filename(f"{member.id}_status_{datetime.utcnow().timestamp()}_{file.filename}")
-        file_save_path = os.path.join(app.root_path, app.config['UPLOAD_VIDEO_FOLDER'], filename)
-
-        try:
-            # Delete previous status for this member if it exists (from 'statuses' table)
-            existing_status = db.execute('SELECT id, file_path FROM statuses WHERE member_id = ?', (member.id,)).fetchone()
-            if existing_status:
-                old_file_path = os.path.join(app.root_path, existing_status['file_path'])
-                if os.path.exists(old_file_path):
-                    os.remove(old_file_path)
-                    print(f"Removed old status video: {old_file_path}")
-                db.execute('DELETE FROM statuses WHERE id = ?', (existing_status['id'],))
-                db.commit()
-
-            file.save(file_save_path)
-            video_db_path = os.path.join(app.config['UPLOAD_VIDEO_FOLDER'], filename).replace('\\', '/')
-
-            # Insert into 'statuses' table
-            db.execute(
-                'INSERT INTO statuses (member_id, file_path, upload_time, is_video, uploader_user_id) VALUES (?, ?, ?, ?, ?)',
-                (member.id, video_db_path, datetime.utcnow(), 1, current_user.id)
-            )
-            db.commit()
-            return jsonify({'success': True, 'message': 'Status video uploaded successfully! It will be available for 12 hours.'}), 200
-        except sqlite3.Error as e:
-            return jsonify({'success': False, 'message': f"Database error saving video: {e}"}), 500
-        except Exception as e:
-            return jsonify({'success': False, 'message': f"An unexpected error occurred during video upload: {e}"}), 500
-    else:
-        return jsonify({'success': False, 'message': 'Invalid video file type. Allowed types: mp4, mov, avi, webm.'}), 400
-
-
-@app.route('/get-member-status-video/<int:member_id>', methods=['GET']) # From new.py
-@login_required
-def get_member_status_video(member_id):
-    db = get_db()
-    # Use 'statuses' table and 'upload_time' column
-    member_status = db.execute('SELECT * FROM statuses WHERE member_id = ? ORDER BY upload_time DESC LIMIT 1', (member_id,)).fetchone()
-
-    if member_status:
-        upload_time_dt = member_status['upload_time']
-        if isinstance(upload_time_dt, str):
-            upload_time_dt = datetime.strptime(upload_time_dt, '%Y-%m-%d %H:%M:%S.%f').replace(tzinfo=timezone.utc)
-        elif upload_time_dt.tzinfo is None:
-            upload_time_dt = upload_time_dt.replace(tzinfo=timezone.utc)
-
-        if datetime.utcnow().replace(tzinfo=timezone.utc) - upload_time_dt <= timedelta(hours=12):
-            return jsonify({
-                'video_url': url_for('uploaded_video', filename=os.path.basename(member_status['file_path'])),
-                'upload_time': upload_time_dt.isoformat(),
-                'expires_at': (upload_time_dt + timedelta(hours=12)).isoformat()
-            })
-    return jsonify({'video_url': None, 'message': 'No active status video found.'})
-
-@app.route('/update-theme-preference', methods=['POST']) # From new.py
-@login_required
-def update_theme_preference():
-    theme = request.json.get('theme')
-    if theme not in ['light', 'dark']:
-        return jsonify({'success': False, 'message': 'Invalid theme preference'}), 400
-
-    db = get_db()
-    try:
-        db.execute('UPDATE users SET theme_preference = ? WHERE id = ?', (theme, current_user.id))
-        db.commit()
-        current_user.theme_preference = theme
-
-        response = jsonify({'success': True, 'message': 'Theme preference updated.'})
-        response.set_cookie('theme_preference', theme, max_age=30*24*60*60)
-        return response
-    except sqlite3.Error as e:
-        return jsonify({'success': False, 'message': f'Database error: {e}'}), 500
-
-
-@app.route('/upload_chat_media/<int:recipient_user_id>', methods=['POST']) # From new.py, adapted to v17 schema
-@login_required
-def upload_chat_media(recipient_user_id):
-    db = get_db()
-    recipient = db.execute('SELECT id, username FROM users WHERE id = ?', (recipient_user_id,)).fetchone()
-
-    if not recipient:
-        return jsonify({'success': False, 'message': 'Recipient user not found.'}), 404
-
-    if 'media_file' not in request.files:
-        return jsonify({'success': False, 'message': 'No media file part.'}), 400
-
-    file = request.files['media_file']
-    if file.filename == '':
-        return jsonify({'success': False, 'message': 'No selected media file.'}), 400
-
-    media_type = 'unknown'
-    file_path_prefix = ''
-    if allowed_chat_image_file(file.filename):
-        media_type = 'image'
-        file_path_prefix = app.config['UPLOAD_CHAT_PHOTO_FOLDER']
-    elif allowed_chat_video_file(file.filename):
-        media_type = 'video'
-        file_path_prefix = app.config['UPLOAD_CHAT_VIDEO_FOLDER']
-    else:
-        return jsonify({'success': False, 'message': 'Invalid file type. Only images (png, jpg, jpeg, gif) and videos (mp4, mov, avi, webm) are allowed.'}), 400
-
-    filename = secure_filename(f"{current_user.id}_{recipient_user_id}_{datetime.utcnow().timestamp()}_{file.filename}")
-    file_save_path = os.path.join(app.root_path, file_path_prefix, filename)
-
-    try:
-        file.save(file_save_path)
-        db_file_path = os.path.join(file_path_prefix, filename).replace('\\', '/')
-
-        # Insert into 'messages' table with content indicating media
-        media_message_content = f"[{media_type.capitalize()}: {db_file_path}]" # Store path in content for retrieval
-        is_admin_message = 1 if current_user.is_admin else 0
-
-        db.execute(
-            'INSERT INTO messages (sender_id, recipient_id, content, timestamp, is_read, is_admin_message) VALUES (?, ?, ?, ?, ?, ?)',
-            (current_user.id, recipient_user_id, media_message_content, datetime.utcnow(), 0, is_admin_message)
-        )
-        db.commit()
-
-        return jsonify({'success': True, 'message': 'Media uploaded successfully!', 'file_path': db_file_path, 'media_type': media_type}), 200
-    except sqlite3.Error as e:
-        return jsonify({'success': False, 'message': f'Database error: {e}'}), 500
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'An unexpected error occurred: {e}'}), 500
-
-@app.route('/admin/manage_users', methods=['GET', 'POST'])
-@login_required
-def admin_manage_users():
-    if not current_user.is_admin:
-        flash('You do not have administrative access.', 'danger')
-        return redirect(url_for('home'))
-
-    db = get_db()
-
-    if request.method == 'POST':
-        action = request.form.get('action')
-        user_id = request.form.get('user_id')
-        member_id = request.form.get('member_id')
-
-        if action == 'toggle_admin':
-            target_user = User.get(user_id)
-            if target_user and target_user.username != app.config['ADMIN_USERNAME']:
-                new_admin_status = 1 if target_user.is_admin == 0 else 0
-                db.execute('UPDATE users SET is_admin = ? WHERE id = ?', (new_admin_status, user_id))
-                db.commit()
-                flash(f"Admin status for {target_user.username} {'enabled' if new_admin_status else 'disabled'}.", 'success')
-            else:
-                flash('Cannot change admin status for this user or yourself.', 'danger')
-
-        elif action == 'reset_password':
-            target_user_id = request.form.get('user_id')
-            new_password = request.form.get(f'new_password_{target_user_id}')
-            confirm_password = request.form.get(f'confirm_password_{target_user_id}')
-
-            if not new_password or not confirm_password or new_password != confirm_password:
-                flash('New passwords do not match or are empty.', 'danger')
-            else:
-                hashed_password = generate_password_hash(new_password)
-                db.execute('UPDATE users SET password_hash = ?, password_reset_pending = 0, reset_request_timestamp = NULL WHERE id = ?', (hashed_password, target_user_id))
-                db.commit()
-                flash(f'Password for user ID {target_user_id} has been reset.', 'success')
-
-        elif action == 'initiate_password_reset':
-            target_user_id = request.form.get('user_id')
-            db.execute('UPDATE users SET password_reset_pending = 1, reset_request_timestamp = ? WHERE id = ?', (datetime.utcnow(), target_user_id))
-            db.commit()
-            flash(f'Password reset initiated for user ID {target_user_id}. They will be prompted to set a new password on next login.', 'info')
-
-        elif action == 'delete_user': # From new.py
-            user_id_to_delete = request.form.get('user_id')
-            if not user_id_to_delete:
-                flash("User ID not provided for deleting user.", 'danger')
-                return redirect(url_for('admin_manage_users'))
-
-            try:
-                user_to_delete_data = db.execute('SELECT id, username FROM users WHERE id = ?', (user_id_to_delete,)).fetchone()
-                if not user_to_delete_data:
-                    flash(f"User with ID {user_id_to_delete} not found.", 'danger')
-                    return redirect(url_for('admin_manage_users'))
-
-                if user_to_delete_data['username'] == app.config['ADMIN_USERNAME']:
-                    flash("Cannot delete the super admin account.", 'danger')
-                    return redirect(url_for('admin_manage_users'))
-
-                # Delete associated data first to maintain referential integrity
-                db.execute('DELETE FROM members WHERE user_id = ?', (user_id_to_delete,))
-                db.execute('DELETE FROM messages WHERE sender_id = ? OR recipient_id = ?', (user_id_to_delete, user_id_to_delete)) # Adapted to recipient_id
-                db.execute('DELETE FROM chat_messages WHERE sender_id = ?', (user_id_to_delete,)) # For group chat messages
-                db.execute('DELETE FROM chat_room_members WHERE user_id = ?', (user_id_to_delete,)) # For group chat memberships
-                db.execute('DELETE FROM statuses WHERE uploader_user_id = ?', (user_id_to_delete,)) # Adapted to statuses table
-                # NEW: Delete game invitations where this user is sender or recipient (from SQLite)
-                db.execute('DELETE FROM game_invitations WHERE sender_id = ? OR recipient_id = ?', (user_id_to_delete, user_id_to_delete))
-
-                # Delete game documents from Firestore where this user is playerWhiteId or playerBlackId
-                if firestore_db:
-                    games_ref = firestore_db.collection(f'artifacts/{config.CANVAS_APP_ID}/public/games')
-                    # Query for games where user is playerWhiteId
-                    games_as_white = games_ref.where('playerWhiteId', '==', user_id_to_delete).stream()
-                    for game_doc in games_as_white:
-                        game_doc.reference.delete()
-                        print(f"Deleted Firestore game {game_doc.id} (user was white).")
-                    
-                    # Query for games where user is playerBlackId
-                    games_as_black = games_ref.where('playerBlackId', '==', user_id_to_delete).stream()
-                    for game_doc in games_as_black:
-                        game_doc.reference.delete()
-                        print(f"Deleted Firestore game {game_doc.id} (user was black).")
-
-
-                # Finally, delete the user
-                db.execute('DELETE FROM users WHERE id = ?', (user_id_to_delete,))
-                db.commit()
-                flash(f"User '{user_to_delete_data['username']}' and all associated data deleted successfully.", 'success')
-            except sqlite3.Error as e:
-                db.rollback()
-                flash(f"Database error deleting user: {e}", 'danger')
-            except Exception as e:
-                flash(f"An unexpected error occurred deleting user: {e}", 'danger')
-
-            return redirect(url_for('admin_manage_users'))
-
-        elif action == 'link_member_to_user': # From new.py
-            new_username = request.form.get('new_username')
-            new_password = request.form.get('new_password')
-            member_id_to_link = request.form.get('member_id')
-
-            if not new_username or not new_password or not member_id_to_link:
-                flash('Missing data for linking user.', 'danger')
-            else:
-                existing_user = db.execute('SELECT id FROM users WHERE username = ?', (new_username,)).fetchone()
-                if existing_user:
-                    flash('Username already exists. Please choose a different one.', 'danger')
-                else:
-                    try:
-                        member_to_link = db.execute('SELECT fullName, association FROM members WHERE id = ?', (member_id_to_link,)).fetchone()
-                        if not member_to_link:
-                            flash('Member not found for linking.', 'danger')
-                        else:
-                            hashed_password = generate_password_hash(new_password)
-                            cursor = db.execute(
-                                'INSERT INTO users (username, originalName, relationshipToRaphael, password_hash, theme_preference, unique_key, password_reset_pending, reset_request_timestamp, last_login_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                                (new_username, member_to_link['fullName'], member_to_link['association'], hashed_password, 'light', generate_unique_key(), 0, None, datetime.utcnow(), datetime.utcnow())
-                            )
-                            new_user_id = cursor.lastrowid
-                            # Use 'can_message' instead of 'has_login_access'
-                            db.execute('UPDATE members SET user_id = ?, can_message = 1 WHERE id = ?', (new_user_id, member_id_to_link))
-                            db.commit()
-                            flash(f'User {new_username} created and linked to {member_to_link["fullName"]}. Login access enabled.', 'success')
-                    except sqlite3.IntegrityError:
-                        flash('Username already exists or database error.', 'danger')
-                    except Exception as e:
-                        flash(f'An error occurred during linking: {e}', 'danger')
-
-        elif action == 'toggle_login_access': # From new.py, adapted to 'can_message'
-            member_id_toggle = request.form.get('member_id')
-            member_data = db.execute('SELECT user_id, can_message FROM members WHERE id = ?', (member_id_toggle,)).fetchone()
-            if member_data and member_data['user_id']:
-                new_access_status = not member_data['can_message'] # Toggle can_message for login access
-                db.execute('UPDATE members SET can_message = ? WHERE id = ?', (1 if new_access_status else 0, member_id_toggle))
-                db.commit()
-                flash(f"Login access for member ID {member_id_toggle} {'enabled' if new_access_status else 'disabled'}.", 'success')
-            else:
-                flash('Cannot toggle login access for unlinked member or member not found.', 'danger')
-
-        elif action == 'toggle_messaging_capability': # From new.py
-            member_id_toggle = request.form.get('member_id')
-            member_data = db.execute('SELECT user_id, can_message FROM members WHERE id = ?', (member_id_toggle,)).fetchone()
-            if member_data and member_data['user_id']:
-                new_message_status = not member_data['can_message']
-                db.execute('UPDATE members SET can_message = ? WHERE id = ?', (1 if new_message_status else 0, member_id_toggle))
-                db.commit()
-                flash(f"Messaging for member ID {member_id_toggle} {'enabled' if new_message_status else 'disabled'}.", 'success')
-            else:
-                flash('Cannot toggle messaging for unlinked member or member not found.', 'danger')
-
-        return redirect(url_for('admin_manage_users'))
-
-    # Reload data after any POST request
-    users_data = db.execute('SELECT id, username, originalName, relationshipToRaphael, is_admin, unique_key, password_reset_pending, reset_request_timestamp FROM users ORDER BY username ASC').fetchall()
-    users_for_template = []
-    for row in users_data:
-        user_dict = dict(row)
-        user_dict['is_admin'] = bool(user_dict['is_admin'])
-        users_for_template.append(user_dict)
-
-    # Get members with their linked user status for display
-    members_with_status_data = db.execute('''
-        SELECT m.id, m.fullName, m.profilePhoto, m.user_id, m.can_message,
-               u.username AS linked_username
-        FROM members m
-        LEFT JOIN users u ON m.user_id = u.id
-        ORDER BY m.fullName ASC
-    ''').fetchall()
-
-    members_with_status_for_template = []
-    for row in members_with_status_data:
-        member_dict = dict(row)
-        member_dict['can_message'] = bool(member_dict['can_message'])
-        members_with_status_for_template.append(member_dict)
-
-    return render_template('admin_manage_users.html', users=users_for_template, members_with_status=members_with_status_for_template)
-
-
-@app.route('/edit-member/<int:member_id>', methods=['GET', 'POST'])
-@login_required
-def edit_member(member_id):
-    db = get_db()
-    member_data = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
-    if not member_data:
-        flash('Member not found.', 'danger')
-        return redirect(url_for('list_members'))
-
-    member = Member(
-        id=member_data['id'],
-        fullName=member_data['fullName'],
-        dateOfBirth=member_data['dateOfBirth'],
-        gender=member_data['gender'],
-        association=member_data['association'],
-        maritalStatus=member_data['maritalStatus'],
-        spouseNames=member_data['spouseNames'],
-        childrenNames=member_data['childrenNames'],
-        schoolName=member_data['schoolName'],
-        whereabouts=member_data['whereabouts'],
-        contact=member_data['contact'],
-        bio=member_data['bio'],
-        personalRelationshipDescription=member_data['personalRelationshipDescription'],
-        profilePhoto=member_data['profilePhoto'],
-        user_id=member_data['user_id'],
-        can_message=member_data['can_message'],
-        added_by_user_id=member_data['added_by_user_id'],
-        needs_details_update=member_data['needs_details_update'],
-        isRaphaelDescendant=member_data['isRaphaelDescendant'] if 'isRaphaelDescendant' in member_data.keys() else 0
-    )
-
-    # Permission check: Admin, or the user linked to this member, or the user who added this member
-    if not current_user.is_admin and \
-       (member.user_id is None or current_user.id != member.user_id) and \
-       (member.added_by_user_id is None or current_user.id != member.added_by_user_id):
-        flash("You do not have permission to edit this profile.", "danger")
-        return redirect(url_for('home'))
-
-    form_data = {
-        'fullName': member.fullName,
-        'dateOfBirth': str(member.dateOfBirth) if member.dateOfBirth else '',
-        'gender': member.gender,
-        'association': member.association,
-        'maritalStatus': member.maritalStatus,
-        'spouseNames': member.spouseNames,
-        'childrenNames': member.childrenNames,
-        'schoolName': member.schoolName,
-        'whereabouts': member.whereabouts,
-        'contact': member.contact,
-        'bio': member.bio,
-        'personalRelationshipDescription': member.personalRelationshipDescription,
-        'isRaphaelDescendant': '1' if member.isRaphaelDescendant else '0',
-        'can_message': '1' if member.can_message else '0'
-    }
-
-    if request.method == 'POST':
-        member.fullName = request.form.get('fullName')
-        member.dateOfBirth = request.form.get('dateOfBirth')
-        member.gender = request.form.get('gender')
-        member.association = request.form.get('association')
-        member.maritalStatus = request.form.get('maritalStatus')
-        member.spouseNames = request.form.get('spouseNames')
-        member.childrenNames = request.form.get('childrenNames')
-        member.schoolName = request.form.get('schoolName')
-        member.whereabouts = request.form.get('whereabouts')
-        member.contact = request.form.get('contact')
-        member.bio = request.form.get('bio')
-        member.personalRelationshipDescription = request.form.get('personalRelationshipDescription')
-        member.isRaphaelDescendant = request.form.get('isRaphaelDescendant') == '1'
-        member.can_message = request.form.get('can_message') == '1'
-
-        profile_photo_file = request.files.get('profilePhoto')
-        if profile_photo_file and profile_photo_file.filename != '':
-            if allowed_file(profile_photo_file.filename):
-                filename = secure_filename(profile_photo_file.filename)
-                filepath = os.path.join(app.root_path, app.config['UPLOAD_FOLDER'], filename)
-                profile_photo_file.save(filepath)
-                member.profilePhoto = os.path.join(app.config['UPLOAD_FOLDER'], filename).replace('\\', '/')
-            else:
-                flash('Invalid file type for profile photo. Allowed: png, jpg, jpeg, gif.', 'danger')
-                form_data = request.form.to_dict()
-                return render_template('edit_member.html', member=member, form_data=form_data)
-        elif request.form.get('remove_profile_photo'):
-            if member.profilePhoto and os.path.exists(os.path.join(app.root_path, member.profilePhoto)):
-                os.remove(os.path.join(app.root_path, member.profilePhoto))
-            member.profilePhoto = None
-
-        needs_details_update = 0
-        if not all([member.fullName, member.dateOfBirth, member.gender, member.association, member.maritalStatus,
-                    member.whereabouts, member.contact, member.bio, member.personalRelationshipDescription]):
-            needs_details_update = 1
-            form_data = request.form.to_dict()
-            flash('Please fill in all required fields.', 'danger')
-            return render_template('edit_member.html', member=member, form_data=form_data)
-
-        try:
-            db.execute('''
-                UPDATE members SET
-                    fullName = ?, association = ?, gender = ?, dateOfBirth = ?, maritalStatus = ?,
-                    spouseNames = ?, childrenNames = ?, schoolName = ?, whereabouts = ?, contact = ?,
-                    bio = ?, personalRelationshipDescription = ?, profilePhoto = ?,
-                    isRaphaelDescendant = ?, needs_details_update = ?, can_message = ?
-                WHERE id = ?
-            ''', (
-                member.fullName, member.association, member.gender, member.dateOfBirth, member.maritalStatus,
-                member.spouseNames, member.childrenNames, member.schoolName, member.whereabouts, member.contact,
-                member.bio, member.personalRelationshipDescription, member.profilePhoto,
-                member.isRaphaelDescendant, needs_details_update, member.can_message,
-                member.id
-            ))
-            db.commit()
-
-            # If the member is linked to a user, update the user's originalName and relationshipToRaphael
-            if member.user_id:
-                db.execute('UPDATE users SET originalName = ?, relationshipToRaphael = ? WHERE id = ?',
-                           (member.fullName, member.association, member.user_id)) # Use member.association here
-                db.commit()
-
-            flash('Member details updated successfully!', 'success')
-            return redirect(url_for('member_detail', member_id=member.id))
-        except sqlite3.Error as e:
-            flash(f"Database error: {e}", 'danger')
-            form_data = request.form.to_dict()
-            return render_template('edit_member.html', member=member, form_data=form_data)
-        except Exception as e:
-            flash(f"An unexpected error occurred: {e}", 'danger')
-            form_data = request.form.to_dict()
-            return render_template('edit_member.html', member=member, form_data=form_data)
-
-    return render_template('edit_member.html', member=member, form_data=form_data)
-
-
-@app.route('/change-password', methods=['GET', 'POST'])
-@login_required
-def change_password():
-    form_data = {}
-    if request.method == 'POST':
-        current_password = request.form.get('current_password')
-        new_password = request.form.get('new_password')
-        confirm_new_password = request.form.get('confirm_new_password')
-
-        if not current_user.check_password(current_password):
-            flash('Current password is incorrect.', 'danger')
-            form_data = request.form.to_dict()
-            return render_template('change_password.html', form_data=form_data)
-
-        if new_password != confirm_new_password:
+        if new_password != confirm_password:
             flash('New password and confirmation do not match.', 'danger')
-            form_data = request.form.to_dict()
-            return render_template('change_password.html', form_data=form_data)
+            return render_template('set_new_password.html', username=username, unique_id=unique_id, current_year=current_year)
 
         if len(new_password) < 6:
             flash('New password must be at least 6 characters long.', 'danger')
-            form_data = request.form.to_dict()
-            return render_template('change_password.html', form_data=form_data)
+            return render_template('set_new_password.html', username=username, unique_id=unique_id, current_year=current_year)
+        if not (any(char.isdigit() for char in new_password) and
+                any(char.isalpha() for char in new_password) and
+                any(not char.isalnum() for char in new_password)):
+            flash('New password must include at least one number, one letter, and one special character.', 'danger')
+            return render_template('set_new_password.html', username=username, unique_id=unique_id, current_year=current_year)
+
+        hashed_password = generate_password_hash(new_password)
+        db.execute('UPDATE users SET password_hash = ?, password_reset_pending = 0, reset_request_timestamp = NULL WHERE id = ?', (hashed_password, unique_id))
+        db.commit()
+
+        session.pop('password_reset_user_id', None) # Clear session after successful reset
+        flash('Your password has been changed successfully! Please log in with your new password.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('set_new_password.html', username=username, unique_id=unique_id, current_year=current_year)
+
+
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    if request.method == 'POST':
+        current_password = request.form['current_password']
+        new_password = request.form['new_password']
+        confirm_new_password = request.form['confirm_new_password']
+
+        if not check_password_hash(current_user.password_hash, current_password):
+            flash('Current password is incorrect.', 'danger')
+            return render_template('change_password.html', current_year=current_year)
+
+        if new_password != confirm_new_password:
+            flash('New password and confirmation do not match.', 'danger')
+            return render_template('change_password.html', current_year=current_year)
+
+        if len(new_password) < 6:
+            flash('New password must be at least 6 characters long.', 'danger')
+            return render_template('change_password.html', current_year=current_year)
+        if not (any(char.isdigit() for char in new_password) and
+                any(char.isalpha() for char in new_password) and
+                any(not char.isalnum() for char in new_password)):
+            flash('New password must include at least one number, one letter, and one special character.', 'danger')
+            return render_template('change_password.html', current_year=current_year)
 
         db = get_db()
         hashed_password = generate_password_hash(new_password)
         db.execute('UPDATE users SET password_hash = ? WHERE id = ?', (hashed_password, current_user.id))
         db.commit()
         flash('Your password has been changed successfully!', 'success')
-        return redirect(url_for('my_profile'))
+        return redirect(url_for('my_profile')) # Redirect to profile or settings
 
-    return render_template('change_password.html', form_data=form_data)
+    return render_template('change_password.html', current_year=current_year)
+
+
+# --- Member & Profile Management ---
+
+@app.route('/my_profile')
+@login_required
+def my_profile():
+    db = get_db()
+    member = current_user.get_member_profile()
+    
+    if not member:
+        flash("Please complete your personal details first.", 'info')
+        return redirect(url_for('edit_my_details'))
+
+    # Prepare current_user_profile for the template
+    current_user_profile = {
+        'id': current_user.id,
+        'username': current_user.username,
+        'real_name': member['fullName'] or current_user.original_name,
+        'profile_pic': get_member_profile_pic(current_user.id),
+        'bio': member['bio'],
+        'dob': member['dateOfBirth'],
+        'gender': member['gender'],
+        'pronouns': member['pronouns'], # Assuming 'pronouns' column exists or add it
+        'work_info': member['workInfo'], # Assuming 'workInfo' column exists or add it
+        'university': member['university'], # Assuming 'university' column exists or add it
+        'secondary': member['secondary'], # Assuming 'secondary' column exists or add it
+        'location': member['location'], # Assuming 'location' column exists or add it
+        'phone': member['contact'],
+        'email': member['email'],
+        'social_link': member['socialLink'], # Assuming 'socialLink' column exists or add it
+        'website_link': member['websiteLink'], # Assuming 'websiteLink' column exists or add it
+        'relationship_status': member['maritalStatus'],
+        'spouse_fiancee_name': member['maritalStatus'] in ['Married', 'Engaged'] and (member['spouseNames'] or member['girlfriendNames']) or None,
+        'personal_relationship_description': member['personalRelationshipDescription'], # Added this line for the new field
+        
+        # Placeholder counts - Replace with actual database queries
+        'friends_count': 0, 
+        'followers_count': 0,
+        'following_count': 0,
+        'likes_count': 0,
+        'posts_count': 0,
+
+        # Determine if any additional info exists for the template
+        'has_any_additional_info': any([
+            member['dateOfBirth'], member['gender'], member['pronouns'], member['workInfo'],
+            member['university'], member['secondary'], member['location'],
+            member['contact'], member['email'], member['socialLink'], member['websiteLink'],
+            member['maritalStatus'], member['spouseNames'], member['girlfriendNames'],
+            member['personalRelationshipDescription'] # Added for consistency
+        ])
+    }
+    
+    # Fetch user details associated with the member (e.g., unique_key)
+    user_details = db.execute("SELECT unique_key FROM users WHERE id = ?", (current_user.id,)).fetchone()
+
+    # Placeholder for different content types on profile
+    my_posts = []
+    my_locked_posts = []
+    my_saved_items = []
+    my_reposts = []
+    my_liked_items = []
+    my_reels = []
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template(
+        'my_profile.html',
+        member=member, # Still pass the raw member data for backward compatibility or direct use if needed
+        current_user_profile=current_user_profile, # The comprehensive profile dict
+        unique_key=user_details['unique_key'] if user_details else None, # Duplicated for clarity, can be removed if profile dict is used
+        current_year=current_year,
+        my_posts=my_posts,
+        my_locked_posts=my_locked_posts,
+        my_saved_items=my_saved_items,
+        my_reposts=my_reposts,
+        my_liked_items=my_liked_items,
+        my_reels=my_reels
+    )
+
+
+@app.route('/edit_my_details', methods=['GET', 'POST'])
+@login_required
+def edit_my_details():
+    db = get_db()
+    member = current_user.get_member_profile()
+    
+    # Prepare current_user_profile for the template, especially for profile_pic
+    current_user_profile = {
+        'profile_pic': get_member_profile_pic(current_user.id),
+        'real_name': member['fullName'] if member else current_user.original_name,
+        # Default empty strings for fields that might be None in the database,
+        # so Jinja doesn't throw errors when accessing them
+        'bio': member['bio'] if member else '',
+        'dob': member['dateOfBirth'] if member else '',
+        'gender': member['gender'] if member else '',
+        'pronouns': member['pronouns'] if member else '',
+        'work_info': member['workInfo'] if member else '',
+        'university': member['university'] if member else '',
+        'secondary': member['secondary'] if member else '',
+        'location': member['location'] if member else '',
+        'phone': member['contact'] if member else '',
+        'email': member['email'] if member else '',
+        'social_link': member['socialLink'] if member else '',
+        'website_link': member['websiteLink'] if member else '',
+        'relationship_status': member['maritalStatus'] if member else '',
+        'spouse_fiancee_name': member['maritalStatus'] in ['Married', 'Engaged'] and (member['spouseNames'] or member['girlfriendNames']) or (member['maritalStatus'] == 'Dating' and member['girlfriendNames']) or '',
+        'personal_relationship_description': member['personalRelationshipDescription'] if member else '', # Added
+    }
+
+    form_data = {}
+
+    if member:
+        form_data = dict(member) # Pre-populate form with existing data
+        # Ensure date format is YYYY-MM-DD for HTML input
+        # The database stores it as 'YYYY-MM-DD' directly from HTML input type="date"
+        # So, we just need to ensure it's a string. No complex parsing/reformatting is needed for display.
+        if form_data.get('dateOfBirth'):
+            form_data['dateOfBirth'] = str(form_data['dateOfBirth']) # Ensure it's a string, already YYYY-MM-DD
+            
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    if request.method == 'POST':
+        fullName = request.form['fullName'].strip()
+        dateOfBirth = request.form['dateOfBirth']
+        gender = request.form['gender']
+        contact = request.form['contact'].strip()
+        email = request.form['email'].strip()
+        bio = request.form['bio'].strip()
+        personalRelationshipDescription = request.form['personalRelationshipDescription'].strip()
+        maritalStatus = request.form['maritalStatus']
+        spouseNames = request.form.get('spouseNames', '').strip()
+        girlfriendNames = request.form.get('girlfriendNames', '').strip() # For Engaged
+        
+        # New fields from schema for edit_my_details
+        pronouns = request.form.get('pronouns', '').strip()
+        workInfo = request.form.get('workInfo', '').strip()
+        university = request.form.get('university', '').strip()
+        secondary = request.form.get('secondary', '').strip()
+        location = request.form.get('location', '').strip()
+        socialLink = request.form.get('socialLink', '').strip()
+        websiteLink = request.form.get('websiteLink', '').strip()
+
+
+        profile_photo_file = request.files.get('profilePhotoFile') # Changed to profilePhotoFile for clarity in HTML
+        profilePhoto_path = member['profilePhoto'] if member else None
+
+        if profile_photo_file and profile_photo_file.filename != '':
+            profilePhoto_path = save_uploaded_file(profile_photo_file, app.config['PROFILE_PHOTOS_FOLDER'])
+            if not profilePhoto_path:
+                flash('Invalid profile photo file type.', 'danger')
+                form_data = request.form.to_dict()
+                return render_template('edit_my_details.html', form_data=form_data, member=member, current_user_profile=current_user_profile, current_year=current_year)
+
+        try:
+            if member:
+                db.execute(
+                    """
+                    UPDATE members SET fullName=?, dateOfBirth=?, gender=?, contact=?, email=?, bio=?,
+                    personalRelationshipDescription=?, maritalStatus=?, spouseNames=?, girlfriendNames=?, profilePhoto=?,
+                    pronouns=?, workInfo=?, university=?, secondary=?, location=?, socialLink=?, websiteLink=?
+                    WHERE user_id=?
+                    """,
+                    (fullName, dateOfBirth, gender, contact, email, bio,
+                     personalRelationshipDescription, maritalStatus, spouseNames, girlfriendNames, profilePhoto_path,
+                     pronouns, workInfo, university, secondary, location, socialLink, websiteLink,
+                     current_user.id)
+                )
+                flash('Your details have been updated successfully!', 'success')
+            else:
+                db.execute(
+                    """
+                    INSERT INTO members (user_id, fullName, dateOfBirth, gender, contact, email, bio,
+                    personalRelationshipDescription, maritalStatus, spouseNames, girlfriendNames, profilePhoto,
+                    pronouns, workInfo, university, secondary, location, socialLink, websiteLink)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (current_user.id, fullName, dateOfBirth, gender, contact, email, bio,
+                     personalRelationshipDescription, maritalStatus, spouseNames, girlfriendNames, profilePhoto_path,
+                     pronouns, workInfo, university, secondary, location, socialLink, websiteLink)
+                )
+                flash('Your personal details have been added successfully!', 'success')
+            db.commit()
+            return redirect(url_for('my_profile'))
+        except Exception as e:
+            flash(f'An error occurred while saving your details: {e}', 'danger')
+            db.rollback()
+            form_data = request.form.to_dict()
+            return render_template('edit_my_details.html', form_data=form_data, member=member, current_user_profile=current_user_profile, current_year=current_year)
+
+    return render_template('edit_my_details.html', form_data=form_data, member=member, current_user_profile=current_user_profile, current_year=current_year)
+
+
+@app.route('/profile/<username>')
+@login_required
+def profile(username):
+    db = get_db()
+    # Get user details for the requested profile
+    profile_user = db.execute('SELECT id, username, originalName, is_admin FROM users WHERE username = ?', (username,)).fetchone()
+    if not profile_user:
+        flash("User not found.", "danger")
+        return redirect(url_for('home')) # Redirect to home if user not found
+
+    # Get member details for the requested profile
+    member = db.execute('SELECT * FROM members WHERE user_id = ?', (profile_user['id'],)).fetchone()
+    if not member:
+        flash("This user has not completed their personal profile yet.", 'info')
+        # Provide minimal info or redirect
+        return render_template('profile.html', profile_user=profile_user, member=None, is_friend=False, is_pending_request=False, is_blocked=False, current_user_is_admin=current_user.is_admin)
+
+    # Check friendship status
+    is_friend = False
+    is_pending_request = False # True if request sent by current_user to profile_user
+    is_received_request = False # True if request sent by profile_user to current_user
+
+    friendship = db.execute(
+        "SELECT * FROM friendships WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)",
+        (current_user.id, profile_user['id'], profile_user['id'], current_user.id)
+    ).fetchone()
+
+    if friendship:
+        if friendship['status'] == 'accepted':
+            is_friend = True
+        elif friendship['status'] == 'pending':
+            if friendship['user1_id'] == current_user.id:
+                is_pending_request = True # Current user sent request
+            else:
+                is_received_request = True # Profile user sent request to current user
+
+    # Check if current user has blocked this profile user
+    is_blocked = db.execute(
+        "SELECT 1 FROM blocked_users WHERE blocker_id = ? AND blocked_id = ?",
+        (current_user.id, profile_user['id'])
+    ).fetchone() is not None
+
+    # No 'temp_video' or 'story-viewer.html' or 'statuses' table on the list
+    temp_video = None
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template(
+        'profile.html',
+        profile_user=profile_user,
+        member=member,
+        is_friend=is_friend,
+        is_pending_request=is_pending_request,
+        is_received_request=is_received_request,
+        is_blocked=is_blocked,
+        temp_video=temp_video, # Will be None
+        current_user_is_admin=current_user.is_admin,
+        current_year=current_year
+    )
+
+# Removed: @app.route('/list_members') and associated function
+# as 'members_list.html' is not on the user's list.
+# Functionality to view members can be integrated into 'friends.html' or search results.
+
+
+# Removed: @app.route('/add_member', methods=['GET', 'POST']) and associated function
+# as 'add-member.html' is not on the user's list and not in sociafam.doc.
+
+
+# --- Friendship Routes (API endpoints for AJAX) ---
+
+@app.route('/api/send_friend_request/<int:receiver_id>', methods=['POST'])
+@login_required
+def api_send_friend_request(receiver_id):
+    db = get_db()
+    # Check if request already exists or they are already friends
+    existing_friendship = db.execute(
+        """
+        SELECT * FROM friendships
+        WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)
+        """,
+        (current_user.id, receiver_id, receiver_id, current_user.id)
+    ).fetchone()
+
+    if existing_friendship:
+        if existing_friendship['status'] == 'accepted':
+            return jsonify({'success': False, 'message': 'You are already friends.'})
+        elif existing_friendship['status'] == 'pending':
+            return jsonify({'success': False, 'message': 'Friend request already sent or received.'})
+
+    try:
+        db.execute(
+            "INSERT INTO friendships (user1_id, user2_id, status) VALUES (?, ?, 'pending')",
+            (current_user.id, receiver_id)
+        )
+        db.commit()
+        # Send notification to the receiver
+        receiver_user = load_user(receiver_id)
+        if receiver_user:
+            message = f'<strong>{current_user.original_name}</strong> (@{current_user.username}) sent you a friend request!'
+            send_system_notification(
+                receiver_id,
+                message,
+                link=url_for('friends'),
+                type='friend_request'
+            )
+        return jsonify({'success': True, 'message': 'Friend request sent!'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error sending friend request: {e}")
+        return jsonify({'success': False, 'message': 'Failed to send friend request.'})
+
+
+@app.route('/api/accept_friend_request/<int:request_id>', methods=['POST'])
+@login_required
+def api_accept_friend_request(request_id):
+    db = get_db()
+    friendship = db.execute(
+        "SELECT * FROM friendships WHERE id = ? AND user2_id = ? AND status = 'pending'",
+        (request_id, current_user.id)
+    ).fetchone()
+
+    if not friendship:
+        return jsonify({'success': False, 'message': 'Friend request not found or not pending.'})
+
+    try:
+        db.execute(
+            "UPDATE friendships SET status = 'accepted' WHERE id = ?",
+            (request_id,)
+        )
+        db.commit()
+        # Send notification to the sender
+        sender_user = load_user(friendship['user1_id'])
+        if sender_user:
+            message = f'<strong>{current_user.original_name}</strong> (@{current_user.username}) accepted your friend request!'
+            send_system_notification(
+                friendship['user1_id'],
+                message,
+                link=url_for('profile', username=current_user.username),
+                type='friend_accepted'
+            )
+        return jsonify({'success': True, 'message': 'Friend request accepted!'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error accepting friend request: {e}")
+        return jsonify({'success': False, 'message': 'Failed to accept friend request.'})
+
+
+@app.route('/api/decline_friend_request/<int:request_id>', methods=['POST'])
+@login_required
+def api_decline_friend_request(request_id):
+    db = get_db()
+    friendship = db.execute(
+        "SELECT * FROM friendships WHERE id = ? AND user2_id = ? AND status = 'pending'",
+        (request_id, current_user.id)
+    ).fetchone()
+
+    if not friendship:
+        return jsonify({'success': False, 'message': 'Friend request not found or not pending.'})
+
+    try:
+        db.execute("DELETE FROM friendships WHERE id = ?", (request_id,))
+        db.commit()
+        flash('Friend request declined.', 'info') # Flash message for the user who declined
+        return jsonify({'success': True, 'message': 'Friend request declined.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error declining friend request: {e}")
+        return jsonify({'success': False, 'message': 'Failed to decline friend request.'})
+
+
+@app.route('/api/unfriend/<int:friend_id>', methods=['POST'])
+@login_required
+def api_unfriend(friend_id):
+    db = get_db()
+    friendship = db.execute(
+        """
+        SELECT * FROM friendships
+        WHERE ((user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?))
+        AND status = 'accepted'
+        """,
+        (current_user.id, friend_id, friend_id, current_user.id)
+    ).fetchone()
+
+    if not friendship:
+        return jsonify({'success': False, 'message': 'Not friends with this user.'})
+
+    try:
+        db.execute("DELETE FROM friendships WHERE id = ?", (friendship['id'],))
+        db.commit()
+        flash('User unfriended.', 'info')
+        return jsonify({'success': True, 'message': 'User unfriended.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error unfriending user: {e}")
+        return jsonify({'success': False, 'message': 'Failed to unfriend user.'})
+
+
+# Update the friends route in app.py
+@app.route('/friends')
+@login_required
+def friends():
+    db = get_db()
+
+    # Fetch all accepted friends (mutual)
+    all_friends_raw = db.execute(
+        """
+        SELECT u.id, m.fullName AS realName, u.username, m.profilePhoto
+        FROM friendships f
+        JOIN users u ON (f.user1_id = u.id OR f.user2_id = u.id)
+        JOIN members m ON m.user_id = u.id
+        WHERE (f.user1_id = ? OR f.user2_id = ?) AND f.status = 'accepted' AND u.id != ?
+            AND u.id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = ?)
+        """,
+        (current_user.id, current_user.id, current_user.id, current_user.id)
+    ).fetchall()
+
+    all_friends = []
+    for friend in all_friends_raw:
+        mutual_count = get_mutual_friends_count(current_user.id, friend['id'])
+        all_friends.append(dict(friend, mutual_count=mutual_count, profilePhoto=get_member_profile_pic(friend['id'])))
+
+    # Fetch following: users I sent request to and accepted
+    following_raw = db.execute(
+        """
+        SELECT u.id, m.fullName AS realName, u.username, m.profilePhoto
+        FROM friendships f
+        JOIN users u ON f.user2_id = u.id
+        JOIN members m ON m.user_id = u.id
+        WHERE f.user1_id = ? AND f.status = 'accepted'
+            AND u.id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = ?)
+        """,
+        (current_user.id, current_user.id)
+    ).fetchall()
+
+    following = []
+    for user in following_raw:
+        mutual_count = get_mutual_friends_count(current_user.id, user['id'])
+        following.append(dict(user, mutual_count=mutual_count, profilePhoto=get_member_profile_pic(user['id'])))
+
+    # Fetch followers: users who sent request to me and accepted
+    followers_raw = db.execute(
+        """
+        SELECT u.id, m.fullName AS realName, u.username, m.profilePhoto
+        FROM friendships f
+        JOIN users u ON f.user1_id = u.id
+        JOIN members m ON m.user_id = u.id
+        WHERE f.user2_id = ? AND f.status = 'accepted'
+            AND u.id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = ?)
+        """,
+        (current_user.id, current_user.id)
+    ).fetchall()
+
+    followers = []
+    for user in followers_raw:
+        mutual_count = get_mutual_friends_count(current_user.id, user['id'])
+        followers.append(dict(user, mutual_count=mutual_count, profilePhoto=get_member_profile_pic(user['id'])))
+
+    # Fetch friend requests: pending requests sent to me
+    friend_requests_raw = db.execute(
+        """
+        SELECT f.id AS friendship_id, u.id AS sender_id, m.fullName AS sender_realName, u.username AS sender_username, m.profilePhoto
+        FROM friendships f
+        JOIN users u ON f.user1_id = u.id
+        JOIN members m ON m.user_id = u.id
+        WHERE f.user2_id = ? AND f.status = 'pending'
+            AND u.id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = ?)
+        """,
+        (current_user.id, current_user.id)
+    ).fetchall()
+
+    friend_requests = []
+    for request in friend_requests_raw:
+        mutual_count = get_mutual_friends_count(current_user.id, request['sender_id'])
+        friend_requests.append(dict(request, mutual_count=mutual_count, profilePhoto=get_member_profile_pic(request['sender_id'])))
+
+    # Fetch suggested users: friends of friends, with mutual count
+    suggested_users_raw = db.execute(
+        """
+        SELECT u.id, m.fullName AS realName, u.username, m.profilePhoto, COUNT(DISTINCT my_friend.id) AS mutual_count
+        FROM users u
+        JOIN members m ON m.user_id = u.id
+        JOIN friendships f1 ON (f1.user1_id = ? OR f1.user2_id = ?) AND f1.status = 'accepted'
+        JOIN users my_friend ON my_friend.id = CASE WHEN f1.user1_id = ? THEN f1.user2_id ELSE f1.user1_id END
+        JOIN friendships f2 ON (f2.user1_id = my_friend.id OR f2.user2_id = my_friend.id) AND f2.status = 'accepted'
+        WHERE u.id = CASE WHEN f2.user1_id = my_friend.id THEN f2.user2_id ELSE f2.user1_id END
+            AND u.id != ?
+            AND u.id NOT IN (
+                SELECT CASE WHEN f.user1_id = ? THEN f.user2_id ELSE f.user1_id END
+                FROM friendships f
+                WHERE (f.user1_id = ? OR f.user2_id = ?) AND f.status IN ('accepted', 'pending')
+            )
+            AND u.id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = ?)
+        GROUP BY u.id
+        HAVING mutual_count > 0
+        ORDER BY mutual_count DESC
+        LIMIT 10
+        """,
+        (current_user.id, current_user.id, current_user.id, current_user.id, current_user.id, current_user.id, current_user.id, current_user.id)
+    ).fetchall()
+
+    suggested_users = [dict(user, profilePhoto=get_member_profile_pic(user['id'])) for user in suggested_users_raw]
+
+    return render_template(
+        'friends.html',
+        all_friends=all_friends,
+        following=following,
+        followers=followers,
+        friend_requests=friend_requests,
+        suggested_users=suggested_users
+    )
+
+# Add this new API route to app.py for search
+@app.route('/api/search_users')
+@login_required
+def api_search_users():
+    query = request.args.get('q', '').lower()
+    if not query:
+        return jsonify([])
+
+    db = get_db()
+    users_raw = db.execute(
+        """
+        SELECT u.id, m.fullName AS realName, u.username, m.profilePhoto,
+        CASE WHEN LOWER(m.fullName) LIKE ? THEN 0 ELSE 1 END AS sort_order
+        FROM users u
+        JOIN members m ON m.user_id = u.id
+        WHERE (LOWER(m.fullName) LIKE ? OR LOWER(u.username) LIKE ?) AND u.id != ?
+            AND u.id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = ?)
+        ORDER BY sort_order, LOWER(m.fullName), LOWER(u.username)
+        """,
+        (query + '%', query + '%', query + '%', current_user.id, current_user.id)
+    ).fetchall()
+
+    users = []
+    for user in users_raw:
+        mutual_count = get_mutual_friends_count(current_user.id, user['id'])
+        status = get_relationship_status(current_user.id, user['id'])
+        users.append({
+            'id': user['id'],
+            'realName': user['realName'],
+            'username': user['username'],
+            'profilePhoto': get_member_profile_pic(user['id']),
+            'mutual_count': mutual_count,
+            'status': status
+        })
+
+    return jsonify(users)
+
+# --- Messaging & Chat Rooms ---
+
+@app.route('/inbox')
+@login_required
+def inbox():
+    db = get_db()
+
+    # Fetch conversations (chat rooms the user is a member of)
+    # Get latest message for each chat room
+    conversations_data = db.execute(
+        """
+        SELECT
+            cr.id AS chat_room_id,
+            cr.is_group,
+            MAX(cm.timestamp) AS latest_message_timestamp,
+            (SELECT content FROM chat_messages WHERE chat_room_id = cr.id ORDER BY timestamp DESC LIMIT 1) AS latest_message_content,
+            (SELECT sender_id FROM chat_messages WHERE chat_room_id = cr.id ORDER BY timestamp DESC LIMIT 1) AS latest_message_sender_id,
+            (SELECT COUNT(*) FROM chat_messages WHERE chat_room_id = cr.id AND sender_id != ? AND timestamp > crm.last_read_message_timestamp) AS unread_count,
+            u_other.id AS other_user_id,
+            u_other.username AS other_username,
+            u_other.originalName AS other_original_name,
+            m_other.profilePhoto AS other_profile_photo
+        FROM chat_rooms cr
+        JOIN chat_room_members crm ON cr.id = crm.chat_room_id
+        LEFT JOIN chat_messages cm ON cr.id = cm.chat_room_id
+        LEFT JOIN chat_room_members crm_other ON cr.id = crm_other.chat_room_id AND crm_other.user_id != ? AND cr.is_group = 0
+        LEFT JOIN users u_other ON crm_other.user_id = u_other.id
+        LEFT JOIN members m_other ON u_other.id = m_other.user_id
+        WHERE crm.user_id = ?
+        GROUP BY cr.id
+        ORDER BY latest_message_timestamp DESC
+        """,
+        (current_user.id, current_user.id, current_user.id)
+    ).fetchall()
+
+    conversations = []
+    for conv in conversations_data:
+        conv_dict = dict(conv)
+        conv_dict['is_unread'] = conv_dict['unread_count'] > 0
+        conv_dict['latest_message_snippet'] = (conv_dict['latest_message_content'][:50] + '...') if conv_dict['latest_message_content'] and len(conv_dict['latest_message_content']) > 50 else (conv_dict['latest_message_content'] or "No messages yet.")
+
+        # If it's a 1-on-1 chat, populate other_user details
+        if not conv_dict['is_group']:
+            conv_dict['other_user'] = {
+                'id': conv_dict['other_user_id'],
+                'username': conv_dict['other_username'],
+                'originalName': conv_dict['other_original_name'],
+                'profilePhoto': get_member_profile_pic(conv_dict['other_user_id'])
+            }
+        else:
+            # For groups, you might want to show group name or a generic group icon
+            group_details = db.execute("SELECT name, profilePhoto FROM groups WHERE chat_room_id = ?", (conv_dict['chat_room_id'],)).fetchone()
+            if group_details:
+                conv_dict['other_user'] = { # Reusing structure for display
+                    'id': conv_dict['chat_room_id'],
+                    'username': group_details['name'], # Display group name as "username" for simplicity
+                    'originalName': group_details['name'],
+                    'profilePhoto': group_details['profilePhoto'] or url_for('static', filename='img/default_group.png')
+                }
+            else:
+                 conv_dict['other_user'] = {
+                    'id': conv_dict['chat_room_id'],
+                    'username': "Group Chat",
+                    'originalName': "Group Chat",
+                    'profilePhoto': url_for('static', filename='img/default_group.png')
+                }
+
+        conversations.append(conv_dict)
+
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('inbox.html', conversations=conversations, current_year=current_year)
+
+
+@app.route('/message_member', methods=['GET', 'POST'])
+@login_required
+def message_member():
+    db = get_db()
+    # Fetch all users who are not the current user and are not blocked by current user
+    # Also exclude users blocked by them to prevent one-sided chat initiation
+    available_users = db.execute(
+        """
+        SELECT u.id, u.username, u.originalName, m.profilePhoto
+        FROM users u
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE u.id != ?
+          AND u.id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = ?)
+          AND u.id NOT IN (SELECT blocker_id FROM blocked_users WHERE blocked_id = ?)
+        ORDER BY u.originalName
+        """,
+        (current_user.id, current_user.id, current_user.id)
+    ).fetchall()
+
+    users_with_pics = []
+    for user in available_users:
+        user_dict = dict(user)
+        user_dict['profilePhoto'] = get_member_profile_pic(user_dict['id'])
+        users_with_pics.append(user_dict)
+
+    if request.method == 'POST':
+        receiver_user_id = request.form['receiver_user_id']
+        # This route is now primarily for displaying the list.
+        # Starting a chat will redirect to view_chat
+        return redirect(url_for('view_chat', chat_room_id=receiver_user_id)) # Redirect to start/view conversation
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('message_member.html', available_users=users_with_pics, current_year=current_year)
+
+
+@app.route('/view_chat/<int:chat_room_id>', methods=['GET', 'POST'])
+@login_required
+def view_chat(chat_room_id):
+    db = get_db()
+
+    # Verify current user is a member of this chat room
+    is_member = db.execute(
+        "SELECT 1 FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?",
+        (chat_room_id, current_user.id)
+    ).fetchone()
+    
+    # If not a member, check if it's a new 1-on-1 chat being initiated
+    if not is_member:
+        # Assume chat_room_id here might be a target user_id if initiating a new chat
+        # Try to find an existing 1-on-1 chat with this user_id
+        target_user_id = chat_room_id # Temporarily assume chat_room_id is user_id
+        existing_chat_room = db.execute(
+            """
+            SELECT cr.id FROM chat_rooms cr
+            JOIN chat_room_members crm1 ON cr.id = crm1.chat_room_id AND crm1.user_id = ?
+            JOIN chat_room_members crm2 ON cr.id = crm2.chat_room_id AND crm2.user_id = ?
+            WHERE cr.is_group = 0
+            """,
+            (current_user.id, target_user_id)
+        ).fetchone()
+
+        if existing_chat_room:
+            chat_room_id = existing_chat_room['id']
+            is_member = True # Now we are a member of an existing chat
+        else:
+            # Create a new 1-on-1 chat room
+            try:
+                cursor = db.execute("INSERT INTO chat_rooms (is_group, created_by) VALUES (?, ?)", (0, current_user.id))
+                new_chat_room_id = cursor.lastrowid
+                db.execute("INSERT INTO chat_room_members (chat_room_id, user_id) VALUES (?, ?)", (new_chat_room_id, current_user.id))
+                db.execute("INSERT INTO chat_room_members (chat_room_id, user_id) VALUES (?, ?)", (new_chat_room_id, target_user_id))
+                db.commit()
+                flash('New conversation started!', 'success')
+                return redirect(url_for('view_chat', chat_room_id=new_chat_room_id))
+            except Exception as e:
+                flash(f'Error starting new conversation: {e}', 'danger')
+                db.rollback()
+                return redirect(url_for('inbox')) # Fallback to inbox
+
+    if not is_member: # Should not happen if logic above is correct
+        flash('You are not a member of this chat room.', 'danger')
+        return redirect(url_for('inbox'))
+
+    chat_room = db.execute("SELECT * FROM chat_rooms WHERE id = ?", (chat_room_id,)).fetchone()
+    if not chat_room:
+        flash("Chat room not found.", "danger")
+        return redirect(url_for('inbox'))
+
+    other_user = None
+    if not chat_room['is_group']:
+        # For 1-on-1 chat, find the other user
+        other_member_id = db.execute(
+            "SELECT user_id FROM chat_room_members WHERE chat_room_id = ? AND user_id != ?",
+            (chat_room_id, current_user.id)
+        ).fetchone()
+        if other_member_id:
+            other_user = load_user(other_member_id['user_id'])
+            if other_user:
+                other_user_member = get_member_from_user_id(other_user.id)
+                other_user.profile_pic = get_member_profile_pic(other_user.id)
+                other_user.real_name = other_user_member['fullName'] if other_user_member else other_user.username
+    else:
+        # For group chat, redirect to view_group_chat
+        return redirect(url_for('view_group_chat', group_chat_room_id=chat_room_id))
+
+
+    # Fetch messages
+    messages = db.execute(
+        """
+        SELECT cm.*, u.username, m.profilePhoto
+        FROM chat_messages cm
+        JOIN users u ON cm.sender_id = u.id
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE cm.chat_room_id = ?
+        ORDER BY cm.timestamp
+        """,
+        (chat_room_id,)
+    ).fetchall()
+
+    # Mark messages as read for current user
+    db.execute(
+        "UPDATE chat_room_members SET last_read_message_timestamp = ? WHERE chat_room_id = ? AND user_id = ?",
+        (datetime.now(timezone.utc), chat_room_id, current_user.id)
+    )
+    db.commit()
+
+    # Get chat background image for current user
+    chat_background_image_path = current_user.chat_background_image_path or url_for('static', filename='img/default_chat_background.jpg')
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template(
+        'view_chat.html', # Changed to view_chat.html
+        chat_room_id=chat_room_id,
+        other_user=other_user,
+        chat_messages=messages,
+        current_user_id=current_user.id,
+        chat_background_image_path=chat_background_image_path,
+        current_year=current_year
+    )
+
+
+@app.route('/view_group_chat/<int:group_chat_room_id>')
+@login_required
+def view_group_chat(group_chat_room_id):
+    db = get_db()
+
+    # Verify current user is a member of this chat room
+    is_member = db.execute(
+        "SELECT 1 FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?",
+        (group_chat_room_id, current_user.id)
+    ).fetchone()
+    if not is_member:
+        flash('You are not a member of this group chat.', 'danger')
+        return redirect(url_for('inbox'))
+
+    group_chat_room = db.execute("SELECT * FROM chat_rooms WHERE id = ? AND is_group = 1", (group_chat_room_id,)).fetchone()
+    if not group_chat_room:
+        flash("Group chat not found.", "danger")
+        return redirect(url_for('inbox'))
+
+    group_details = db.execute("SELECT * FROM groups WHERE chat_room_id = ?", (group_chat_room_id,)).fetchone()
+    if not group_details:
+        flash("Group details not found.", "danger")
+        return redirect(url_for('inbox'))
+
+    # Fetch messages
+    messages = db.execute(
+        """
+        SELECT cm.*, u.username, m.profilePhoto
+        FROM chat_messages cm
+        JOIN users u ON cm.sender_id = u.id
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE cm.chat_room_id = ?
+        ORDER BY cm.timestamp
+        """,
+        (group_chat_room_id,)
+    ).fetchall()
+
+    # Mark messages as read for current user in this group chat
+    db.execute(
+        "UPDATE chat_room_members SET last_read_message_timestamp = ? WHERE chat_room_id = ? AND user_id = ?",
+        (datetime.now(timezone.utc), group_chat_room_id, current_user.id)
+    )
+    db.commit()
+
+    # Get chat background image for current user
+    chat_background_image_path = current_user.chat_background_image_path or url_for('static', filename='img/default_chat_background.jpg')
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template(
+        'view_group_chat.html',
+        chat_room_id=group_chat_room_id,
+        group=group_details,
+        chat_messages=messages,
+        current_user_id=current_user.id,
+        chat_background_image_path=chat_background_image_path,
+        current_year=current_year
+    )
+
+
+@app.route('/api/send_chat_message/<int:chat_room_id>', methods=['POST'])
+@login_required
+def api_send_chat_message(chat_room_id):
+    db = get_db()
+
+    # Verify user is member of chat room
+    is_member = db.execute(
+        "SELECT 1 FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?",
+        (chat_room_id, current_user.id)
+    ).fetchone()
+    if not is_member:
+        return jsonify({'success': False, 'message': 'You are not a member of this chat room.'}), 403
+
+    content = request.form.get('content')
+    media_file = request.files.get('media_file')
+    media_path = None
+    media_type = None
+
+    if media_file and media_file.filename != '':
+        media_path = save_uploaded_file(media_file, app.config['CHAT_MEDIA_FOLDER'])
+        if media_path:
+            if media_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS:
+                media_type = 'image'
+            elif media_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS:
+                media_type = 'video'
+            elif media_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_AUDIO_EXTENSIONS:
+                media_type = 'audio'
+        else:
+            return jsonify({'success': False, 'message': 'Invalid media file type.'}), 400
+
+    if not content and not media_path:
+        return jsonify({'success': False, 'message': 'Message cannot be empty.'}), 400
+
+    try:
+        cursor = db.execute(
+            "INSERT INTO chat_messages (chat_room_id, sender_id, content, timestamp, media_path, media_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (chat_room_id, current_user.id, content, datetime.now(timezone.utc), media_path, media_type)
+        )
+        message_id = cursor.lastrowid
+        db.commit()
+
+        # Fetch the newly created message to return
+        new_message = db.execute(
+            "SELECT cm.*, u.username, m.profilePhoto FROM chat_messages cm JOIN users u ON cm.sender_id = u.id LEFT JOIN members m ON u.id = m.user_id WHERE cm.id = ?",
+            (message_id,)
+        ).fetchone()
+
+        # Send notifications to other chat room members (excluding sender)
+        other_members = db.execute(
+            "SELECT user_id FROM chat_room_members WHERE chat_room_id = ? AND user_id != ?",
+            (chat_room_id, current_user.id)
+        ).fetchall()
+        for member in other_members:
+            # Construct a snippet of the message for notification
+            notif_content = content if content else f"sent a {media_type}"
+            message_text = f"<strong>{current_user.original_name}</strong> sent a message in your chat: {notif_content[:50]}"
+            send_system_notification(
+                member['user_id'],
+                message_text,
+                link=url_for('view_chat', chat_room_id=chat_room_id),
+                type='message_received'
+            )
+
+        return jsonify({'success': True, 'message': dict(new_message)})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error sending chat message: {e}")
+        return jsonify({'success': False, 'message': 'Failed to send message.'}), 500
+
+
+@app.route('/create_group', methods=['GET', 'POST'])
+@login_required
+def create_group():
+    db = get_db()
+    # Fetch friends for adding to the group
+    friends_data = db.execute(
+        """
+        SELECT u.id, u.username, u.originalName, m.profilePhoto
+        FROM friendships f
+        JOIN users u ON CASE WHEN f.user1_id = ? THEN f.user2_id ELSE f.user1_id END = u.id
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE (f.user1_id = ? OR f.user2_id = ?) AND f.status = 'accepted'
+        ORDER BY u.originalName
+        """,
+        (current_user.id, current_user.id, current_user.id)
+    ).fetchall()
+
+    friends_with_pics = []
+    for friend in friends_data:
+        friend_dict = dict(friend)
+        friend_dict['profilePhoto'] = get_member_profile_pic(friend_dict['id'])
+        friends_with_pics.append(friend_dict)
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    if request.method == 'POST':
+        group_name = request.form['groupName'].strip()
+        description = request.form.get('description', '').strip()
+        selected_friends_ids_str = request.form.getlist('selectedFriends')
+        selected_friends_ids = [int(fid) for fid in selected_friends_ids_str if fid.isdigit()]
+
+        group_profile_pic_file = request.files.get('groupProfilePhoto')
+        profile_photo_path = None
+
+        if group_profile_pic_file and group_profile_pic_file.filename != '':
+            profile_photo_path = save_uploaded_file(group_profile_pic_file, app.config['PROFILE_PHOTOS_FOLDER'])
+            if not profile_photo_path:
+                flash('Invalid group profile photo file type.', 'danger')
+                return render_template('create_group.html', friends=friends_with_pics, form_data=request.form.to_dict(), current_year=current_year)
+
+        if not group_name:
+            flash('Group name is required.', 'danger')
+            return render_template('create_group.html', friends=friends_with_pics, form_data=request.form.to_dict(), current_year=current_year)
+
+        if not selected_friends_ids:
+            flash('Please select at least one friend to add to the group.', 'danger')
+            return render_template('create_group.html', friends=friends_with_pics, form_data=request.form.to_dict(), current_year=current_year)
+
+        try:
+            # Create chat room for the group
+            cursor = db.execute(
+                "INSERT INTO chat_rooms (is_group, created_by) VALUES (?, ?)",
+                (1, current_user.id)
+            )
+            chat_room_id = cursor.lastrowid
+
+            # Create group entry
+            cursor = db.execute(
+                "INSERT INTO groups (name, description, profilePhoto, created_by, chat_room_id) VALUES (?, ?, ?, ?, ?)",
+                (group_name, description, profile_photo_path, current_user.id, chat_room_id)
+            )
+            group_id = cursor.lastrowid
+
+            # Add current user as member and admin of the chat room
+            db.execute(
+                "INSERT INTO chat_room_members (chat_room_id, user_id, is_admin) VALUES (?, ?, ?)",
+                (chat_room_id, current_user.id, 1) # Creator is admin
+            )
+
+            # Add selected friends to chat room members
+            for friend_id in selected_friends_ids:
+                db.execute(
+                    "INSERT INTO chat_room_members (chat_room_id, user_id, is_admin) VALUES (?, ?, ?)",
+                    (chat_room_id, friend_id, 0) # Friends are regular members
+                )
+                # Send notification to invited friends
+                friend_user = load_user(friend_id)
+                if friend_user:
+                    message = f'<strong>{current_user.original_name}</strong> invited you to the group chat: <strong>{group_name}</strong>!'
+                    send_system_notification(
+                        friend_id,
+                        message,
+                        link=url_for('view_group_profile', group_id=group_id),
+                        type='group_invite'
+                    )
+
+            db.commit()
+            flash(f'Group "{group_name}" created successfully!', 'success')
+            return redirect(url_for('view_group_profile', group_id=group_id))
+        except Exception as e:
+            flash(f'An error occurred while creating the group: {e}', 'danger')
+            db.rollback()
+            return render_template('create_group.html', friends=friends_with_pics, form_data=request.form.to_dict(), current_year=current_year)
+
+    return render_template('create_group.html', friends=friends_with_pics, form_data=None, current_year=current_year)
+
+
+@app.route('/view_group_profile/<int:group_id>')
+@login_required
+def view_group_profile(group_id):
+    db = get_db()
+    group = db.execute("SELECT * FROM groups WHERE id = ?", (group_id,)).fetchone()
+    if not group:
+        flash("Group not found.", "danger")
+        return redirect(url_for('inbox')) # Redirect to inbox if group not found
+
+    is_admin_view = request.args.get('admin_view', 'false').lower() == 'true'
+
+    # Check if current_user is a member (unless in admin_view mode)
+    is_member = db.execute(
+        "SELECT 1 FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?",
+        (group['chat_room_id'], current_user.id)
+    ).fetchone() is not None
+
+    if not is_member and not (current_user.is_admin and is_admin_view):
+        flash('You are not a member of this group.', 'danger')
+        return redirect(url_for('inbox')) # Or a more appropriate page
+
+    group_members_data = db.execute(
+        """
+        SELECT u.id, u.username, u.originalName, m.profilePhoto, crm.is_admin as is_group_admin
+        FROM chat_room_members crm
+        JOIN users u ON crm.user_id = u.id
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE crm.chat_room_id = ?
+        ORDER BY u.originalName
+        """,
+        (group['chat_room_id'],)
+    ).fetchall()
+
+    group_members = []
+    for member in group_members_data:
+        member_dict = dict(member)
+        member_dict['profilePhoto'] = get_member_profile_pic(member_dict['id'])
+        group_members.append(member_dict)
+
+    # Check if current user is admin of *this specific group*
+    current_user_is_group_admin = db.execute(
+        "SELECT is_admin FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?",
+        (group['chat_room_id'], current_user.id)
+    ).fetchone()
+    current_user_is_group_admin = current_user_is_group_admin['is_admin'] if current_user_is_group_admin else 0
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template(
+        'view_group_profile.html',
+        group=group,
+        group_members=group_members,
+        is_member=is_member,
+        current_user_is_group_admin=current_user_is_group_admin,
+        admin_view=is_admin_view, # Pass this flag to template
+        current_year=current_year
+    )
+
+
+@app.route('/api/join_group/<int:group_id>', methods=['POST'])
+@login_required
+def api_join_group(group_id):
+    db = get_db()
+    group = db.execute("SELECT chat_room_id, name FROM groups WHERE id = ?", (group_id,)).fetchone()
+    if not group:
+        return jsonify({'success': False, 'message': 'Group not found.'}), 404
+
+    chat_room_id = group['chat_room_id']
+
+    is_member = db.execute(
+        "SELECT 1 FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?",
+        (chat_room_id, current_user.id)
+    ).fetchone()
+    if is_member:
+        return jsonify({'success': False, 'message': 'You are already a member of this group.'}), 400
+
+    try:
+        db.execute(
+            "INSERT INTO chat_room_members (chat_room_id, user_id, is_admin) VALUES (?, ?, 0)",
+            (chat_room_id, current_user.id)
+        )
+        db.commit()
+        flash(f'You have successfully joined "{group["name"]}"!', 'success')
+        return jsonify({'success': True, 'message': 'Successfully joined group.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error joining group: {e}")
+        return jsonify({'success': False, 'message': 'Failed to join group.'}), 500
+
+
+@app.route('/api/leave_group/<int:group_id>', methods=['POST'])
+@login_required
+def api_leave_group(group_id):
+    db = get_db()
+    group = db.execute("SELECT chat_room_id, name FROM groups WHERE id = ?", (group_id,)).fetchone()
+    if not group:
+        return jsonify({'success': False, 'message': 'Group not found.'}), 404
+
+    chat_room_id = group['chat_room_id']
+
+    is_member = db.execute(
+        "SELECT 1 FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?",
+        (chat_room_id, current_user.id)
+    ).fetchone()
+    if not is_member:
+        return jsonify({'success': False, 'message': 'You are not a member of this group.'}), 400
+
+    try:
+        db.execute(
+            "DELETE FROM chat_room_members WHERE chat_room_id = ? AND user_id = ?",
+            (chat_room_id, current_user.id)
+        )
+        db.commit()
+        flash(f'You have successfully left "{group["name"]}".', 'info')
+        return jsonify({'success': True, 'message': 'Successfully left group.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error leaving group: {e}")
+        return jsonify({'success': False, 'message': 'Failed to leave group.'}), 500
+
+
+# --- Content Creation Routes ---
+
+@app.route('/add_to')
+@login_required
+def add_to():
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('add_to.html', current_year=current_year)
+
+# Create Post
+@app.route('/create_post', methods=['GET', 'POST'])
+@login_required
+def create_post():
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+
+    if request.method == 'POST':
+        db = get_db()
+        cursor = db.cursor()
+
+        post_content = request.form.get('description') # Renamed from post_content to description to match schema
+        visibility = request.form.get('visibility')
+        media_path = None
+        media_type = None
+
+        # Ensure the posts upload directory exists
+        posts_folder = app.config['POSTS_FOLDER']
+        if not os.path.exists(posts_folder):
+            os.makedirs(posts_folder)
+
+        if 'mediaFile' in request.files: # Changed from media_file to mediaFile to match HTML form
+            file = request.files['mediaFile']
+            if file and file.filename != '':
+                # Using the save_uploaded_file helper for consistency
+                media_path = save_uploaded_file(file, app.config['POSTS_FOLDER'])
+                if media_path:
+                    # Determine media_type based on file extension
+                    file_extension = file.filename.rsplit('.', 1)[1].lower()
+                    if file_extension in ALLOWED_IMAGE_EXTENSIONS:
+                        media_type = 'image'
+                    elif file_extension in ALLOWED_VIDEO_EXTENSIONS:
+                        media_type = 'video'
+                    # No else for audio, as posts typically don't directly embed audio for main media
+                else:
+                    flash('Invalid media file type.', 'danger')
+                    return render_template('create_post.html', title='Create Post', current_year=current_year)
+            
+        if not post_content and not media_path:
+            flash('Post cannot be empty. Please add text or media.', 'danger')
+            return render_template('create_post.html', title='Create Post', current_year=current_year)
+
+
+        try:
+            # Insert the post into the database
+            cursor.execute("INSERT INTO posts (user_id, description, media_path, media_type, visibility) VALUES (?, ?, ?, ?, ?)",
+                           (current_user.id, post_content, media_path, media_type, visibility))
+            db.commit()
+            flash('Post uploaded successfully!', 'success')
+            
+            # Redirect to the home page after success
+            return redirect(url_for('home'))
+
+        except sqlite3.IntegrityError as e:
+            db.rollback()
+            app.logger.error(f"Integrity Error while posting: {e}")
+            flash('Database error. Post could not be created.', 'danger')
+            return render_template('create_post.html', title='Create Post', current_year=current_year)
+        except Exception as e:
+            db.rollback()
+            app.logger.error(f"Error creating post: {e}")
+            flash('Failed to create post.', 'danger')
+            return render_template('create_post.html', title='Create Post', current_year=current_year)
+
+    return render_template('create_post.html', title='Create Post', current_year=current_year)
+
+
+@app.route('/create_reel', methods=['GET', 'POST']) # Changed URL path to avoid conflict
+@login_required
+def create_reel():
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    if request.method == 'POST':
+        description = request.form.get('description', '').strip()
+        # Visibility is fixed to public for reels as per requirements
+        visibility = 'public'
+        media_file = request.files.get('mediaFile')
+        audio_file = request.files.get('audioFile') # For photo reels
+
+        media_path = None
+        media_type = None
+        audio_path = None
+
+        if media_file and media_file.filename != '':
+            media_path = save_uploaded_file(media_file, app.config['REEL_MEDIA_FOLDER'])
+            if media_path:
+                if media_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS:
+                    media_type = 'image'
+                elif media_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS:
+                    media_type = 'video'
+            else:
+                flash('Invalid media file type for reel.', 'danger')
+                return render_template('create_reel.html', form_data=request.form.to_dict(), current_year=current_year)
+        else:
+            flash('Reel requires a photo or video.', 'danger')
+            return render_template('create_reel.html', form_data=request.form.to_dict(), current_year=current_year)
+
+        # If it's an image reel, handle optional audio
+        if media_type == 'image' and audio_file and audio_file.filename != '':
+            audio_path = save_uploaded_file(audio_file, app.config['VOICE_NOTES_FOLDER']) # Reusing folder
+            if not audio_path:
+                flash('Invalid audio file type for reel.', 'danger')
+                return render_template('create_reel.html', form_data=request.form.to_dict(), current_year=current_year)
+
+        db = get_db()
+        try:
+            db.execute(
+                """
+                INSERT INTO reels (user_id, description, media_path, media_type, audio_path, visibility, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (current_user.id, description, media_path, media_type, audio_path, visibility, datetime.now(timezone.utc))
+            )
+            db.commit()
+            flash('Reel created successfully!', 'success')
+            return redirect(url_for('home')) # Redirect to reels feed
+        except Exception as e:
+            flash(f'An error occurred while creating your reel: {e}', 'danger')
+            db.rollback()
+            return render_template('create_reel.html', form_data=request.form.to_dict(), current_year=current_year)
+
+    return render_template('create_reel.html', current_year=current_year)
+
+
+@app.route('/reels') # This is now exclusively for viewing reels
+@login_required
+def reels():
+    db = get_db()
+    
+    all_reels_data = db.execute(
+        """
+        SELECT r.*, u.username, m.profilePhoto AS owner_profile_pic, u.originalName AS owner_original_name
+        FROM reels r
+        JOIN users u ON r.user_id = u.id
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE r.visibility = 'public' OR (r.visibility = 'friends' AND EXISTS (
+            SELECT 1 FROM friendships WHERE ((user1_id = ? AND user2_id = r.user_id) OR (user1_id = r.user_id AND user2_id = ?)) AND status = 'accepted'
+        ))
+        ORDER BY r.timestamp DESC
+        """,
+        (current_user.id, current_user.id)
+    ).fetchall()
+
+    reels_to_display = []
+    for reel_item in all_reels_data:
+        reel_dict = dict(reel_item)
+        reel_dict['owner_profile_pic'] = get_member_profile_pic(reel_dict['user_id'])
+        
+        # Determine if current_user is following the reel's poster
+        is_following_poster = False
+        if current_user.id != reel_dict['user_id']: # Cannot follow yourself
+            friendship_status = db.execute(
+                """
+                SELECT status FROM friendships
+                WHERE (user1_id = ? AND user2_id = ?)
+                """,
+                (current_user.id, reel_dict['user_id'])
+            ).fetchone()
+            if friendship_status and friendship_status['status'] == 'accepted':
+                is_following_poster = True
+        
+        reel_dict['is_following_poster'] = is_following_poster
+        reels_to_display.append(reel_dict)
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('reels.html', reels=reels_to_display, current_year=current_year)
+
+
+@app.route('/create_story', methods=['GET', 'POST'])
+@login_required
+def create_story():
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    if request.method == 'POST':
+        description = request.form.get('description', '').strip()
+        # Visibility is fixed to friends for stories
+        visibility = 'friends'
+
+        media_path = None
+        media_type = None # 'image', 'video', 'audio' (for voice note)
+        background_audio_path = None # For photos with separate audio
+
+        # Prioritize camera captures, then uploaded files, then voice notes
+        camera_captured_data = request.form.get('cameraCapturedData')
+        camera_captured_media_type = request.form.get('cameraCapturedMediaType')
+        voice_note_data = request.form.get('voiceNoteData')
+        media_file = request.files.get('mediaFile') # Uploaded file
+        audio_file = request.files.get('audioFile') # Background audio for photo story
+
+        # 1. Handle camera captured data (photo or video)
+        if camera_captured_data:
+            header, encoded = camera_captured_data.split(",", 1)
+            decoded_data = base64.b64decode(encoded)
+            file_extension = 'png' if 'image' in camera_captured_media_type else 'webm'
+            unique_filename = f"{uuid.uuid4()}.{file_extension}"
+            file_path = os.path.join(app.config['STORY_MEDIA_FOLDER'], unique_filename)
+            full_path_for_db = os.path.join('static', 'uploads', os.path.basename(app.config['STORY_MEDIA_FOLDER']), unique_filename)
+
+            with open(file_path, 'wb') as f:
+                f.write(decoded_data)
+            media_path = full_path_for_db
+            media_type = 'image' if 'image' in camera_captured_media_type else 'video'
+
+        # 2. Handle uploaded media file (if no camera data)
+        elif media_file and media_file.filename != '':
+            media_path = save_uploaded_file(media_file, app.config['STORY_MEDIA_FOLDER'])
+            if media_path:
+                if media_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS:
+                    media_type = 'image'
+                elif media_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS:
+                    media_type = 'video'
+            else:
+                flash('Invalid uploaded media file type for story.', 'danger')
+                return render_template('create_story.html', form_data=request.form.to_dict(), current_year=current_year)
+
+        # 3. Handle voice note (if no other media)
+        elif voice_note_data:
+            # Voice note data is also base64 (or data URL from frontend)
+            header, encoded = voice_note_data.split(",", 1)
+            decoded_data = base64.b64decode(encoded)
+            unique_filename = f"{uuid.uuid4()}.webm" # Assuming webm format
+            file_path = os.path.join(app.config['VOICE_NOTES_FOLDER'], unique_filename)
+            full_path_for_db = os.path.join('static', 'uploads', os.path.basename(app.config['VOICE_NOTES_FOLDER']), unique_filename)
+
+            with open(file_path, 'wb') as f:
+                f.write(decoded_data)
+            media_path = full_path_for_db
+            media_type = 'audio'
+        else:
+            flash('Story requires a photo, video, or voice note.', 'danger')
+            return render_template('create_story.html', form_data=request.form.to_dict(), current_year=current_year)
+
+        # Handle background audio if main media is an image
+        if media_type == 'image' and audio_file and audio_file.filename != '':
+            background_audio_path = save_uploaded_file(audio_file, app.config['VOICE_NOTES_FOLDER'])
+            if not background_audio_path:
+                flash('Invalid background audio file type for story.', 'danger')
+                return render_template('create_story.html', form_data=request.form.to_dict(), current_year=current_year)
+
+
+        db = get_db()
+        try:
+            # Stories expire in 24 hours
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+            db.execute(
+                """
+                INSERT INTO stories (user_id, description, media_path, media_type, background_audio_path, visibility, timestamp, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (current_user.id, description, media_path, media_type, background_audio_path, visibility, datetime.now(timezone.utc), expires_at)
+            )
+            db.commit()
+            flash('Story created successfully! It will expire in 24 hours.', 'success')
+            return redirect(url_for('home')) # Redirect to home/stories feed
+        except Exception as e:
+            flash(f'An error occurred while creating your story: {e}', 'danger')
+            app.logger.error(f"Error creating story: {e}")
+            db.rollback()
+            return render_template('create_story.html', form_data=request.form.to_dict(), current_year=current_year)
+
+    return render_template('create_story.html', current_year=current_year)
+
+# --- Search Route ---
+@app.route('/search', methods=['GET'])
+@login_required
+def search():
+    query = request.args.get('q', '').strip()
+    db = get_db()
+    
+    search_results = []
+    if query:
+        # Search users
+        users = db.execute(
+            """
+            SELECT u.id, u.username, u.originalName, m.profilePhoto
+            FROM users u
+            LEFT JOIN members m ON u.id = m.user_id
+            WHERE u.username LIKE ? OR u.originalName LIKE ?
+            ORDER BY u.originalName
+            """,
+            (f'%{query}%', f'%{query}%')
+        ).fetchall()
+        for user in users:
+            user_dict = dict(user)
+            user_dict['profilePhoto'] = get_member_profile_pic(user_dict['id'])
+            search_results.append({'type': 'user', 'data': user_dict})
+        
+        # Search groups
+        groups = db.execute(
+            """
+            SELECT g.id, g.name, g.description, g.profilePhoto
+            FROM groups g
+            WHERE g.name LIKE ? OR g.description LIKE ?
+            ORDER BY g.name
+            """,
+            (f'%{query}%', f'%{query}%')
+        ).fetchall()
+        for group in groups:
+            group_dict = dict(group)
+            group_dict['profilePhoto'] = group_dict['profilePhoto'] or url_for('static', filename='img/default_group.png')
+            search_results.append({'type': 'group', 'data': group_dict})
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('search.html', query=query, search_results=search_results, current_year=current_year)
+
+
+# --- Dashboard & Static Pages ---
+# 'dashboard.html' is not on the user's list. Redirect to my_profile as the closest personal overview.
+@app.route('/dashboard')
+@login_required
+def dashboard_redirect():
+    flash('Dashboard is not available. Redirecting to your profile.', 'info')
+    return redirect(url_for('my_profile'))
+
+
+# Removed: @app.route('/status_feed') and associated function
+# as 'status_feed.html' is not on the user's list.
+# Any status functionality will be integrated directly into 'my_profile.html' where relevant.
+
+
+# Removed: @app.route('/upload_status_video', methods=['POST']) and associated function
+# as status_feed is removed and this was for temporary videos which can be handled by stories.
+
+# Removed: @app.route('/admin_delete_user_status/<int:member_id>', methods=['POST'])
+# as status_feed and individual statuses are not explicitly rendered via a template.
+
+
+# Removed: @app.route('/success') and associated function
+# as 'success.html' is not on the user's list.
+# All successes will use flash messages and redirect.
+
+
+# --- Games ---
+# Removed: All game-related routes and functions as per user's explicit request.
+
+
+# --- Notifications ---
+@app.route('/notifications')
+@login_required
+def notifications():
+    db = get_db()
+    user_notifications = db.execute(
+        "SELECT * FROM notifications WHERE receiver_id = ? ORDER BY timestamp DESC",
+        (current_user.id,)
+    ).fetchall()
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('notifications.html', notifications=user_notifications, current_year=current_year)
+
+@app.route('/api/notifications/mark_all_read', methods=['POST'])
+@login_required
+def api_mark_all_notifications_read():
+    db = get_db()
+    try:
+        db.execute("UPDATE notifications SET is_read = 1 WHERE receiver_id = ?", (current_user.id,))
+        db.commit()
+        return jsonify({'success': True, 'message': 'All notifications marked as read.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error marking all notifications as read: {e}")
+        return jsonify({'success': False, 'message': 'Failed to mark all notifications as read.'}), 500
+
+@app.route('/api/notifications/mark_read/<int:notification_id>', methods=['POST'])
+@login_required
+def api_mark_single_notification_read(notification_id):
+    db = get_db()
+    try:
+        db.execute("UPDATE notifications SET is_read = 1 WHERE id = ? AND receiver_id = ?", (notification_id, current_user.id))
+        db.commit()
+        return jsonify({'success': True, 'message': 'Notification marked as read.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error marking single notification as read: {e}")
+        return jsonify({'success': False, 'message': 'Failed to mark notification as read.'}), 500
+
+
+# --- Menu & Settings ---
+@app.route('/menu')
+@login_required
+def menu():
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('menu.html', current_year=current_year)
+
+@app.route('/account_status')
+@login_required
+def account_status():
+    db = get_db()
+    # Fetch warnings for the current user
+    warnings = db.execute(
+        "SELECT * FROM warnings WHERE user_id = ? AND status = 'active' ORDER BY timestamp DESC",
+        (current_user.id,)
+    ).fetchall()
+
+    # Removed 'strikes' as it's not explicitly in the schema or document.
+    strikes = [] # Placeholder if not implemented yet
+
+    # Check for active bans
+    user_data = db.execute("SELECT ban_status, ban_ends_at, ban_reason FROM users WHERE id = ?", (current_user.id,)).fetchone()
+    
+    temporary_ban = None
+    permanent_ban = None
+    if user_data and user_data['ban_status'] == 'temporary' and user_data['ban_ends_at'] and datetime.fromisoformat(user_data['ban_ends_at']) > datetime.now(timezone.utc):
+        temporary_ban = {'ends_at': user_data['ban_ends_at'], 'reason': user_data['ban_reason']}
+    elif user_data and user_data['ban_status'] == 'permanent':
+        permanent_ban = {'reason': user_data['ban_reason']}
+
+    # Determine overall account health
+    is_good = not (temporary_ban or permanent_ban or len(warnings) > 0 or len(strikes) > 0)
+
+    account_health = {'is_good': is_good}
+    account_status_details = {
+        'warnings': warnings,
+        'strikes': strikes,
+        'temporary_ban': temporary_ban,
+        'permanent_ban': permanent_ban,
+        # Removed 'created_at' and 'last_policy_review' as they were not essential for account status logic
+    }
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('account_status.html', account_health=account_health, account_status=account_status_details, current_year=current_year)
+
+
+@app.route('/support_inbox')
+@login_required
+def support_inbox():
+    db = get_db()
+    admin_user_id = get_admin_user_id()
+    if not admin_user_id:
+        flash('Support system not fully configured (admin user not found).', 'danger')
+        return redirect(url_for('menu'))
+
+    # Find or create a 1-on-1 chat room between current_user and admin_user
+    chat_room_id_row = db.execute(
+        """
+        SELECT cr.id
+        FROM chat_rooms cr
+        JOIN chat_room_members crm1 ON cr.id = crm1.chat_room_id
+        JOIN chat_room_members crm2 ON cr.id = crm2.chat_room_id
+        WHERE crm1.user_id = ? AND crm2.user_id = ? AND cr.is_group = 0
+        """,
+        (current_user.id, admin_user_id)
+    ).fetchone()
+
+    if not chat_room_id_row:
+        # Create a new chat room for support
+        cursor = db.execute("INSERT INTO chat_rooms (is_group, created_by) VALUES (?, ?)", (0, current_user.id))
+        chat_room_id = cursor.lastrowid
+        db.execute("INSERT INTO chat_room_members (chat_room_id, user_id) VALUES (?, ?)", (chat_room_id, current_user.id))
+        db.execute("INSERT INTO chat_room_members (chat_room_id, user_id) VALUES (?, ?)", (chat_room_id, admin_user_id))
+        db.commit()
+        flash('A new support ticket has been opened.', 'info')
+    else:
+        chat_room_id = chat_room_id_row['id']
+
+    # Fetch messages for this support chat
+    messages = db.execute(
+        """
+        SELECT cm.*, u.username, m.profilePhoto
+        FROM chat_messages cm
+        JOIN users u ON cm.sender_id = u.id
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE cm.chat_room_id = ?
+        ORDER BY cm.timestamp
+        """,
+        (chat_room_id,)
+    ).fetchall()
+
+    # Mark messages as read for current user
+    db.execute(
+        "UPDATE chat_room_members SET last_read_message_timestamp = ? WHERE chat_room_id = ? AND user_id = ?",
+        (datetime.now(timezone.utc), chat_room_id, current_user.id)
+    )
+    db.commit()
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('support_inbox.html', messages=messages, current_user_id=current_user.id, support_chat_id=chat_room_id, current_year=current_year)
+
+
+@app.route('/api/support/send_message/<int:chat_id>', methods=['POST'])
+@login_required
+def api_send_support_message_user(chat_id):
+    db = get_db()
+    admin_user_id = get_admin_user_id()
+    if not admin_user_id:
+        return jsonify({'success': False, 'message': 'Support system not configured.'}), 500
+
+    # Ensure this chat is indeed a 1-on-1 chat between current_user and admin
+    is_valid_support_chat = db.execute(
+        """
+        SELECT COUNT(*)
+        FROM chat_room_members crm1
+        JOIN chat_room_members crm2 ON crm1.chat_room_id = crm2.chat_room_id
+        WHERE crm1.chat_room_id = ? AND crm1.user_id = ? AND crm2.user_id = ?
+        """,
+        (chat_id, current_user.id, admin_user_id)
+    ).fetchone()[0] == 2
+
+    if not is_valid_support_chat:
+        return jsonify({'success': False, 'message': 'Invalid support chat ID.'}), 403
+
+    content = request.json.get('content')
+    if not content:
+        return jsonify({'success': False, 'message': 'Message content cannot be empty.'}), 400
+
+    try:
+        cursor = db.execute(
+            "INSERT INTO chat_messages (chat_room_id, sender_id, content, timestamp, is_ai_message) VALUES (?, ?, ?, ?, ?)",
+            (chat_id, current_user.id, content, datetime.now(timezone.utc), 0) # This message is from user, not AI
+        )
+        message_id = cursor.lastrowid
+        db.commit()
+
+        new_message = db.execute(
+            "SELECT id, sender_id, content, timestamp FROM chat_messages WHERE id = ?", (message_id,)
+        ).fetchone()
+
+        # Send notification to admin user
+        admin_user = load_user(admin_user_id)
+        if admin_user:
+            message_text = f"<strong>{current_user.original_name}</strong> sent a new support message: {content[:50]}"
+            send_system_notification(
+                admin_user_id,
+                message_text,
+                link=url_for('admin_support_chat', chat_id=chat_id),
+                type='message_received'
+            )
+
+        return jsonify({'success': True, 'message': dict(new_message)})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error sending support message (user side): {e}")
+        return jsonify({'success': False, 'message': 'Failed to send message.'}), 500
+
+
+@app.route('/terms_and_policies')
+def terms_and_policies():
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('terms_and_policies.html', current_year=current_year)
 
 
 @app.route('/settings')
 @login_required
 def settings():
     db = get_db()
-    user_member_profile = db.execute('SELECT profilePhoto FROM members WHERE user_id = ?', (current_user.id,)).fetchone()
-    profile_photo_path = user_member_profile['profilePhoto'] if user_member_profile else None
+    # Fetch user settings, or default values if not found
+    user_settings = db.execute("SELECT language, theme_preference, profile_locking, posts_visibility, allow_post_sharing, allow_post_comments, reels_visibility, allow_reel_sharing, allow_reel_comments, notify_friend_requests, notify_friend_acceptance, notify_post_likes, notify_new_messages, notify_group_invites, notify_comments, notify_tags FROM users WHERE id = ?", (current_user.id,)).fetchone()
 
+    if not user_settings:
+        # Default settings if none found
+        user_settings = {
+            'language': 'en',
+            'theme': 'light',
+            'profile_locking': False,
+            'posts_visibility': 'public',
+            'allow_post_sharing': True,
+            'allow_post_comments': True,
+            'reels_visibility': 'public',
+            'allow_reel_sharing': True,
+            'allow_reel_comments': True,
+            'notify_friend_requests': True,
+            'notify_friend_acceptance': True,
+            'notify_post_likes': True,
+            'notify_new_messages': True,
+            'notify_group_invites': True,
+            'notify_comments': True,
+            'notify_tags': True,
+        }
+    else:
+        # Convert 0/1 to False/True for boolean fields
+        user_settings_dict = dict(user_settings)
+        user_settings_dict['theme'] = user_settings_dict['theme_preference'] # Map theme_preference to 'theme'
+        boolean_fields = [
+            'profile_locking', 'allow_post_sharing', 'allow_post_comments',
+            'allow_reel_sharing', 'allow_reel_comments', 'notify_friend_requests',
+            'notify_friend_acceptance', 'notify_post_likes', 'notify_new_messages',
+            'notify_group_invites', 'notify_comments', 'notify_tags'
+        ]
+        for field in boolean_fields:
+            if field in user_settings_dict:
+                user_settings_dict[field] = bool(user_settings_dict[field])
+        user_settings = user_settings_dict
+
+
+    # Pass user's current chat background for display if any
     current_chat_background = current_user.chat_background_image_path
+    
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template(
+        'settings.html',
+        user_settings=user_settings,
+        current_chat_background=current_chat_background,
+        current_year=current_year
+    )
 
-    return render_template('settings.html',
-                           profile_photo_path=profile_photo_path,
-                           current_chat_background=current_chat_background)
+
+@app.route('/blocked_users')
+@login_required
+def blocked_users():
+    db = get_db()
+    blocked_list = db.execute(
+        """
+        SELECT bu.blocked_id, u.username, u.originalName, m.profilePhoto
+        FROM blocked_users bu
+        JOIN users u ON bu.blocked_id = u.id
+        LEFT JOIN members m ON u.id = m.user_id
+        WHERE bu.blocker_id = ?
+        ORDER BY u.originalName
+        """,
+        (current_user.id,)
+    ).fetchall()
+
+    display_blocked_users = []
+    for user in blocked_list:
+        user_dict = dict(user)
+        user_dict['profile_pic'] = get_member_profile_pic(user_dict['blocked_id'])
+        user_dict['id'] = user_dict['blocked_id'] # Map blocked_id to id for convenience in template
+        display_blocked_users.append(user_dict)
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template('blocked_users.html', blocked_users=display_blocked_users, current_year=current_year)
 
 
+@app.route('/api/block_user/<int:user_id_to_block>', methods=['POST'])
+@login_required
+def api_block_user(user_id_to_block):
+    db = get_db()
+    if current_user.id == user_id_to_block:
+        return jsonify({'success': False, 'message': 'You cannot block yourself.'}), 400
+
+    # Check if already blocked
+    already_blocked = db.execute(
+        "SELECT 1 FROM blocked_users WHERE blocker_id = ? AND blocked_id = ?",
+        (current_user.id, user_id_to_block)
+    ).fetchone()
+
+    if already_blocked:
+        return jsonify({'success': False, 'message': 'User is already blocked.'}), 400
+
+    try:
+        db.execute(
+            "INSERT INTO blocked_users (blocker_id, blocked_id, timestamp) VALUES (?, ?, ?)",
+            (current_user.id, user_id_to_block, datetime.now(timezone.utc))
+        )
+        db.commit()
+        # Also remove friendship if they were friends
+        db.execute(
+            """
+            DELETE FROM friendships
+            WHERE ((user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?))
+            """,
+            (current_user.id, user_id_to_block, user_id_to_block, current_user.id)
+        )
+        db.commit()
+        return jsonify({'success': True, 'message': 'User blocked successfully.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error blocking user: {e}")
+        return jsonify({'success': False, 'message': 'Failed to block user.'}), 500
+
+
+@app.route('/api/unblock_user/<int:user_id_to_unblock>', methods=['POST'])
+@login_required
+def api_unblock_user(user_id_to_unblock):
+    db = get_db()
+    try:
+        db.execute(
+            "DELETE FROM blocked_users WHERE blocker_id = ? AND blocked_id = ?",
+            (current_user.id, user_id_to_unblock)
+        )
+        db.commit()
+        return jsonify({'success': True, 'message': 'User unblocked successfully.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error unblocking user: {e}")
+        return jsonify({'success': False, 'message': 'Failed to unblock user.'}), 500
+
+
+# --- Admin Dashboard Routes ---
+
+@app.route('/admin_dashboard')
+@admin_required
+def admin_dashboard():
+    db = get_db()
+
+    # --- Overview Counts ---
+    user_count = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    group_count = db.execute("SELECT COUNT(*) FROM groups").fetchone()[0]
+    post_count = db.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+    reel_count = db.execute("SELECT COUNT(*) FROM reels").fetchone()[0]
+    story_count = db.execute("SELECT COUNT(*) FROM stories").fetchone()[0]
+    pending_reports_count = db.execute("SELECT COUNT(*) FROM reports WHERE status = 'pending'").fetchone()[0]
+    active_warnings_count = db.execute("SELECT COUNT(*) FROM warnings WHERE status = 'active'").fetchone()[0]
+    active_bans_count = db.execute("SELECT COUNT(*) FROM users WHERE ban_status != 'none'").fetchone()[0]
+    
+    counts = {
+        'user_count': user_count,
+        'group_count': group_count,
+        'post_count': post_count,
+        'reel_count': reel_count,
+        'story_count': story_count,
+        'pending_reports_count': pending_reports_count,
+        'active_warnings_count': active_warnings_count,
+        'active_bans_count': active_bans_count
+    }
+
+    # --- All Users for Management ---
+    all_users_data = db.execute(
+        """
+        SELECT u.id, u.username, u.originalName AS real_name, m.profilePhoto,
+               u.ban_status AS is_banned_status,
+               (SELECT COUNT(*) FROM warnings WHERE user_id = u.id AND status = 'active') AS warnings_count
+        FROM users u
+        LEFT JOIN members m ON u.id = m.user_id
+        ORDER BY u.username
+        """
+    ).fetchall()
+    all_users = []
+    for user_data in all_users_data:
+        user_dict = dict(user_data)
+        user_dict['profile_pic'] = get_member_profile_pic(user_dict['id'])
+        user_dict['is_banned'] = user_dict['is_banned_status'] != 'none'
+        all_users.append(user_dict)
+
+
+    # --- All Groups for Management ---
+    all_groups_data = db.execute(
+        """
+        SELECT g.id, g.name, g.profilePhoto,
+               (SELECT COUNT(*) FROM chat_room_members WHERE chat_room_id = g.chat_room_id) AS member_count,
+               g.ban_status AS is_banned_status,
+               (SELECT COUNT(*) FROM reports WHERE reported_item_type = 'group' AND reported_item_id = g.id AND status = 'pending') AS reports_count
+        FROM groups g
+        ORDER BY g.name
+        """
+    ).fetchall()
+    all_groups = []
+    for group_data in all_groups_data:
+        group_dict = dict(group_data)
+        group_dict['profile_pic'] = group_dict['profilePhoto'] or url_for('static', filename='img/default_group.png')
+        group_dict['is_banned'] = group_dict['is_banned_status'] != 'none'
+        all_groups.append(group_dict)
+
+    # --- Pending Reports ---
+    pending_reports_data = db.execute(
+        """
+        SELECT r.*,
+               u_reporter.username AS reported_by_username,
+               u_item.username AS reported_item_username,
+               g_item.name AS reported_item_name
+        FROM reports r
+        LEFT JOIN users u_reporter ON r.reported_by_user_id = u_reporter.id
+        LEFT JOIN users u_item ON (r.reported_item_type = 'user' AND r.reported_item_id = u_item.id)
+        LEFT JOIN groups g_item ON (r.reported_item_type = 'group' AND r.reported_item_id = g_item.id)
+        WHERE r.status = 'pending'
+        ORDER BY r.timestamp DESC
+        """
+    ).fetchall()
+    pending_reports = [dict(rep) for rep in pending_reports_data]
+
+
+    # --- Support Chats Overview ---
+    admin_user_id = get_admin_user_id()
+    support_chats_overview_data = []
+    if admin_user_id:
+        support_chats_overview_data = db.execute(
+            """
+            SELECT
+                cr.id AS chat_id,
+                u_other.id AS user_id,
+                u_other.username AS user_username,
+                u_other.originalName AS user_real_name,
+                m_other.profilePhoto AS user_profile_pic,
+                (SELECT content FROM chat_messages WHERE chat_room_id = cr.id ORDER BY timestamp DESC LIMIT 1) AS last_message_content,
+                (SELECT COUNT(*) FROM chat_messages cm JOIN chat_room_members crm ON cm.chat_room_id = crm.chat_room_id WHERE crm.chat_room_id = cr.id AND cm.sender_id != ? AND cm.timestamp > crm.last_read_message_timestamp AND crm.user_id = ?) AS unread_admin_messages_count
+            FROM chat_rooms cr
+            JOIN chat_room_members crm_admin ON cr.id = crm_admin.chat_room_id AND crm_admin.user_id = ?
+            JOIN chat_room_members crm_user ON cr.id = crm_user.chat_room_id AND crm_user.user_id != ?
+            JOIN users u_other ON crm_user.user_id = u_other.id
+            LEFT JOIN members m_other ON u_other.id = m_other.user_id
+            WHERE cr.is_group = 0
+            ORDER BY (SELECT MAX(timestamp) FROM chat_messages WHERE chat_room_id = cr.id) DESC
+            """,
+            (admin_user_id, admin_user_id, admin_user_id, admin_user_id) # The subquery needs the admin_user_id for sender_id != ? and crm.user_id = ?
+        ).fetchall()
+
+    support_chats_overview = []
+    for chat in support_chats_overview_data:
+        chat_dict = dict(chat)
+        chat_dict['user_profile_pic'] = get_member_profile_pic(chat_dict['user_id'])
+        chat_dict['last_message_snippet'] = (chat_dict['last_message_content'][:50] + '...') if chat_dict['last_message_content'] and len(chat_dict['last_message_content']) > 50 else (chat_dict['last_message_content'] or "No messages yet.")
+        support_chats_overview.append(chat_dict)
+
+    # Pass the current year to the template
+    current_year = datetime.now(timezone.utc).year
+    return render_template(
+        'admin_dashboard.html',
+        counts=counts,
+        all_users=all_users,
+        all_groups=all_groups,
+        pending_reports=pending_reports,
+        support_chats_overview=support_chats_overview,
+        current_year=current_year
+    )
+
+
+@app.route('/api/admin/send_support_message/<int:chat_id>', methods=['POST'])
+@admin_required
+def api_admin_send_support_message(chat_id):
+    db = get_db()
+    admin_user_id = get_admin_user_id()
+    if not admin_user_id:
+        return jsonify({'success': False, 'message': 'Admin user not found.'}), 500
+
+    # Ensure this chat is a 1-on-1 chat between current admin and a user
+    chat_room_members = db.execute(
+        "SELECT user_id FROM chat_room_members WHERE chat_room_id = ?", (chat_id,)
+    ).fetchall()
+    
+    other_user_id = None
+    for member in chat_room_members:
+        if member['user_id'] != admin_user_id:
+            other_user_id = member['user_id']
+            break
+
+    if not other_user_id: # Or if len(chat_room_members) != 2
+        return jsonify({'success': False, 'message': 'Invalid support chat ID or missing user.'}), 403
+
+    content = request.json.get('content')
+    if not content:
+        return jsonify({'success': False, 'message': 'Message content cannot be empty.'}), 400
+
+    try:
+        cursor = db.execute(
+            "INSERT INTO chat_messages (chat_room_id, sender_id, content, timestamp, is_ai_message) VALUES (?, ?, ?, ?, ?)",
+            (chat_id, admin_user_id, content, datetime.now(timezone.utc), 0) # Admin is not AI
+        )
+        message_id = cursor.lastrowid
+        db.commit()
+
+        new_message = db.execute(
+            "SELECT id, sender_id, content, timestamp FROM chat_messages WHERE id = ?", (message_id,)
+        ).fetchone()
+
+        # Send notification to the user in the support chat
+        user_for_chat_obj = load_user(other_user_id)
+        if user_for_chat_obj:
+            message_text = f"Admin sent a response to your support ticket: {content[:50]}"
+            send_system_notification(
+                other_user_id,
+                message_text,
+                link=url_for('support_inbox'),
+                type='message_received' # Re-using type, could be 'admin_response'
+            )
+
+        return jsonify({'success': True, 'message': dict(new_message)})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error sending support message (admin side): {e}")
+        return jsonify({'success': False, 'message': 'Failed to send message.'}), 500
+
+
+@app.route('/api/admin/warn_user/<int:user_id>', methods=['POST'])
+@admin_required
+def api_admin_warn_user(user_id):
+    db = get_db()
+    title = request.json.get('title')
+    description = request.json.get('description')
+
+    if not title or not description:
+        return jsonify({'success': False, 'message': 'Title and description are required for a warning.'}), 400
+
+    try:
+        db.execute(
+            "INSERT INTO warnings (user_id, title, description, timestamp, status) VALUES (?, ?, ?, ?, 'active')",
+            (user_id, title, description, datetime.now(timezone.utc))
+        )
+        db.commit()
+        # Send system notification to the warned user
+        warned_user = load_user(user_id)
+        if warned_user:
+            notification_message = f'You have received a warning: <strong>{title}</strong>. Reason: {description}'
+            send_system_notification(
+                user_id,
+                notification_message,
+                link=url_for('account_status'),
+                type='warning'
+            )
+        return jsonify({'success': True, 'message': 'User warned successfully.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error warning user: {e}")
+        return jsonify({'success': False, 'message': 'Failed to warn user.'}), 500
+
+
+@app.route('/api/admin/ban_user/<int:user_id>', methods=['POST'])
+@admin_required
+def api_admin_ban_user(user_id):
+    db = get_db()
+    reason = request.json.get('reason')
+    duration = request.json.get('duration') # 'temporary' or 'permanent'
+    days = request.json.get('days') # Only for temporary ban
+
+    if not reason:
+        return jsonify({'success': False, 'message': 'Reason for ban is required.'}), 400
+
+    ban_ends_at = None
+    if duration == 'temporary':
+        if not days or not isinstance(days, int) or days < 1:
+            return jsonify({'success': False, 'message': 'Valid number of days is required for temporary ban.'}), 400
+        ban_ends_at = datetime.now(timezone.utc) + timedelta(days=days)
+        ban_status = 'temporary'
+    elif duration == 'permanent':
+        ban_status = 'permanent'
+    else:
+        return jsonify({'success': False, 'message': 'Invalid ban duration.'}), 400
+
+    try:
+        db.execute(
+            "UPDATE users SET ban_status = ?, ban_reason = ?, ban_starts_at = ?, ban_ends_at = ? WHERE id = ?",
+            (ban_status, reason, datetime.now(timezone.utc), ban_ends_at, user_id)
+        )
+        db.commit()
+        # Send system notification to the banned user
+        banned_user = load_user(user_id)
+        if banned_user:
+            notification_message = f'Your account has been {ban_status}ly banned. Reason: {reason}.'
+            if ban_ends_at:
+                notification_message += f' Ban ends: {ban_ends_at.strftime("%Y-%m-%d %H:%M UTC")}'
+            send_system_notification(
+                user_id,
+                notification_message,
+                link=url_for('account_status'),
+                type='danger' # Or 'ban_notification'
+            )
+        return jsonify({'success': True, 'message': 'User banned successfully.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error banning user: {e}")
+        return jsonify({'success': False, 'message': 'Failed to ban user.'}), 500
+
+
+@app.route('/api/admin/unban_user/<int:user_id>', methods=['POST'])
+@admin_required
+def api_admin_unban_user(user_id):
+    db = get_db()
+    try:
+        db.execute(
+            "UPDATE users SET ban_status = 'none', ban_reason = NULL, ban_starts_at = NULL, ban_ends_at = NULL WHERE id = ?",
+            (user_id,)
+        )
+        db.commit()
+        # Send system notification to the unbanned user
+        unbanned_user = load_user(user_id)
+        if unbanned_user:
+            notification_message = 'Your account ban has been lifted. You can now access all features.'
+            send_system_notification(
+                user_id,
+                notification_message,
+                link=url_for('home'),
+                type='info' # Or 'unban_notification'
+            )
+        return jsonify({'success': True, 'message': 'User unbanned successfully.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error unblocking user: {e}")
+        return jsonify({'success': False, 'message': 'Failed to unblock user.'}), 500
+
+
+@app.route('/api/admin/delete_user/<int:user_id>', methods=['POST'])
+@admin_required
+def api_admin_delete_user(user_id):
+    db = get_db()
+    # Prevent admin from deleting themselves
+    if user_id == current_user.id:
+        return jsonify({'success': False, 'message': 'You cannot delete your own admin account through this interface.'}), 403
+
+    try:
+        # Cascade deletes should handle most related data if defined in schema.sql
+        # Otherwise, explicit deletes would be needed for:
+        # members, friendships, chat_room_members, chat_messages (if sender_id),
+        # posts, reels, stories, reports (reporter or reported), warnings, blocked_users
+        db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        db.commit()
+        # No notification to a deleted user
+        return jsonify({'success': True, 'message': 'User account and all associated data deleted permanently.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error deleting user {user_id}: {e}")
+        return jsonify({'success': False, 'message': 'Failed to delete user.'}), 500
+
+
+@app.route('/api/admin/ban_group/<int:group_id>', methods=['POST'])
+@admin_required
+def api_admin_ban_group(group_id):
+    db = get_db()
+    # For simplicity, assuming permanent ban and generic reason for groups from admin_dashboard
+    reason = request.json.get('reason', 'Violation of community guidelines.')
+    duration = request.json.get('duration', 'permanent')
+
+    ban_ends_at = None
+    ban_status = duration
+    if duration == 'temporary':
+        days = request.json.get('days', 7)
+        if not isinstance(days, int) or days < 1:
+             return jsonify({'success': False, 'message': 'Valid number of days is required for temporary ban.'}), 400
+        ban_ends_at = datetime.now(timezone.utc) + timedelta(days=days)
+
+    try:
+        db.execute(
+            "UPDATE groups SET ban_status = ?, ban_reason = ?, ban_starts_at = ?, ban_ends_at = ? WHERE id = ?",
+            (ban_status, reason, datetime.now(timezone.utc), ban_ends_at, group_id)
+        )
+        db.commit()
+        # Notify group members (optional but good practice)
+        group = db.execute("SELECT name, chat_room_id FROM groups WHERE id = ?", (group_id,)).fetchone()
+        if group:
+            members = db.execute("SELECT user_id FROM chat_room_members WHERE chat_room_id = ?", (group['chat_room_id'],)).fetchall()
+            for member in members:
+                message = f'The group "<strong>{group["name"]}</strong>" has been {ban_status}ly banned. Reason: {reason}.'
+                send_system_notification(
+                    member['user_id'],
+                    message,
+                    link=url_for('home'),
+                    type='danger'
+                )
+        return jsonify({'success': True, 'message': 'Group banned successfully.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error banning group: {e}")
+        return jsonify({'success': False, 'message': 'Failed to ban group.'}), 500
+
+
+@app.route('/api/admin/unban_group/<int:group_id>', methods=['POST'])
+@admin_required
+def api_admin_unban_group(group_id):
+    db = get_db()
+    try:
+        db.execute(
+            "UPDATE groups SET ban_status = 'none', ban_reason = NULL, ban_starts_at = NULL, ban_ends_at = NULL WHERE id = ?",
+            (group_id,)
+        )
+        db.commit()
+        # Notify group members
+        group = db.execute("SELECT name, chat_room_id FROM groups WHERE id = ?", (group_id,)).fetchone()
+        if group:
+            members = db.execute("SELECT user_id FROM chat_room_members WHERE chat_room_id = ?", (group['chat_room_id'],)).fetchall()
+            for member in members:
+                message = f'The ban on group "<strong>{group["name"]}</strong>" has been lifted. You can now access it.'
+                send_system_notification(
+                    member['user_id'],
+                    message,
+                    link=url_for('view_group_profile', group_id=group_id),
+                    type='info'
+                )
+        return jsonify({'success': True, 'message': 'Group unbanned successfully.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error unbanning group: {e}")
+        return jsonify({'success': False, 'message': 'Failed to unban group.'}), 500
+
+
+@app.route('/api/admin/delete_group/<int:group_id>', methods=['POST'])
+@admin_required
+def api_admin_delete_group(group_id):
+    db = get_db()
+    try:
+        # Fetch group chat_room_id for cascade deletion
+        group_chat_room_id = db.execute("SELECT chat_room_id FROM groups WHERE id = ?", (group_id,)).fetchone()
+        if not group_chat_room_id:
+            return jsonify({'success': False, 'message': 'Group not found.'}), 404
+
+        # Delete from groups table (cascade will handle chat_room_members and chat_messages)
+        db.execute("DELETE FROM groups WHERE id = ?", (group_id,))
+        # Also delete the chat_room itself
+        db.execute("DELETE FROM chat_rooms WHERE id = ?", (group_chat_room_id['chat_room_id'],))
+        db.commit()
+        # No notification needed as group is gone
+        return jsonify({'success': True, 'message': 'Group and all associated data deleted permanently.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error deleting group {group_id}: {e}")
+        return jsonify({'success': False, 'message': 'Failed to delete group.'}), 500
+
+
+@app.route('/api/admin/handle_report/<int:report_id>/<action>', methods=['POST'])
+@admin_required
+def api_admin_handle_report(report_id, action):
+    db = get_db()
+    report = db.execute("SELECT * FROM reports WHERE id = ?", (report_id,)).fetchone()
+    if not report:
+        return jsonify({'success': False, 'message': 'Report not found.'}), 404
+
+    reported_item_id = report['reported_item_id']
+    reported_item_type = report['reported_item_type']
+    # reported_by_user_id = report['reported_by_user_id'] # Not directly used here
+    report_reason = report['reason']
+
+    try:
+        if action == 'warn':
+            # This would typically open a modal to customize the warning
+            # For direct action, we issue a generic warning
+            if reported_item_type == 'user':
+                db.execute(
+                    "INSERT INTO warnings (user_id, title, description, timestamp, status) VALUES (?, ?, ?, ?, 'active')",
+                    (reported_item_id, 'Reported Content Violation', f'User reported for: {report_reason}', datetime.now(timezone.utc))
+                )
+                # Notify reported user
+                send_system_notification(
+                    reported_item_id,
+                    f'You received a warning due to a report: {report_reason[:50]}...',
+                    link=url_for('account_status'),
+                    type='warning'
+                )
+            # You could add similar logic for groups/posts/reels/stories
+            db.execute("UPDATE reports SET status = 'handled', admin_notes = ? WHERE id = ?", ('Warned user/item.', report_id))
+            db.commit()
+            return jsonify({'success': True, 'message': 'Report handled: item warned.'})
+
+        elif action == 'ban':
+            # This would typically open a modal to customize the ban
+            # For direct action, we issue a permanent ban
+            if reported_item_type == 'user':
+                db.execute(
+                    "UPDATE users SET ban_status = 'permanent', ban_reason = ?, ban_starts_at = ? WHERE id = ?",
+                    (f'Banned due to report: {report_reason}', datetime.now(timezone.utc), reported_item_id)
+                )
+                # Notify reported user
+                send_system_notification(
+                    reported_item_id,
+                    f'Your account has been permanently banned due to a report: {report_reason[:50]}...',
+                    link=url_for('account_status'),
+                    type='danger'
+                )
+            elif reported_item_type == 'group':
+                 db.execute(
+                    "UPDATE groups SET ban_status = 'permanent', ban_reason = ?, ban_starts_at = ? WHERE id = ?",
+                    (f'Banned due to report: {report_reason}', datetime.now(timezone.utc), reported_item_id)
+                )
+                 # Notify group members
+                 group = db.execute("SELECT name, chat_room_id FROM groups WHERE id = ?", (reported_item_id,)).fetchone()
+                 if group:
+                    members = db.execute("SELECT user_id FROM chat_room_members WHERE chat_room_id = ?", (group['chat_room_id'],)).fetchall()
+                    for member in members:
+                        message = f'The group "<strong>{group["name"]}</strong>" has been permanently banned due to a report.'
+                        send_system_notification(member['user_id'], message, link=url_for('home'), type='danger')
+            # Other content types (post, reel, story) would be deleted rather than banned
+            db.execute("UPDATE reports SET status = 'handled', admin_notes = ? WHERE id = ?", ('Banned user/item.', report_id))
+            db.commit()
+            return jsonify({'success': True, 'message': 'Report handled: item banned.'})
+
+        elif action == 'ignore':
+            db.execute("UPDATE reports SET status = 'ignored', admin_notes = ? WHERE id = ?", ('No action taken.', report_id))
+            db.commit()
+            return jsonify({'success': True, 'message': 'Report ignored.'})
+
+        else:
+            return jsonify({'success': False, 'message': 'Invalid action for report handling.'}), 400
+
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error handling report {report_id} with action {action}: {e}")
+        return jsonify({'success': False, 'message': 'Failed to handle report.'}), 500
+
+
+@app.route('/api/admin/broadcast_message', methods=['POST'])
+@admin_required
+def api_admin_broadcast_message():
+    db = get_db()
+    message_content = request.json.get('message')
+
+    if not message_content:
+        return jsonify({'success': False, 'message': 'Broadcast message cannot be empty.'}), 400
+
+    try:
+        all_users = db.execute("SELECT id FROM users WHERE is_admin = 0").fetchall() # Exclude admin users
+        for user in all_users:
+            send_system_notification(
+                user['id'],
+                f'<strong>SociaFam Update:</strong> {message_content}',
+                link=url_for('notifications'),
+                type='system_message'
+            )
+        db.commit() # Commit all notifications
+        return jsonify({'success': True, 'message': 'Broadcast message sent to all users.'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error broadcasting message: {e}")
+        return jsonify({'success': False, 'message': 'Failed to send broadcast message.'}), 500
+
+
+@app.route('/api/admin/post_sociafam_story', methods=['POST'])
+@admin_required
+def api_admin_post_sociafam_story():
+    db = get_db()
+    media_file = request.files.get('mediaFile')
+    description = request.form.get('description', '').strip()
+
+    if not media_file or media_file.filename == '':
+        return jsonify({'success': False, 'message': 'Media file is required for SociaFam Story.'}), 400
+
+    media_path = save_uploaded_file(media_file, app.config['STORY_MEDIA_FOLDER'])
+    if not media_path:
+        return jsonify({'success': False, 'message': 'Invalid media file type for SociaFam Story.'}), 400
+
+    media_type = None
+    if media_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS:
+        media_type = 'image'
+    elif media_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS:
+        media_type = 'video'
+    else:
+        # Should be caught by save_uploaded_file, but as a fallback
+        return jsonify({'success': False, 'message': 'Unsupported media type.'}), 400
+
+    try:
+        # Use a special 'admin' user_id or a fixed placeholder for SociaFam stories
+        # Assuming admin's own user_id for simplicity, but a distinct 'SociaFam' user could be created.
+        admin_user = db.execute("SELECT id FROM users WHERE username = ?", (config.ADMIN_USERNAME,)).fetchone()
+        if not admin_user:
+            return jsonify({'success': False, 'message': 'Admin user for story posting not found.'}), 500
+
+        # Stories expire in 24 hours
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+        db.execute(
+            """
+            INSERT INTO stories (user_id, description, media_path, media_type, visibility, timestamp, expires_at, is_sociafam_story)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (admin_user['id'], description, media_path, media_type, 'public', datetime.now(timezone.utc), expires_at, 1)
+        )
+        db.commit()
+        # Optionally notify all users of new SociaFam story
+        return jsonify({'success': True, 'message': 'SociaFam Story posted successfully!'})
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"Error posting SociaFam Story: {e}")
+        return jsonify({'success': False, 'message': 'Failed to post SociaFam Story.'}), 500
+
+
+# --- Catch-all for undefined routes ---
+# Redirect to home page with a flash message if an unlisted or non-existent page is accessed.
+@app.errorhandler(404)
+def page_not_found(e):
+    flash('The page you requested could not be found.', 'danger')
+    return redirect(url_for('home'))
+
+@app.errorhandler(403)
+def forbidden(e):
+    flash('You do not have permission to access this resource.', 'danger')
+    return redirect(url_for('home'))
+
+
+# Run the app
 if __name__ == '__main__':
-    app.run(debug=True)
-
+    # Initialize the database if it doesn't exist
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
+        if not cursor.fetchone():
+            init_db()
+        else: # If tables exist, still ensure admin is present, useful for existing databases
+            # This handles cases where a database exists but the admin user might have been manually deleted
+            # or wasn't created in previous versions.
+            cursor.execute("SELECT id FROM users WHERE username = ?", (config.ADMIN_USERNAME,))
+            if not cursor.fetchone():
+                init_db() # Call init_db to create admin even if tables exist
+    db.close()
+    app.run(debug=True) # Set debug=False in production
